@@ -3,12 +3,14 @@ name: Native flight Windows suite
 on:
   push:
     branches: [master]
-    paths: ["TRIGGER_WINDOWS"]
+    paths: ['TRIGGER_WINDOWS']
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths: ['.github/workflows/native-flight-windows.yml', 'TRIGGER_WINDOWS']
-  workflow_dispatch:
+    inputs:
+      iso_release_tag:
+        description: 'Release tag with encrypted ISO'
+        required: false
+        type: string
+        default: 'flight-iso-v1'
 
 permissions:
   contents: read
@@ -16,11 +18,7 @@ permissions:
 jobs:
   windows-suite:
     name: Flight suite on native Windows
-    runs-on:
-  push:
-    branches: [master]
-    paths: ["TRIGGER_WINDOWS"]
-  workflow_dispatch: windows-latest
+    runs-on: windows-latest
     timeout-minutes: 180
     env:
       ISO_RELEASE_TAG: flight-iso-v1
@@ -32,18 +30,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version:
-  push:
-    branches: [master]
-    paths: ["TRIGGER_WINDOWS"]
-  workflow_dispatch: '3.12'
+          python-version: '3.12'
 
       - name: Install build tools
         shell: pwsh
         run: |
-          choco install 7zip mingw -y --no-progress --ignore-package-exit-codes
-          $mingwPath = Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "i686-w64-mingw32-gcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
-          if ($mingwPath) { echo $mingwPath >> $env:GITHUB_PATH }
+          choco install 7zip mingw -y --no-progress --ignore-package-exit-codes 2>$null
+          Write-Host "Build tools installed"
 
       - name: Build observer tools
         shell: bash
@@ -75,8 +68,6 @@ jobs:
           ISO_DIR="$RUNNER_TEMP/miel-isos"
           mkdir -p "$ISO_DIR"
           gh release download "$ISO_RELEASE_TAG" --repo meneerkrabs/miel-flight-x86 \
-            --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR" || \
-          gh release download "$ISO_RELEASE_TAG" --repo cgnl/miel-flight-x86 \
             --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR"
           echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
             --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" "$ISO_DIR/Mielvliegt.iso.gpg"
