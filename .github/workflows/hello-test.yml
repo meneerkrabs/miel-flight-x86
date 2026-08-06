@@ -1,0 +1,11 @@
+name: Hello test
+on:
+  push:
+    branches: [master]
+    paths: ["HELLO_TRIGGER"]
+  workflow_dispatch:
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Runner works! $(date)"
