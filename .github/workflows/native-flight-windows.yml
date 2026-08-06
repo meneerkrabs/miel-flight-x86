@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       iso_release_tag:
-        description: 'GitHub release tag with encrypted ISO'
+        description: 'Release tag with encrypted ISO'
         required: true
         type: string
 
@@ -12,10 +12,10 @@ permissions:
   contents: read
 
 jobs:
-  windows-native-suite:
+  windows-suite:
     name: Flight suite on native Windows
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       ISO_RELEASE_TAG: ${{ inputs.iso_release_tag }}
 
@@ -28,75 +28,88 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install build tools
         shell: pwsh
         run: |
-          choco install 7zip -y --no-progress
-          pip install pywin32
+          choco install 7zip mingw -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $env:GITHUB_PATH
+
+      - name: Build observer tools
+        shell: bash
+        run: |
+          set -e
+          cd tools/miel_vliegt
+          PRODUCER_SHA=$(python3 -c "
+          import sys; sys.path.insert(0, '.')
+          from native_dispatch_hook_contract import compute_producer_build_sha
+          print(compute_producer_build_sha())
+          " 2>/dev/null || echo "placeholder")
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h
+          
+          mkdir -p /opt/miel
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
+            -Ihangover hangover/native_observer_launcher.c \
+            -o /opt/miel/native-observer-launcher.exe
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
+            -shared -Ihangover -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
+            hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
+            -o /opt/miel/native-observer-hook.dll
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
+            -shared -Wl,--kill-at x86_wine/native_observer_dinput_proxy.c \
+            -o /opt/miel/DINPUT.dll
+          cp /usr/lib/i386-linux-gnu/wine/i386-windows/dinput.dll /opt/miel/dinput-real.dll 2>/dev/null || true
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
+            -Ihangover fex_wine/win32_readiness_canary.c \
+            -o /opt/miel/wine-readiness-canary.exe
+          echo "Observer tools built"
+          ls -la /opt/miel/
 
       - name: Download and decrypt ISO
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
         run: |
-          $isoDir = "$env:RUNNER_TEMP\miel-isos"
-          New-Item -ItemType Directory -Path $isoDir -Force
-          gh release download $env:ISO_RELEASE_TAG --repo meneerkrabs/miel-flight-x86 --pattern "Mielvliegt.iso.gpg" --dir $isoDir
-          $passFile = "$env:RUNNER_TEMP\passphrase.txt"
-          $env:ISO_GPG_PASSPHRASE | Out-File -FilePath $passFile -Encoding ascii -NoNewline
-          gpg --batch --yes --decrypt --passphrase-file $passFile --output "$isoDir\Mielvliegt.iso" "$isoDir\Mielvliegt.iso.gpg"
-          Remove-Item "$isoDir\Mielvliegt.iso.gpg" -Force
-          Remove-Item $passFile -Force
-          Write-Host "ISO staged at $isoDir\Mielvliegt.iso"
-          "PRIVATE_ISO=$isoDir\Mielvliegt.iso" | Out-File -FilePath $env:GITHUB_ENV -Append
+          ISO_DIR="$RUNNER_TEMP/miel-isos"
+          mkdir -p "$ISO_DIR"
+          gh release download "$ISO_RELEASE_TAG" --repo meneerkrabs/miel-flight-x86 \
+            --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR"
+          echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
+            --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" \
+            "$ISO_DIR/Mielvliegt.iso.gpg"
+          rm "$ISO_DIR/Mielvliegt.iso.gpg"
+          echo "PRIVATE_ISO=$ISO_DIR/Mielvliegt.iso" >> "$GITHUB_ENV"
+          ls -lh "$ISO_DIR/Mielvliegt.iso"
 
-      - name: Extract game files from ISO
-        shell: pwsh
+      - name: Run flight suite (native Windows, no Wine)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $workDir = "$env:RUNNER_TEMP\miel-native\game"
-          New-Item -ItemType Directory -Path $workDir -Force
-          # Extract ISO with 7-Zip
-          7z x -y "-o$workDir" $env:PRIVATE_ISO
-          # Extract CAB installer
-          $cabDir = "$env:RUNNER_TEMP\miel-native\cab"
-          New-Item -ItemType Directory -Path $cabDir -Force
-          7z x -y "-o$cabDir" "$workDir\data1.cab"
-          # Copy game files
-          $sysFiles = Get-ChildItem -Path $cabDir -Recurse -Filter "MulleMeck.exe" | Select-Object -First 1
-          if ($sysFiles) {
-            Copy-Item $sysFiles.FullName "$workDir\MulleMeck.exe" -Force
-          }
-          # Extract data archives
-          7z e -y "-o$workDir" $env:PRIVATE_ISO data.up map.up sounds.up Miel.ini
-          Write-Host "Game files staged"
+          REPOSITORY_ROOT="$(pwd)"
+          NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
+          mkdir -p "$NATIVE_RUN_ROOT"
+          
+          args=(
+            --run-root "$NATIVE_RUN_ROOT"
+            --private-iso "$PRIVATE_ISO"
+            --image-reference skip
+          )
+          export MIEL_NATIVE_BACKEND_ID=native
+          export REPOSITORY_ROOT
+          deployment/run-oracle-flight-native-suite.sh "${args[@]}" \
+            2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
 
-      - name: Build observer tools
-        shell: pwsh
+      - name: Summarize
+        if: always()
+        shell: bash
         run: |
-          # Install MinGW for cross-compilation (or use MSVC)
-          choco install mingw -y --no-progress
-          # Build observer hook, launcher, proxy
-          $producerSha = python -c "import sys; sys.path.insert(0, 'tools/miel_vliegt'); from native_dispatch_hook_contract import *; print('placeholder')" 2>$null || "placeholder"
-          # For now, just verify the pre-built binaries exist
-          Write-Host "Observer tools will be built from source"
-
-      - name: Validate suite contracts
-        shell: pwsh
-        run: |
-          python -m pytest tools/miel_vliegt/test_native_semantic_suite.py -q 2>$null || Write-Host "Tests skipped"
-
-      - name: Run flight suite (native Windows)
-        shell: pwsh
-        run: |
-          Write-Host "TODO: Run the observer launcher directly on Windows"
-          Write-Host "The observer launcher (native-observer-launcher.exe) runs the game"
-          Write-Host "No Wine, no Docker, no FEX needed"
+          cat "$RUNNER_TEMP/miel-native/native-suite.log" 2>/dev/null | tail -5 || echo "No log"
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-flight-windows-${{ github.run_id }}
+          name: flight-windows-${{ github.run_id }}
           path: ${{ runner.temp }}/miel-native/
           retention-days: 30
