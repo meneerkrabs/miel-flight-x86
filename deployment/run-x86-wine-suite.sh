@@ -57,10 +57,31 @@ INSTALLER_ROOT="${RUN_ROOT}/private-installer"
 EXTRACTED_SYSTEM_ROOT="${RUN_ROOT}/private-system"
 mkdir -m 0700 "${INSTALLER_ROOT}" "${EXTRACTED_SYSTEM_ROOT}"
 7z x -y "-o${INSTALLER_ROOT}" "${PRIVATE_ISO}" >/dev/null
-unshield -g "System Files" x "${INSTALLER_ROOT}/data1.cab" >/dev/null 2>&1 || true
+echo "ISO extracted to ${INSTALLER_ROOT}"
+echo "Contents:" && ls "${INSTALLER_ROOT}" | head -20
+
+# unshield must run from the output directory
+(
+  cd "${EXTRACTED_SYSTEM_ROOT}"
+  unshield -g "System Files" x "${INSTALLER_ROOT}/data1.cab" || true
+)
+echo "System files extracted:" && ls "${EXTRACTED_SYSTEM_ROOT}" | head -20
 
 PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/System_Files"
-[[ -d "${PRIVATE_GAME_ROOT}" ]] || { echo "game root not found" >&2; exit 66; }
+# Try alternate capitalization
+if [[ ! -d "${PRIVATE_GAME_ROOT}" ]]; then
+  PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/System_files"
+fi
+if [[ ! -d "${PRIVATE_GAME_ROOT}" ]]; then
+  PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/system_files"
+fi
+[[ -d "${PRIVATE_GAME_ROOT}" ]] || {
+  echo "game root not found in ${EXTRACTED_SYSTEM_ROOT}" >&2
+  echo "Directory listing:" >&2
+  find "${EXTRACTED_SYSTEM_ROOT}" -maxdepth 2 -type d >&2 || true
+  exit 66
+}
+echo "Game root: ${PRIVATE_GAME_ROOT}"
 
 GAME_ROOT="${RUN_ROOT}/game"
 PROXY_ROOT="${RUN_ROOT}/proxy"
