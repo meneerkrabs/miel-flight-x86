@@ -48,7 +48,7 @@ jobs:
           i686-w64-mingw32-gcc -std=c11 -Os -s -shared -Wl,--kill-at \
             x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
           i686-w64-mingw32-gcc -std=c11 -Os -s -Ihangover \
-            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
+            fex_wine/win32_readiness_canary.c -lole32 -o /opt/miel/wine-readiness-canary.exe
           cp /usr/lib/i386-linux-gnu/wine/i386-windows/dinput.dll /opt/miel/dinput-real.dll
           echo "=== Build complete ==="
 
