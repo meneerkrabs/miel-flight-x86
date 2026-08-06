@@ -176,6 +176,110 @@ for row in "${private_identity_rows[@]:1}"; do
   }
 done
 
+# Native Windows backend: no Docker, no Wine, run directly
+if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" ]]; then
+  echo "=== Native Windows backend: skipping Docker entirely ==="
+
+  NATIVE_BACKEND_ID="native"
+  NATIVE_BACKEND_HODLL="windows"
+
+  # Extract game files from ISO (same as Docker path)
+  readonly INSTALLER_ROOT="${RUN_ROOT}/private-installer"
+  readonly EXTRACTED_SYSTEM_ROOT="${RUN_ROOT}/private-system"
+  mkdir -m 0700 "${INSTALLER_ROOT}" "${EXTRACTED_SYSTEM_ROOT}"
+  7z x -y "-o${INSTALLER_ROOT}" "${PRIVATE_ISO}" >/dev/null
+  unshield -g "System Files" x "${INSTALLER_ROOT}/data1.cab" >/dev/null 2>&1 || true
+
+  readonly PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/System_Files"
+  readonly GAME_ROOT="${RUN_ROOT}/game"
+  readonly PROXY_ROOT="${RUN_ROOT}/proxy"
+  readonly TOOLS_ROOT="${RUN_ROOT}/tools"
+  readonly FIXTURE_ROOT="${RUN_ROOT}/fixture"
+  readonly WINE_PREFIX="${RUN_ROOT}/wine-prefix"
+  readonly SUITE_ROOT="${RUN_ROOT}/calibrated-suite"
+  readonly OUTPUT_ROOT="${RUN_ROOT}/output"
+  readonly CLEAN_STATE_ROOT="${RUN_ROOT}/game-clean"
+  mkdir -m 0700 "${GAME_ROOT}" "${PROXY_ROOT}" "${TOOLS_ROOT}" "${FIXTURE_ROOT}"
+
+  cp -a "${PRIVATE_GAME_ROOT}/." "${GAME_ROOT}/"
+  7z e -y "-o${GAME_ROOT}" "${PRIVATE_ISO}" data.up map.up sounds.up Miel.ini
+
+  # Restore user fixture
+  python3 - "${INITIAL_USER_FIXTURE}" "${FIXTURE_ROOT}/user0.dat" <<'PYFIX'
+import base64, gzip, sys
+from pathlib import Path
+source, target = Path(sys.argv[1]), Path(sys.argv[2])
+encoded = "".join(source.read_text(encoding="ascii").split())
+target.write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
+PYFIX
+  mkdir -p "${GAME_ROOT}/Data/User"
+  install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
+
+  # Clean state snapshot
+  mkdir -m 0700 "${CLEAN_STATE_ROOT}"
+  cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
+
+  # Input identities
+  declare -A input_paths=(
+    [source_executable]="${GAME_ROOT}/MulleMeck.exe"
+    [disposable_target]="${GAME_ROOT}/MulleMeck.exe"
+    [user_profile]="${FIXTURE_ROOT}/user0.dat"
+    [observer_dll]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/native-observer-hook.dll"
+    [observer_launcher]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/native-observer-launcher.exe"
+    [proxy_dinput]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/DINPUT.dll"
+    [real_dinput]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/dinput-real.dll"
+    [smoke_executable]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/wine-readiness-canary.exe"
+    [data_archive]="${GAME_ROOT}/data.up"
+    [map_archive]="${GAME_ROOT}/map.up"
+    [sounds_archive]="${GAME_ROOT}/sounds.up"
+    [miel_ini]="${GAME_ROOT}/Miel.ini"
+  )
+
+  identities_tsv="${RUN_ROOT}/input-identities.tsv"
+  : >"${identities_tsv}"
+  for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
+    sha=$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)
+    printf '%s\t%s\t%s\n' "${label}" "${sha}" "${input_paths[${label}]}" >>"${identities_tsv}"
+  done
+
+  write_runner_receipt RUNNING 0
+  set +e
+  MIEL_NATIVE_PREFIX_MODE=native \
+    deployment/run-flight-native-suite.sh \
+    --backend-id native \
+    --backend-hodll windows \
+    --container-image native \
+    --container-image-sha256 native \
+    --container-id native \
+    --container-mount-root "${RUN_ROOT}" \
+    --source-executable "${input_paths[source_executable]}" \
+    --disposable-target "${input_paths[disposable_target]}" \
+    --game-root "${GAME_ROOT}" \
+    --state-root "${GAME_ROOT}" \
+    --user-profile "${input_paths[user_profile]}" \
+    --observer-dll "${input_paths[observer_dll]}" \
+    --observer-launcher "${input_paths[observer_launcher]}" \
+    --proxy-dinput "${input_paths[proxy_dinput]}" \
+    --real-dinput "${input_paths[real_dinput]}" \
+    --smoke-executable "${input_paths[smoke_executable]}" \
+    --wine-prefix "${WINE_PREFIX}" \
+    --suite-root "${SUITE_ROOT}" \
+    --output-root "${OUTPUT_ROOT}" \
+    --observe-ms 3600000 \
+    --max-records 1000000 \
+    --expected-uid "$(id -u)" \
+    2>&1 | tee "${RUN_ROOT}/native-suite.log"
+  suite_status="${PIPESTATUS[0]}"
+  set -e
+
+  if [[ "${suite_status}" -eq 0 ]]; then
+    write_runner_receipt PASSED 0
+  else
+    write_runner_receipt FAILED "${suite_status}"
+  fi
+  exit "${suite_status}"
+fi
+
 # For non-FEX backends (x86 wine), skip FEX contract validation
 # but still extract observer tools from the image.
 if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" != "fex" ]]; then

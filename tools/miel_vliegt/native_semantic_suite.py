@@ -141,6 +141,17 @@ class ExecutionAdapter(Protocol):
     def activate(self, config: SuiteRunConfig) -> contextlib.AbstractContextManager[None]: ...
 
 
+class NativeExecAdapter:
+    """Pass-through execution adapter for native Windows (no Docker)."""
+
+    def validate(self, config: SuiteRunConfig) -> dict[str, Any]:
+        return {
+            "container_id": "native",
+            "container_image": "native",
+            "container_image_sha256": "native",
+        }
+
+
 class DockerExecAdapter:
     """Route all Wine commands through one already-running exact-bind container."""
 
@@ -764,11 +775,13 @@ def validate_run_config(config: SuiteRunConfig) -> dict[str, Any]:
     if config.backend_id not in BACKENDS \
             or config.backend_hodll != BACKENDS[config.backend_id]:
         raise SuiteRunError("backend id and HODLL do not match the reviewed pair")
-    if not isinstance(config.container_image, str) or not config.container_image.strip():
-        raise SuiteRunError("container_image must be non-empty")
-    _require_hash(config.container_image_sha256, "container_image_sha256")
-    if not isinstance(config.container_id, str) or not config.container_id.strip():
-        raise SuiteRunError("container_id must be non-empty")
+    is_native = config.backend_id == "native"
+    if not is_native:
+        if not isinstance(config.container_image, str) or not config.container_image.strip():
+            raise SuiteRunError("container_image must be non-empty")
+        _require_hash(config.container_image_sha256, "container_image_sha256")
+        if not isinstance(config.container_id, str) or not config.container_id.strip():
+            raise SuiteRunError("container_id must be non-empty")
     hangover_probe.validate_observe_ms(config.observe_ms)
     if config.backend_id == "fex" \
             and config.observe_ms != FEX_CALIBRATED_SUITE_OBSERVE_MS:
@@ -2236,7 +2249,12 @@ def _run_calibrated_suite_locked(
 
     provenance = validate_run_config(config)
     provenance["exclusive_lock"] = dict(lock_receipt)
-    adapter = execution_adapter if execution_adapter is not None else DockerExecAdapter()
+    if execution_adapter is not None:
+        adapter = execution_adapter
+    elif config.backend_id == "native":
+        adapter = NativeExecAdapter()
+    else:
+        adapter = DockerExecAdapter()
     provenance["execution_adapter"] = adapter.validate(config)
     backend = provenance["backend"]
     output_root = _resolved(config.output_root)
