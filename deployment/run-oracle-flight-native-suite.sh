@@ -349,7 +349,14 @@ PYFIX
   exit "${suite_status}"
 fi
 
-# For non-FEX backends (x86 wine), skip FEX contract validation
+# Native/wine backends are fully handled by the shortcut above and must never
+# reach the Docker path. Guard against any unexpected fallthrough.
+if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" || "${MIEL_NATIVE_BACKEND_ID:-fex}" == "wine" ]]; then
+  echo "ERROR: ${MIEL_NATIVE_BACKEND_ID} backend should have exited via shortcut" >&2
+  exit 70
+fi
+
+# For non-FEX backends that need Docker, skip FEX contract validation
 # but still extract observer tools from the image.
 if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" != "fex" ]]; then
   IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE_REFERENCE}")"
