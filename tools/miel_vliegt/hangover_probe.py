@@ -491,7 +491,7 @@ def native_smoke_command(
     rpcss_timeout_ms: int,
 ) -> list[str]:
     arguments = [smoke_executable.name]
-    if backend.get("id") == "fex":
+    if backend.get("id") in ("fex", "wine"):
         arguments.extend(("--rpcss-timeout-ms", str(rpcss_timeout_ms)))
     return native_wine_command(*arguments, backend=backend)
 
