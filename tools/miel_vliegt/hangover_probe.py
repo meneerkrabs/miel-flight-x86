@@ -499,10 +499,9 @@ def native_smoke_command(
 def native_smoke_sentinel(backend: dict) -> str:
     return (
         FEX_SMOKE_SENTINEL
-        if backend.get("id") == "fex"
+        if backend.get("id") in ("fex", "wine")
         else SMOKE_SENTINEL
     )
-
 
 def validate_contract(contract_path: Path = CONTRACT) -> dict:
     contract = json.loads(contract_path.read_text())
