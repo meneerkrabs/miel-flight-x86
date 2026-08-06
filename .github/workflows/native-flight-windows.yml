@@ -1,12 +1,14 @@
 name: Native flight Windows suite
 
 on:
+  push:
+    branches: [master]
+    paths: ["TRIGGER_WINDOWS"]
   workflow_dispatch:
-    inputs:
-      iso_release_tag:
-        description: 'Release tag with encrypted ISO'
-        required: true
-        type: string
+  push:
+    branches: [master]
+    paths: ['.github/workflows/native-flight-windows.yml', 'TRIGGER_WINDOWS']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,10 +16,14 @@ permissions:
 jobs:
   windows-suite:
     name: Flight suite on native Windows
-    runs-on: windows-latest
+    runs-on:
+  push:
+    branches: [master]
+    paths: ["TRIGGER_WINDOWS"]
+  workflow_dispatch: windows-latest
     timeout-minutes: 180
     env:
-      ISO_RELEASE_TAG: ${{ inputs.iso_release_tag }}
+      ISO_RELEASE_TAG: flight-iso-v1
 
     steps:
       - name: Check out source
@@ -26,42 +32,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version:
+  push:
+    branches: [master]
+    paths: ["TRIGGER_WINDOWS"]
+  workflow_dispatch: '3.12'
 
       - name: Install build tools
         shell: pwsh
         run: |
-          choco install 7zip mingw -y --no-progress
-          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $env:GITHUB_PATH
+          choco install 7zip mingw -y --no-progress --ignore-package-exit-codes
+          $mingwPath = Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "i686-w64-mingw32-gcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          if ($mingwPath) { echo $mingwPath >> $env:GITHUB_PATH }
 
       - name: Build observer tools
         shell: bash
         run: |
           set -e
           cd tools/miel_vliegt
-          PRODUCER_SHA=$(python3 -c "
-          import sys; sys.path.insert(0, '.')
-          from native_dispatch_hook_contract import compute_producer_build_sha
-          print(compute_producer_build_sha())
-          " 2>/dev/null || echo "placeholder")
-          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h
-          
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || true
+          PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
           mkdir -p /opt/miel
-          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
-            -Ihangover hangover/native_observer_launcher.c \
-            -o /opt/miel/native-observer-launcher.exe
-          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
-            -shared -Ihangover -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Ihangover \
+            hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -shared -Ihangover \
+            -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
             hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
             -o /opt/miel/native-observer-hook.dll
-          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
-            -shared -Wl,--kill-at x86_wine/native_observer_dinput_proxy.c \
-            -o /opt/miel/DINPUT.dll
-          cp /usr/lib/i386-linux-gnu/wine/i386-windows/dinput.dll /opt/miel/dinput-real.dll 2>/dev/null || true
-          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Wall -Wextra \
-            -Ihangover fex_wine/win32_readiness_canary.c \
-            -o /opt/miel/wine-readiness-canary.exe
-          echo "Observer tools built"
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -shared -Wl,--kill-at \
+            x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
+          i686-w64-mingw32-gcc -std=c11 -Os -s -static-libgcc -Ihangover \
+            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
+          echo "=== Observer tools built ==="
           ls -la /opt/miel/
 
       - name: Download and decrypt ISO
@@ -73,38 +75,27 @@ jobs:
           ISO_DIR="$RUNNER_TEMP/miel-isos"
           mkdir -p "$ISO_DIR"
           gh release download "$ISO_RELEASE_TAG" --repo meneerkrabs/miel-flight-x86 \
+            --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR" || \
+          gh release download "$ISO_RELEASE_TAG" --repo cgnl/miel-flight-x86 \
             --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR"
           echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
-            --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" \
-            "$ISO_DIR/Mielvliegt.iso.gpg"
+            --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" "$ISO_DIR/Mielvliegt.iso.gpg"
           rm "$ISO_DIR/Mielvliegt.iso.gpg"
           echo "PRIVATE_ISO=$ISO_DIR/Mielvliegt.iso" >> "$GITHUB_ENV"
-          ls -lh "$ISO_DIR/Mielvliegt.iso"
 
-      - name: Run flight suite (native Windows, no Wine)
+      - name: Run flight suite (native Windows)
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPOSITORY_ROOT="$(pwd)"
+          export REPOSITORY_ROOT="$(pwd)"
+          export MIEL_NATIVE_BACKEND_ID=native
           NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
           mkdir -p "$NATIVE_RUN_ROOT"
-          
           args=(
             --run-root "$NATIVE_RUN_ROOT"
             --private-iso "$PRIVATE_ISO"
             --image-reference skip
           )
-          export MIEL_NATIVE_BACKEND_ID=native
-          export REPOSITORY_ROOT
-          deployment/run-oracle-flight-native-suite.sh "${args[@]}" \
-            2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
-
-      - name: Summarize
-        if: always()
-        shell: bash
-        run: |
-          cat "$RUNNER_TEMP/miel-native/native-suite.log" 2>/dev/null | tail -5 || echo "No log"
+          deployment/run-oracle-flight-native-suite.sh "${args[@]}" 2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
 
       - name: Upload results
         if: always()
