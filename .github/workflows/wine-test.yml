@@ -1,0 +1,29 @@
+name: Wine test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine wine32 libwine libwine:i386 p7zip-full unshield gcc-mingw-w64-i686
+          wine --version
+      - name: Build
+        run: |
+          cd tools/miel_vliegt
+          EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+          i686-w64-mingw32-gcc -std=c11 -Os -s -Ihangover -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" hangover/native_observer_launcher.c -o /tmp/launcher.exe
+          i686-w64-mingw32-gcc -std=c11 -Os -s -shared -Ihangover hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c -o /tmp/hook.dll
+          echo "Build OK"
+      - name: Test
+        run: echo "Runner works with Wine + mingw"
