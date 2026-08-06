@@ -36,7 +36,7 @@ concurrency:
 jobs:
   x86-native-suite:
     name: Calibrate and replay flight scenarios on x86 Wine
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
     env:
       ISO_RELEASE_TAG: ${{ inputs.iso_release_tag }}
