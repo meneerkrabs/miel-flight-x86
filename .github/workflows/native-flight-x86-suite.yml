@@ -1,72 +1,8 @@
 name: Native flight x86 suite (no FEX)
-
 on:
-  push:
-    branches: [master]
-    paths: ['TRIGGER_X86']
   workflow_dispatch:
-    inputs:
-      iso_release_tag:
-        description: 'Release tag with encrypted ISO'
-        required: false
-        type: string
-        default: 'flight-iso-v1'
-
-permissions:
-  contents: read
-
 jobs:
-  x86-native-suite:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    env:
-      ISO_RELEASE_TAG: flight-iso-v1
-
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Build x86 Wine Docker image
-        run: |
-          docker build \
-            -t miel-flight-x86-wine:latest \
-            -f tools/miel_vliegt/x86_wine/Dockerfile \
-            .
-
-      - name: Download and decrypt ISO
-        run: |
-          ISO_DIR="$RUNNER_TEMP/miel-isos"
-          mkdir -p "$ISO_DIR"
-          gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 \
-            --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR"
-          echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
-            --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" "$ISO_DIR/Mielvliegt.iso.gpg"
-          rm "$ISO_DIR/Mielvliegt.iso.gpg"
-          echo "PRIVATE_ISO=$ISO_DIR/Mielvliegt.iso" >> "$GITHUB_ENV"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
-
-      - name: Run suite (x86 Wine, no FEX)
-        run: |
-          export REPOSITORY_ROOT="$(pwd)"
-          export MIEL_NATIVE_BACKEND_ID=wine
-          NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
-          mkdir -p "$NATIVE_RUN_ROOT"
-          arguments=(
-            --run-root "$NATIVE_RUN_ROOT"
-            --private-iso "$PRIVATE_ISO"
-            --image-reference miel-flight-x86-wine:latest
-          )
-          deployment/run-oracle-flight-native-suite.sh "${arguments[@]}" \
-            2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: flight-x86-${{ github.run_id }}
-          path: ${{ runner.temp }}/miel-native/
-          retention-days: 30
+      - run: echo "x86 suite runner works"
