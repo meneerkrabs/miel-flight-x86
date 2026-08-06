@@ -145,11 +145,16 @@ class NativeExecAdapter:
     """Pass-through execution adapter for native Windows (no Docker)."""
 
     def validate(self, config: SuiteRunConfig) -> dict[str, Any]:
+        backend = config.backend_id
         return {
-            "container_id": "native",
-            "container_image": "native",
-            "container_image_sha256": "native",
+            "container_id": backend,
+            "container_image": backend,
+            "container_image_sha256": backend,
         }
+    @contextlib.contextmanager
+    def activate(self, config: SuiteRunConfig) -> Iterator[None]:
+        """No-op context manager for pass-through execution (no Docker)."""
+        yield
 
 
 class DockerExecAdapter:
@@ -775,7 +780,7 @@ def validate_run_config(config: SuiteRunConfig) -> dict[str, Any]:
     if config.backend_id not in BACKENDS \
             or config.backend_hodll != BACKENDS[config.backend_id]:
         raise SuiteRunError("backend id and HODLL do not match the reviewed pair")
-    is_native = config.backend_id == "native"
+    is_native = config.backend_id in ("native", "wine")
     if not is_native:
         if not isinstance(config.container_image, str) or not config.container_image.strip():
             raise SuiteRunError("container_image must be non-empty")
@@ -2251,7 +2256,7 @@ def _run_calibrated_suite_locked(
     provenance["exclusive_lock"] = dict(lock_receipt)
     if execution_adapter is not None:
         adapter = execution_adapter
-    elif config.backend_id == "native":
+    elif config.backend_id in ("native", "wine"):
         adapter = NativeExecAdapter()
     else:
         adapter = DockerExecAdapter()

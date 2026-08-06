@@ -76,7 +76,12 @@ if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "fex" ]]; then
     exit 69
   }
 fi
-for command in docker 7z unshield python3 sha256sum cmp git tee install; do
+if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "fex" ]]; then
+  REQUIRED_COMMANDS="docker 7z unshield python3 sha256sum cmp git tee install"
+else
+  REQUIRED_COMMANDS="7z unshield python3 sha256sum cmp git tee install"
+fi
+for command in ${REQUIRED_COMMANDS}; do
   command -v "${command}" >/dev/null || {
     echo "required command is unavailable: ${command}" >&2
     exit 69
@@ -177,11 +182,62 @@ for row in "${private_identity_rows[@]:1}"; do
 done
 
 # Native Windows backend: no Docker, no Wine, run directly
-if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" ]]; then
-  echo "=== Native Windows backend: skipping Docker entirely ==="
+write_runner_receipt() {
+  local status="$1"
+  local suite_exit="$2"
+  python3 - \
+    "${RUN_ROOT}/runner-receipt.json" \
+    "${status}" \
+    "${suite_exit}" \
+    "${IMAGE_ID}" \
+    "${CONTAINER_ID}" \
+    "${identities_tsv}" \
+    "${OUTPUT_ROOT}" \
+    "${OBSERVE_MS}" \
+    "${MAX_RECORDS}" \
+    "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" <<'PY'
+import json
+from pathlib import Path
+import sys
 
-  NATIVE_BACKEND_ID="native"
-  NATIVE_BACKEND_HODLL="windows"
+(
+    output_path, status, suite_exit, image_id, container_id,
+    identities_path, suite_output, observe_ms, max_records, commit,
+) = sys.argv[1:]
+inputs = {}
+for line in Path(identities_path).read_text(encoding="utf-8").splitlines():
+    label, sha256, path = line.split("\t")
+    inputs[label] = {"path": path, "sha256": sha256}
+receipt = {
+    "schema": 1,
+    "protocol": "miel-vliegt-oracle-native-suite-runner",
+    "status": status,
+    "suite_exit_code": int(suite_exit),
+    "repository_commit": commit,
+    "observe_ms": int(observe_ms),
+    "max_records": int(max_records),
+    "image_id": image_id,
+    "container_id": container_id,
+    "inputs": inputs,
+    "suite_output_root": suite_output,
+}
+}
+
+if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" || "${MIEL_NATIVE_BACKEND_ID:-fex}" == "wine" ]]; then
+  BACKEND="${MIEL_NATIVE_BACKEND_ID:-fex}"
+  echo "=== ${BACKEND} backend: skipping Docker entirely ==="
+  
+  # Resolve tool paths: prefer /opt/miel (workflow-built), fallback to repo
+  if [[ -f /opt/miel/native-observer-hook.dll ]]; then
+    TOOLS_SRC="/opt/miel"
+  else
+    TOOLS_SRC="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover"
+  fi
+  echo "Using observer tools from: ${TOOLS_SRC}"
+  readonly IMAGE_ID="${BACKEND}"
+  readonly CONTAINER_ID="${BACKEND}"
+
+  # Backend-specific settings set dynamically below
 
   # Extract game files from ISO (same as Docker path)
   readonly INSTALLER_ROOT="${RUN_ROOT}/private-installer"
@@ -224,11 +280,11 @@ PYFIX
     [source_executable]="${GAME_ROOT}/MulleMeck.exe"
     [disposable_target]="${GAME_ROOT}/MulleMeck.exe"
     [user_profile]="${FIXTURE_ROOT}/user0.dat"
-    [observer_dll]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/native-observer-hook.dll"
-    [observer_launcher]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/native-observer-launcher.exe"
-    [proxy_dinput]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/DINPUT.dll"
-    [real_dinput]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/dinput-real.dll"
-    [smoke_executable]="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover/wine-readiness-canary.exe"
+    [observer_dll]="${TOOLS_SRC}/native-observer-hook.dll"
+    [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
+    [proxy_dinput]="${TOOLS_SRC}/DINPUT.dll"
+    [real_dinput]="${TOOLS_SRC}/dinput-real.dll"
+    [smoke_executable]="${TOOLS_SRC}/wine-readiness-canary.exe"
     [data_archive]="${GAME_ROOT}/data.up"
     [map_archive]="${GAME_ROOT}/map.up"
     [sounds_archive]="${GAME_ROOT}/sounds.up"
@@ -244,13 +300,26 @@ PYFIX
 
   write_runner_receipt RUNNING 0
   set +e
-  MIEL_NATIVE_PREFIX_MODE=native \
+  # For wine backend, start Xvfb before running the suite
+  if [[ "${BACKEND}" == "wine" ]]; then
+    echo "=== Starting Xvfb for wine backend ===" 
+    Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+    export DISPLAY=:99
+    sleep 2
+    # Initialize Wine prefix
+    export WINEPREFIX="${WINE_PREFIX}"
+    mkdir -p "${WINE_PREFIX}"
+    WINEDEBUG=-all wineboot --init 2>/dev/null || true
+    sleep 3
+    echo "=== Wine prefix ready ===" 
+  fi
+  MIEL_NATIVE_PREFIX_MODE="${BACKEND}" \
     deployment/run-flight-native-suite.sh \
-    --backend-id native \
-    --backend-hodll windows \
-    --container-image native \
-    --container-image-sha256 native \
-    --container-id native \
+    --backend-id "${BACKEND}" \
+    --backend-hodll "${MIEL_NATIVE_BACKEND_HODLL:-${BACKEND}}" \
+    --container-image "${BACKEND}" \
+    --container-image-sha256 "${BACKEND}" \
+    --container-id "${BACKEND}" \
     --container-mount-root "${RUN_ROOT}" \
     --source-executable "${input_paths[source_executable]}" \
     --disposable-target "${input_paths[disposable_target]}" \
@@ -514,52 +583,6 @@ for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
     >>"${identities_tsv}"
 done
 
-write_runner_receipt() {
-  local status="$1"
-  local suite_exit="$2"
-  python3 - \
-    "${RUN_ROOT}/runner-receipt.json" \
-    "${status}" \
-    "${suite_exit}" \
-    "${IMAGE_ID}" \
-    "${CONTAINER_ID}" \
-    "${identities_tsv}" \
-    "${OUTPUT_ROOT}" \
-    "${OBSERVE_MS}" \
-    "${MAX_RECORDS}" \
-    "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-(
-    output_path, status, suite_exit, image_id, container_id,
-    identities_path, suite_output, observe_ms, max_records, commit,
-) = sys.argv[1:]
-inputs = {}
-for line in Path(identities_path).read_text(encoding="utf-8").splitlines():
-    label, sha256, path = line.split("\t")
-    inputs[label] = {"path": path, "sha256": sha256}
-receipt = {
-    "schema": 1,
-    "protocol": "miel-vliegt-oracle-native-suite-runner",
-    "status": status,
-    "suite_exit_code": int(suite_exit),
-    "repository_commit": commit,
-    "observe_ms": int(observe_ms),
-    "max_records": int(max_records),
-    "image_id": image_id,
-    "container_id": container_id,
-    "inputs": inputs,
-    "suite_output_root": suite_output,
-}
-temporary = Path(output_path + ".tmp")
-temporary.write_text(
-    json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-temporary.replace(output_path)
-PY
 }
 
 NATIVE_BACKEND_ID="${MIEL_NATIVE_BACKEND_ID:-fex}"

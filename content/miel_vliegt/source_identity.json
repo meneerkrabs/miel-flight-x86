@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "edition": "miel-vliegt-de-wereld-rond-nl",
+  "iso": {
+    "filename": "Mielvliegt.iso",
+    "sha256": "693a85370b704e743f56c7d6c39bc89574c1a74129ca351157e5b9514aaa3a60"
+  },
+  "executable": {
+    "filename": "MulleMeck.exe",
+    "sha256": "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+  },
+  "launcher": {
+    "filename": "Start_Mulle.exe",
+    "sha256": "c575b54bdc54bcd0486e2f490f9aa05dc6079d2f0cd16162d7c1bd10bb2c2793"
+  },
+  "cc_dll": {
+    "filename": "Cc.dll",
+    "sha256": "c7b0599de35db339c4a3acc56987e36c7b07ebf3553fb7511bc31d18d667c70e"
+  },
+  "udspack_dll": {
+    "filename": "UdsPack.dll",
+    "sha256": "c58479bea25373414f80d6532cc6c78da53483d98cc6511daa7ec4af1a489df6"
+  },
+  "help_file": {
+    "filename": "MIELMONTEUR.HLP",
+    "sha256": "41ab6d31194d48252402634db283c4397686e9a3727e54e7e0e6290f1b7898a9"
+  }
+}

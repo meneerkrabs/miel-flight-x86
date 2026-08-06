@@ -5,7 +5,13 @@ readonly repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly launcher="${repository_root}/tools/miel_vliegt/fex_wine/run_native_suite.sh"
 readonly mode="${MIEL_NATIVE_PREFIX_MODE:-cold-audit}"
 
-if [[ "${mode}" == "sealed" ]]; then
+# Map native/wine modes to cold-audit (they run without Docker/containers)
+effective_mode="${mode}"
+if [[ "${mode}" == "native" || "${mode}" == "wine" ]]; then
+  effective_mode="cold-audit"
+fi
+
+if [[ "${effective_mode}" == "sealed" ]]; then
   : "${MIEL_NATIVE_TMPFS_ROOT:?sealed mode needs a tmpfs path inside the exact bind mount}"
   : "${MIEL_SEALED_PREFIX_ROOT:?sealed mode needs a persistent prefix store}"
   : "${MIEL_FEX_HODLL_SHA256:?sealed mode needs the verified HoDLL SHA-256}"
@@ -16,9 +22,9 @@ if [[ "${mode}" == "sealed" ]]; then
     exit 65
   fi
   install -d -m 0700 "${MIEL_SEALED_PREFIX_ROOT}"
-elif [[ "${mode}" != "cold-audit" ]]; then
+elif [[ "${effective_mode}" != "cold-audit" ]]; then
   echo "MIEL_NATIVE_PREFIX_MODE must be cold-audit or sealed" >&2
   exit 64
 fi
 
-exec "${launcher}" "${mode}" "$@"
+exec "${launcher}" "${effective_mode}" "$@"
