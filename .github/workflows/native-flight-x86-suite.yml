@@ -1,4 +1,4 @@
-name: Native flight x86 suite (no FEX)
+name: Native flight x86 suite (no FEX, no Docker)
 
 on:
   workflow_dispatch:
@@ -7,44 +7,51 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  x86-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: Build x86 Wine Docker image
-        run: |
-          docker build \
-            -t miel-flight-x86-wine:latest \
-            -f tools/miel_vliegt/x86_wine/Dockerfile \
-            .
-          echo "Docker image built successfully"
-          docker images miel-flight-x86-wine
-      - name: Save Docker image
-        run: docker save miel-flight-x86-wine:latest | gzip > /tmp/miel-flight-x86-wine.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp/miel-flight-x86-wine.tar.gz
-          retention-days: 1
-
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     env:
       ISO_RELEASE_TAG: flight-iso-v1
+
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-      - name: Load Docker image
-        run: docker load < /tmp/miel-flight-x86-wine.tar.gz
+
+      - name: Install Wine and build tools
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine wine32 wine64 libwine libwine:i386 \
+            libgl1-mesa-dri libgl1-mesa-dri:i386 libgl1 libgl1:i386 \
+            fonts-liberation xauth xvfb p7zip-full unshield \
+            gcc-mingw-w64-i686
+          wine --version
+
+      - name: Build observer tools
+        run: |
+          set -ex
+          cd tools/miel_vliegt
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || \
+            PYTHONPATH=. python3 -m tools.miel_vliegt.native_scene_navigator emit-header hangover/native_scenes.generated.h 2>/dev/null || true
+          PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
+          EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+          mkdir -p /opt/miel
+          i686-w64-mingw32-gcc -std=c11 -Os -s -Ihangover \
+            -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" \
+            hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
+          i686-w64-mingw32-gcc -std=c11 -Os -s -shared -Ihangover \
+            -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
+            hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
+            -o /opt/miel/native-observer-hook.dll
+          i686-w64-mingw32-gcc -std=c11 -Os -s -shared -Wl,--kill-at \
+            x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
+          i686-w64-mingw32-gcc -std=c11 -Os -s -Ihangover \
+            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
+          cp /usr/lib/i386-linux-gnu/wine/i386-windows/dinput.dll /opt/miel/dinput-real.dll
+          echo "=== Build complete ==="
+
       - name: Download and decrypt ISO
         run: |
           ISO_DIR="$RUNNER_TEMP/miel-isos"
@@ -58,7 +65,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
-      - name: Run suite
+
+      - name: Run suite (native x86 Wine, no FEX, no Docker)
         run: |
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=wine
@@ -67,8 +75,9 @@ jobs:
           deployment/run-oracle-flight-native-suite.sh \
             --run-root "$NATIVE_RUN_ROOT" \
             --private-iso "$PRIVATE_ISO" \
-            --image-reference miel-flight-x86-wine:latest \
+            --image-reference skip \
             2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
