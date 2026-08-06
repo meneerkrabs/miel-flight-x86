@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "protocol": "miel-vliegt-fex-wine-runner",
+  "target": {
+    "host_os": "ubuntu-24.04",
+    "host_arch": "arm64",
+    "linux_guest_arches": [
+      "amd64",
+      "i386"
+    ],
+    "windows_guest_arch": "i386",
+    "host_binfmt_registration": false
+  },
+  "fex": {
+    "release": "FEX-2607",
+    "package": "fex-emu-armv8.0",
+    "package_version": "2607-1~n",
+    "package_url": "https://ppa.launchpadcontent.net/fex-emu/fex/ubuntu/pool/main/f/fex-emu-armv8.0/fex-emu-armv8.0_2607-1~n_arm64.deb",
+    "package_sha256": "145247dfbde97bd845d8418c6cafd866a769aaf0906379b546944d6b7f10466b"
+  },
+  "rootfs": {
+    "distribution": "Ubuntu 24.04",
+    "format": "squashfs",
+    "snapshot": "2025-12-27",
+    "url": "https://rootfs.fex-emu.gg/Ubuntu_24_04/2025-12-27/Ubuntu_24_04.sqsh",
+    "size_bytes": 520323072,
+    "sha256": "12ed41fd13ea4eb2c65c939e920bb6994702c44ae33b68bc7fc8781468b69b04",
+    "upstream_xxh3_64": "f1aafb8234af1ac5"
+  },
+  "wine": {
+    "distribution": "Ubuntu 24.04",
+    "snapshot": "20251227T000000Z",
+    "version": "9.0~repack-4build3",
+    "installation": "host-verified-snapshot-extract",
+    "mingw_runtime": {
+      "package": "gcc-mingw-w64-i686-win32-runtime",
+      "version": "13.2.0-6ubuntu1+26.1",
+      "prefix_bootstrap_dlls": [
+        "zlib1.dll",
+        "libgcc_s_dw2-1.dll"
+      ]
+    },
+    "packages": [
+      "wine",
+      "wine64:amd64",
+      "wine32:i386"
+    ]
+  },
+  "entrypoint": {
+    "path": "/opt/miel/fex-wine-canary",
+    "success_sentinel": "MIEL_FEX_WINE_XVFB_CANARY_OK",
+    "persistent_prefix": false
+  },
+  "runtime_compatibility": {
+    "fex_smc_checks": "full",
+    "full_smc_processes": [
+      "MulleMeck*.exe",
+      "native-observer-launcher.exe",
+      "native-scene-debugger.exe"
+    ],
+    "auxiliary_smc_checks": "mtrack",
+    "wine_renderer": "gdi",
+    "renderer_configuration_owner": "single-process-readiness-canary",
+    "wine_session_boundary": "readiness-and-game-share-live-wineserver",
+    "wine_session_start_proof": "spawn-plus-smoke-plus-runtime-readiness",
+    "wine_session_shutdown": "kill-then-wait-before-state-removal",
+    "readiness_budget": {
+      "guest_process_timeout_seconds": 90,
+      "rpcss_poll_timeout_milliseconds": 30000,
+      "sleep_based_readiness": false
+    },
+    "gtsoftware_sha256": "c3cebce34373255993b23ca54e3f678487f44a5fb7c1b9f4a63aa3b5d82a9ee8",
+    "native_client": "640x480x16",
+    "xvfb_screen": "646x512x16",
+    "wine_client_offset": [3, 29],
+    "disabled_optional_installers": [
+      "mscoree",
+      "mshtml"
+    ],
+    "required_service": "RpcSs",
+    "required_com_classes": [
+      "{47D4D946-62E8-11CF-93BC-444553540000}",
+      "{BCDE0395-E52F-467C-8E3D-C4579291692E}"
+    ],
+    "baseline_observation_seconds": 25,
+    "baseline_outcome": "STAYED_RUNNING_NO_EXCEPTION",
+    "baseline_is_native_parity_evidence": false
+  },
+  "performance_lane": {
+    "default_mode": "cold-audit",
+    "optimized_mode": "sealed",
+    "backend": "fex",
+    "sealed_slots": ["A", "B"],
+    "independent_bootstrap_per_slot": true,
+    "seal_identity": [
+      "backend-id-and-hodll-name",
+      "hodll-content-sha256",
+      "container-image-and-sha256",
+      "wine-version-and-snapshot",
+      "fex-package-and-rootfs-sha256",
+      "smoke-executable-sha256",
+      "bootstrap-contract-sha256",
+      "xvfb-and-startup-contract-sha256",
+      "uid-and-gid"
+    ],
+    "wine_z_symlink_policy": "preserve-link-never-follow",
+    "scenario_prefix_policy": "clone-only-from-stopped-verified-seal",
+    "seal_verification": "before-and-after-every-clone-and-scenario",
+    "path_visibility": "sealed-store-and-tmpfs-below-exact-container-bind-root",
+    "store_retention": {
+      "managed_root_mode": "0700",
+      "suite_lock": "shared-for-complete-suite-lifetime",
+      "prune_lock": "exclusive",
+      "inactive_ttl_seconds": 2592000,
+      "unmarked_or_active_identity_pruning": false
+    },
+    "tmpfs": {
+      "bytes_per_job": 2147483648,
+      "max_jobs": 2,
+      "aggregate_bytes": 4294967296,
+      "no_swap": true,
+      "minimum_headroom_bytes": 8589934592
+    },
+    "evidence_publication": "content-verified-atomic-copyout-with-fsync",
+    "early_watchdog": "non-invasive-host-observation-before-session-dispatch",
+    "retry": {
+      "maximum": 1,
+      "classification": "pre-scenario-startup-hang-only",
+      "binary_and_configuration_must_be_identical": true,
+      "semantic_or_focus_failure_retry": false
+    },
+    "release_cold_audit_remains_available": true
+  },
+  "evidence_policy": {
+    "canary_is_native_parity_evidence": false,
+    "observer_artifacts_are_built": true,
+    "native_trace_is_required_for_promotion": true
+  }
+}

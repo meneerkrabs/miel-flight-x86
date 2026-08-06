@@ -1,0 +1,136 @@
+name: Native flight x86 suite (no FEX)
+
+on:
+  workflow_dispatch:
+    inputs:
+      iso_release_tag:
+        description: >-
+          GitHub release tag containing the encrypted ISO asset
+          (e.g. flight-iso-v1). The asset must be named Mielvliegt.iso.gpg.
+        required: true
+        type: string
+      crosswire:
+        description: Diagnostic replay swap (src1:dst1,src2:dst2)
+        required: false
+        type: string
+      winedebug:
+        description: Wine debug channels (default -all)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mielmonteur-x86-flight-v2
+  cancel-in-progress: false
+
+# This workflow runs the flight native semantic suite on a GitHub-hosted
+# x86_64 runner with native Wine i386 (NO FEX emulation). It is the
+# structural fix for the takeoff-climb replay crash that affects ALL
+# ARM64/FEX runs.
+#
+# The x86 Docker image (tools/miel_vliegt/x86_wine/Dockerfile) already
+# exists with native Wine i386 + observer tools. The game ISO is
+# provisioned as an encrypted release asset.
+jobs:
+  x86-native-suite:
+    name: Calibrate and replay flight scenarios on x86 Wine
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ISO_RELEASE_TAG: ${{ inputs.iso_release_tag }}
+
+    steps:
+      - name: Check out the requested native oracle source
+        uses: actions/checkout@v5
+
+      - name: Install Docker Buildx and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full unshield python3
+
+      - name: Download and decrypt game ISO
+        run: |
+          ISO_DIR="$RUNNER_TEMP/miel-isos"
+          mkdir -p "$ISO_DIR"
+          # Download the encrypted ISO from the private release asset
+          gh release download "$ISO_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Mielvliegt.iso.gpg" \
+            --dir "$ISO_DIR"
+          # Decrypt with the passphrase secret
+          gpg --batch --yes --decrypt \
+            --passphrase "$ISO_GPG_PASSPHRASE" \
+            --output "$ISO_DIR/Mielvliegt.iso" \
+            "$ISO_DIR/Mielvliegt.iso.gpg"
+          rm "$ISO_DIR/Mielvliegt.iso.gpg"
+          ls -la "$ISO_DIR/Mielvliegt.iso"
+          echo "PRIVATE_ISO=$ISO_DIR/Mielvliegt.iso" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
+
+      - name: Build x86 Wine Docker image
+        run: |
+          docker build \
+            -t miel-flight-x86-wine:latest \
+            -f tools/miel_vliegt/x86_wine/Dockerfile \
+            .
+
+      - name: Validate native suite orchestration contracts
+        run: |
+          bash -n \
+            deployment/run-flight-native-suite.sh \
+            deployment/run-oracle-flight-native-suite.sh \
+            tools/miel_vliegt/fex_wine/run_native_suite.sh
+          python3 -m unittest \
+            tools.miel_vliegt.test_oracle_native_suite_runner \
+            tools.miel_vliegt.test_native_semantic_suite
+
+      - name: Run calibrated seven-scenario native suite (x86 Wine)
+        env:
+          NATIVE_RUN_ROOT: ${{ runner.temp }}/miel-native-${{ github.run_id }}
+          NATIVE_SUITE_CROSSWIRE: ${{ inputs.crosswire }}
+          NATIVE_SUITE_WINEDEBUG: ${{ inputs.winedebug }}
+          MIEL_NATIVE_BACKEND_ID: wine
+          MIEL_NATIVE_BACKEND_HODLL: i386
+        run: |
+          arguments=(
+            --run-root "$NATIVE_RUN_ROOT"
+            --private-iso "$PRIVATE_ISO"
+            --image-reference miel-flight-x86-wine:latest
+          )
+          deployment/run-oracle-flight-native-suite.sh "${arguments[@]}"
+
+      - name: Project native evidence onto canonical completion gates
+        if: always()
+        env:
+          NATIVE_RUN_ROOT: ${{ runner.temp }}/miel-native-${{ github.run_id }}
+        run: |
+          if [[ -f "$NATIVE_RUN_ROOT/output/calibrated-suite-run.json" ]]; then
+            python3 tools/miel_vliegt/flight_scenario_completion_adapter.py \
+              --native-suite "$NATIVE_RUN_ROOT/output/calibrated-suite-run.json" \
+              --output "$NATIVE_RUN_ROOT/output/completion-adapter.json"
+          else
+            echo "No calibrated suite found"
+          fi
+
+      - name: Summarize native suite receipt
+        if: always()
+        env:
+          NATIVE_RUN_ROOT: ${{ runner.temp }}/miel-native-${{ github.run_id }}
+        run: |
+          if [[ -f "$NATIVE_RUN_ROOT/runner-receipt.json" ]]; then
+            cat "$NATIVE_RUN_ROOT/runner-receipt.json"
+          else
+            echo "No runner receipt found"
+          fi
+
+      - name: Upload complete calibrated and exact replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-flight-x86-${{ github.run_id }}
+          path: ${{ runner.temp }}/miel-native-${{ github.run_id }}/
+          retention-days: 30

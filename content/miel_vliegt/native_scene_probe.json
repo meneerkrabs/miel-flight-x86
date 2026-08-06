@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "probe_id": "miel-vliegt-nl-scene-navigation-v1",
+  "source": {
+    "edition": "miel-vliegt-de-wereld-rond-nl",
+    "executable": "MulleMeck.exe",
+    "executable_sha256": "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2",
+    "image_base": "0x00400000",
+    "relocations_stripped": true,
+    "mission_contract": "content/miel_vliegt/uds_flight_contracts.json",
+    "mission_contract_sha256": "c63b280c431ccd3da3bbf79229c9b8e2b877d238fa4841ff7b7e9b81bad5f6f0"
+  },
+  "engine": {
+    "process_entrypoint": {
+      "address": "0x00448852",
+      "signature": "558bec6aff6828dc440068b089440064",
+      "purpose": "reviewed early-bird bootstrap barrier after Windows loader initialization"
+    },
+    "mode_change": {
+      "address": "0x0041e450",
+      "signature": "568bf1578b7c240c8b8e8c01000085c9",
+      "calling_convention": "thiscall",
+      "manager": "ecx",
+      "mode_name_pointer": "[esp+4]"
+    },
+    "mode_lookup": {
+      "address": "0x0041e410",
+      "signature": "56578b7c240c85ff7422803f00741d8b"
+    },
+    "mode_tick": {
+      "address": "0x0041e4a0",
+      "signature": "568bf18b869001000085c0750432c05e",
+      "purpose": "game-thread runtime command rendezvous"
+    },
+    "startup_mode_transition": {
+      "address": "0x0041d75c",
+      "signature": "68b46545008bcee8e80c0000",
+      "argument_offset": 1,
+      "original_mode": "mode_login",
+      "original_mode_address": "0x004565b4",
+      "purpose": "debug-start scene selector after the complete mode registry has been constructed"
+    },
+    "scene_probe_marker": {
+      "address": "0x0045de91",
+      "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "capacity": 64,
+      "create_directory_iat": "0x0044c3bc",
+      "create_directory_iat_signature": "de0e0500",
+      "purpose": "probe-only loader marker; never present in a playable debug build"
+    },
+    "location_base_constructor": {
+      "address": "0x00424b40",
+      "signature": "6aff68269d440064a100000000506489"
+    },
+    "location_base_loader": {
+      "address": "0x00425660",
+      "signature": "6aff68aa9d440064a100000000506489"
+    },
+    "scene_registry": {
+      "address": "0x0041cd80",
+      "signature": "6aff68d998440064a100000000506489",
+      "registration_calls": [
+        {"scene":"ture_tapp","address":"0x0041d1a5","signature":"e8865d0200"},
+        {"scene":"sam_scribbler","address":"0x0041d1cb","signature":"e8605a0200"},
+        {"scene":"roy_mccoy","address":"0x0041d1f1","signature":"e8aa530200"},
+        {"scene":"atle_artillerist","address":"0x0041d217","signature":"e8242b0200"},
+        {"scene":"viola_wallmark","address":"0x0041d23d","signature":"e83e7a0200"},
+        {"scene":"brejton_bord","address":"0x0041d263","signature":"e8a82d0200"},
+        {"scene":"sampo_sanna","address":"0x0041d289","signature":"e8b2550200"},
+        {"scene":"grotte_grundlig","address":"0x0041d2af","signature":"e86c410200"},
+        {"scene":"gabriella_gourmet","address":"0x0041d2d5","signature":"e8563e0200"},
+        {"scene":"richard_revers","address":"0x0041d2fb","signature":"e8c04f0200"},
+        {"scene":"victor_vulcan","address":"0x0041d321","signature":"e85a750200"},
+        {"scene":"varldsutstallning","address":"0x0041d347","signature":"e814630200"},
+        {"scene":"vermont_vrak","address":"0x0041d36d","signature":"e83e6e0200"},
+        {"scene":"fiona_falk","address":"0x0041d393","signature":"e838380200"},
+        {"scene":"doris_digital","address":"0x0041d3b9","signature":"e802320200"},
+        {"scene":"raymond_rajser","address":"0x0041d3df","signature":"e84c480200"},
+        {"scene":"ernst_eremit","address":"0x0041d405","signature":"e866340200"},
+        {"scene":"mygghanget","address":"0x0041d42b","signature":"e8a0440200"}
+      ]
+    }
+  },
+  "navigation": {
+    "strategy": "wait-for-target-registration-then-rewrite-one-mode-transition",
+    "debug_start_strategy": "rewrite-the-reviewed-startup-mode-argument-after-complete-registry-construction",
+    "confirmation": "target-location-loader-entry",
+    "debug_start_confirmation": "probe-only-loader-marker-via-imported-CreateDirectoryA",
+    "runtime_commands": "schedule-thiscall-on-original-game-thread-at-mode-tick",
+    "unknown_scene_policy": "fail-closed"
+  },
+  "startup_targets": [
+    {"id":"flight","kind":"runtime_mode","mode":"mode_fly","mode_address":"0x00454f0c"}
+  ],
+  "scenes": [
+    {"id":"atle_artillerist","location_id":6,"mode":"mode_atleartillerist","mode_address":"0x0045b5c8","constructor":"0x0043fd40","constructor_signature":"6aff6838ab440064a1000000","loader":"0x0043fdf0","loader_signature":"64a1000000006aff6866ab44"},
+    {"id":"brejton_bord","location_id":9,"mode":"mode_brejtonbord","mode_address":"0x0045b524","constructor":"0x00440010","constructor_signature":"6aff6878ab440064a1000000","loader":"0x004400f0","loader_signature":"64a1000000006aff68bcab44"},
+    {"id":"doris_digital","location_id":17,"mode":"mode_dorisdigital","mode_address":"0x0045b4dc","constructor":"0x004405c0","constructor_signature":"6aff68d8ab440064a1000000","loader":"0x00440680","loader_signature":"64a1000000006aff6806ac44"},
+    {"id":"ernst_eremit","location_id":21,"mode":"mode_ernsteremit","mode_address":"0x0045b4c4","constructor":"0x00440870","constructor_signature":"6aff6818ac440064a1000000","loader":"0x00440930","loader_signature":"64a1000000006aff6851ac44"},
+    {"id":"fiona_falk","location_id":16,"mode":"mode_fionafalk","mode_address":"0x0045b570","constructor":"0x00440bd0","constructor_signature":"6aff6868ac440064a1000000","loader":"0x00440c80","loader_signature":"64a1000000006aff68a1ac44"},
+    {"id":"gabriella_gourmet","location_id":11,"mode":"mode_gabriellagourmet","mode_address":"0x0045b53c","constructor":"0x00441130","constructor_signature":"6aff68b8ac440064a1000000","loader":"0x004411f0","loader_signature":"64a1000000006aff68e6ac44"},
+    {"id":"grotte_grundlig","location_id":10,"mode":"mode_grottegrundlig","mode_address":"0x0045b558","constructor":"0x00441420","constructor_signature":"6aff68f8ac440064a1000000","loader":"0x004414e0","loader_signature":"64a1000000006aff6831ad44"},
+    {"id":"mygghanget","location_id":22,"mode":"mode_mygghanget","mode_address":"0x00455b40","constructor":"0x004418d0","constructor_signature":"6aff6848ad440064a1000000","loader":"0x004419a0","loader_signature":"56578b7c240c8bf157e8b23c"},
+    {"id":"raymond_rajser","location_id":20,"mode":"mode_raymondrajser","mode_address":"0x0045b584","constructor":"0x00441c30","constructor_signature":"6aff6868ad440064a1000000","loader":"0x00441d00","loader_signature":"64a1000000006aff68a1ad44"},
+    {"id":"richard_revers","location_id":12,"mode":"mode_richardrevers","mode_address":"0x0045b59c","constructor":"0x004422c0","constructor_signature":"6aff68b8ad440064a1000000","loader":"0x00442370","loader_signature":"64a1000000006aff68e6ad44"},
+    {"id":"roy_mccoy","location_id":2,"mode":"mode_roymccoy","mode_address":"0x0045b618","constructor":"0x004425a0","constructor_signature":"6aff68f8ad440064a1000000","loader":"0x00442650","loader_signature":"64a1000000006aff6826ae44"},
+    {"id":"sampo_sanna","location_id":8,"mode":"mode_samposanna","mode_address":"0x0045b4b0","constructor":"0x00442840","constructor_signature":"6aff6838ae440064a1000000","loader":"0x00442910","loader_signature":"64a1000000006aff687cae44"},
+    {"id":"sam_scribbler","location_id":3,"mode":"mode_samscribbler","mode_address":"0x0045b600","constructor":"0x00442c30","constructor_signature":"6aff6898ae440064a1000000","loader":"0x00442ce0","loader_signature":"64a1000000006aff68d1ae44"},
+    {"id":"ture_tapp","location_id":4,"mode":"mode_turetapp","mode_address":"0x0045b5b4","constructor":"0x00442f30","constructor_signature":"6aff68e8ae440064a1000000","loader":"0x00442ff0","loader_signature":"64a1000000006aff684aaf44"},
+    {"id":"varldsutstallning","location_id":14,"mode":"mode_varldsutstallning","mode_address":"0x004566d4","constructor":"0x00443660","constructor_signature":"6aff6888af440064a1000000","loader":"0x00443770","loader_signature":"64a1000000006aff68f8af44"},
+    {"id":"vermont_vrak","location_id":15,"mode":"mode_vermontvrak","mode_address":"0x0045b4f4","constructor":"0x004441b0","constructor_signature":"6aff6818b0440064a1000000","loader":"0x00444270","loader_signature":"64a1000000006aff6846b044"},
+    {"id":"victor_vulcan","location_id":13,"mode":"mode_victorvulcan","mode_address":"0x0045b50c","constructor":"0x00444880","constructor_signature":"6aff6858b0440064a1000000","loader":"0x00444950","loader_signature":"64a1000000006aff6891b044"},
+    {"id":"viola_wallmark","location_id":7,"mode":"mode_violawallmark","mode_address":"0x0045b5e4","constructor":"0x00444c80","constructor_signature":"6aff68ceb0440064a1000000","loader":"0x00444db0","loader_signature":"6aff68f6b0440064a1000000"}
+  ]
+}

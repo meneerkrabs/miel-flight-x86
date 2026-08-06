@@ -1,0 +1,3832 @@
+{
+  "schema": 1,
+  "parity_scope": {
+    "proven": [
+      "world_bounds",
+      "start_position",
+      "controls",
+      "fixed_step_cap",
+      "mission_data"
+    ],
+    "not_yet_parity": [
+      "native_3d_rendering",
+      "terrain_height_sampling",
+      "3d_collision_volumes",
+      "aerodynamic_field_semantics",
+      "landing_detection",
+      "mission_runtime_execution"
+    ]
+  },
+  "sources": {
+    "map_a.ccf": {
+      "sha256": "6f1073b911fb22c13e3ab69154dfc025d8435e6c743336bbe5a250c029893a3f"
+    },
+    "Map - Layers.raw": {
+      "sha256": "be69fb37e7e121bf3030150d521c40dd2dcbc6790962afe493984354e41410b8"
+    },
+    "missions": {
+      "sha256": "3e4260e8d3174f5e3d8c2682602686347a999aee5ba8a6325374d17c15c08293"
+    },
+    "map_textures": {
+      "sha256": "d985557dd80190b80c19d57a7d1d2f7afdd445544b364a78d0a2d569474ea30b"
+    },
+    "MulleMeck.exe": {
+      "sha256": "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+    },
+    "MIELMONTEUR.HLP": {
+      "sha256": "41ab6d31194d48252402634db283c4397686e9a3727e54e7e0e6290f1b7898a9"
+    }
+  },
+  "runtime": {
+    "world": {
+      "width": 4000,
+      "depth": 4000,
+      "start": {
+        "x": 1289,
+        "y": 70,
+        "z": 1060
+      }
+    },
+    "controls": {
+      "left": "turn_left",
+      "right": "turn_right",
+      "up": "nose_down_descend",
+      "down": "nose_up_ascend",
+      "shift": "faster",
+      "control": "slower"
+    },
+    "simulation": {
+      "maximum_step_seconds": 0.04,
+      "gravity": 9.81
+    },
+    "native_evidence": {
+      "start_position": "MulleMeck.exe 0x40e4c9-0x40e4d7",
+      "maximum_step": "MulleMeck.exe 0x40e631-0x40e667",
+      "controls": "MIELMONTEUR.HLP (Dutch help)"
+    }
+  },
+  "native_proofs": {
+    "start_position": {
+      "address": "0x40e4c9",
+      "bytes_sha256": "c0df60e72eefb031734eefe9a11796b801eb57fddc1adb3dbc25234295afcbdf",
+      "bytes_length": 21,
+      "values": [
+        1289.0,
+        70.0,
+        1060.0
+      ]
+    },
+    "maximum_step": {
+      "address": "0x40e631",
+      "constant_address": "0x44c950",
+      "instruction_bytes_sha256": "c490f65551324d00d233352809efb6977730208befd52e6ec76b2b8c202b3cfd",
+      "instruction_bytes_length": 56,
+      "value": 0.03999999910593033
+    },
+    "controls": {
+      "left": "Druk de linkerpijltoets in als je naar links wil draaien.",
+      "right": "Druk de rechterpijltoets in als je naar rechts wil draaien.",
+      "up": "Druk de vooruit-pijltoets in als je met het vliegtuig wilt dalen",
+      "shift": "Verhoog de snelheid door de shift-toets in te drukken.",
+      "control": "Verminder de snelheid door de ctrl-toets in te drukken."
+    }
+  },
+  "counts": {
+    "mission_files": 22,
+    "package_files": 10,
+    "mission_declarations": 87,
+    "unique_mission_ids": 83,
+    "duplicate_mission_ids": 4,
+    "terrain_tile_textures": 625,
+    "alternate_map_textures": 61
+  },
+  "duplicate_mission_ids": [
+    28,
+    29,
+    30,
+    31
+  ],
+  "dependency_counts": {
+    "arrive": 121,
+    "enter_location": 21,
+    "item_inventory": 1,
+    "item_onplane": 5,
+    "leave": 3,
+    "map_event": 30,
+    "mission_activated": 13,
+    "mission_completed": 15,
+    "mission_notactivated": 20,
+    "mission_rewarded": 65,
+    "need_phototaken": 1,
+    "package_depleted": 6,
+    "photos_taken": 1,
+    "worldmap": 1
+  },
+  "action_counts": {
+    "ADD_BIRDMAPEVENT": 1,
+    "ADD_DROPFLYERSMAPEVENT": 2,
+    "ADD_MAPEVENT": 11,
+    "ADD_MAPEVENTRANDOMPOS": 16,
+    "DEVELOP_PHOTOS": 1,
+    "ENABLE_PHOTOCOLLECTION": 1,
+    "GETRANDOMPARTFROMPACKAGE": 6,
+    "GET_AIRPLANEPART": 1,
+    "GET_AIRPLANEPARTPACKAGE": 4,
+    "GET_ITEM": 37,
+    "LOSE_ITEM": 56,
+    "PLANT_CROPS": 1,
+    "PLAY_BARNSCRIPT": 7,
+    "PLAY_OUTRO": 1,
+    "PLAY_RADIO": 7,
+    "PLAY_SCRIPT": 96,
+    "PLAY_SCRIPTMODEFLY": 9,
+    "PLAY_SOUND": 18,
+    "SCARE_GOPHERS": 1,
+    "WATER_CROPS": 1
+  },
+  "missions": [
+    {
+      "name": "blankets_BB",
+      "id": 20,
+      "source": "data/Missions/bbstuff.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "9"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "8"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "9"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, getblankets"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "renskinn_brejton"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sampo_sanna, getblankets"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, gotblankets"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "renskinn_brejton"
+        }
+      ]
+    },
+    {
+      "name": "researchequipment_BB",
+      "id": 27,
+      "source": "data/Missions/bbstuff.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "9"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "24"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "17"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "9"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, getresearchequipment"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "forskargrejer_brejton"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "doris_digital, getresearchequipment"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, gotresearchequipment"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "forskargrejer_brejton"
+        }
+      ]
+    },
+    {
+      "name": "getcamera",
+      "id": 1,
+      "source": "data/Missions/camera.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "2"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "complete",
+          "type": "mission_completed",
+          "data": "2"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "2"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "roy_mccoy, needcamera"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "kamera"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, getcamera"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "roy_mccoy, gotcamera"
+        }
+      ]
+    },
+    {
+      "name": "worldphoto",
+      "id": 13,
+      "source": "data/Missions/camera.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "complete",
+          "type": "need_phototaken",
+          "data": "1"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ENABLE_PHOTOCOLLECTION",
+          "arguments": ""
+        },
+        {
+          "state": "reward",
+          "command": "DEVELOP_PHOTOS",
+          "arguments": ""
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, develop_photos"
+        }
+      ]
+    },
+    {
+      "name": "worldphoto_finished",
+      "id": 101,
+      "source": "data/Missions/camera.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "worldmap",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "2"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "roy_mccoy, worldmap"
+        }
+      ]
+    },
+    {
+      "name": "worldphoto_part",
+      "id": 45,
+      "source": "data/Missions/camera.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "13"
+        },
+        {
+          "state": "complete",
+          "type": "photos_taken",
+          "data": "10"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "1"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "GET_AIRPLANEPARTPACKAGE",
+          "arguments": "photo_continue"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_RADIO",
+          "arguments": "roy, 5, D"
+        }
+      ]
+    },
+    {
+      "name": "find_fabric",
+      "id": 32,
+      "source": "data/Missions/costumes.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "19"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "10"
+        },
+        {
+          "state": "complete",
+          "type": "mission_rewarded",
+          "data": "33"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "19"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, getfabric_circus"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, gotfabric_circus"
+        }
+      ]
+    },
+    {
+      "name": "find_garlic",
+      "id": 33,
+      "source": "data/Missions/costumes.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "11"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "32"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "7"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, getgarlic"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "viola_wallmark, getgarlic"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "vitlok_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gotgarlic"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "showtyg_atle"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "vitlok_gabriella"
+        }
+      ]
+    },
+    {
+      "name": "make_costumes",
+      "id": 34,
+      "source": "data/Missions/costumes.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "32"
+        },
+        {
+          "state": "complete",
+          "type": "mission_rewarded",
+          "data": "35"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "19"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, gotcostumes_circus"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "cirkusklader_linus"
+        }
+      ]
+    },
+    {
+      "name": "get_specialthread",
+      "id": 35,
+      "source": "data/Missions/costumes.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "6"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "34"
+        },
+        {
+          "state": "complete",
+          "type": "mission_rewarded",
+          "data": "36"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "6"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, getthread"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, gotthread"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "sytrad_atle"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "showtyg_atle"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "cirkusklader_linus"
+        }
+      ]
+    },
+    {
+      "name": "plant_crops",
+      "id": 6,
+      "source": "data/Missions/crops.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "7"
+        },
+        {
+          "state": "complete",
+          "type": "enter_location",
+          "data": "7"
+        },
+        {
+          "state": "complete",
+          "type": "item_onplane",
+          "data": "111"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "viola_wallmark, plantcrops"
+        },
+        {
+          "state": "reward",
+          "command": "PLANT_CROPS",
+          "arguments": ""
+        }
+      ]
+    },
+    {
+      "name": "get_cropsduster",
+      "id": 42,
+      "source": "data/Missions/crops.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "6"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, get_cropsduster"
+        },
+        {
+          "state": "reward",
+          "command": "GET_AIRPLANEPART",
+          "arguments": "111"
+        }
+      ]
+    },
+    {
+      "name": "water_crops",
+      "id": 43,
+      "source": "data/Missions/crops.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "7"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "6"
+        },
+        {
+          "state": "complete",
+          "type": "enter_location",
+          "data": "7"
+        },
+        {
+          "state": "complete",
+          "type": "item_onplane",
+          "data": "111"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "viola_wallmark, watercrops"
+        },
+        {
+          "state": "reward",
+          "command": "WATER_CROPS",
+          "arguments": ""
+        }
+      ]
+    },
+    {
+      "name": "scare_gophers",
+      "id": 44,
+      "source": "data/Missions/crops.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "43"
+        },
+        {
+          "state": "complete",
+          "type": "enter_location",
+          "data": "7"
+        },
+        {
+          "state": "complete",
+          "type": "item_onplane",
+          "data": "43"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "viola_scaregophers"
+        },
+        {
+          "state": "reward",
+          "command": "SCARE_GOPHERS",
+          "arguments": ""
+        }
+      ]
+    },
+    {
+      "name": "place_antennas_1",
+      "id": 39,
+      "source": "data/Missions/ddstuff.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "17"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "place_antenna_1"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "doris_digital, placeantennas"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "place_antenna_1, radiomast_doris_00, 0, 3660, 5, 680, 15"
+        },
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "radiomast_doris_02"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "radiomast_doris_02"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "radiomast_doris_01"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "doris_digital, radio_firstantenna"
+        }
+      ]
+    },
+    {
+      "name": "place_antennas_2",
+      "id": 40,
+      "source": "data/Missions/ddstuff.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "39"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "place_antenna_2"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "place_antenna_2, radiomast_doris_00, 0, 2963, 5, -79, 20"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "radiomast_doris_01"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "radiomast_doris_00"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "doris_digital, radio_secondantenna"
+        }
+      ]
+    },
+    {
+      "name": "place_antennas_3",
+      "id": 41,
+      "source": "data/Missions/ddstuff.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "40"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "place_antenna_3"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "17"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "place_antenna_3, radiomast_doris_00, 0, 1800, 5, 206, 20"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "radiomast_doris_00"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "doris_digital, radio_thirdantenna"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "doris_digital, antennasplaced"
+        }
+      ]
+    },
+    {
+      "name": "ernst_timber",
+      "id": 28,
+      "source": "data/Missions/enrstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "complete",
+          "type": "mission_completed",
+          "data": "31"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needtimber"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, delivertimber"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "virke_ernst"
+        }
+      ]
+    },
+    {
+      "name": "ernst_metalsheets",
+      "id": 29,
+      "source": "data/Missions/enrstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "28"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "metalsheets_ernst"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needmetalsheets"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "metalsheets_ernst, metall_ernst, 1, 3934, 50, 1828, 30"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, delivermetalsheets"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "metall_ernst"
+        }
+      ]
+    },
+    {
+      "name": "ernst_tools",
+      "id": 30,
+      "source": "data/Missions/enrstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "29"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "16"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needtools"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "fiona_falk, gettools"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, delivertools"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "verktyg_ernst"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "verktyg_ernst"
+        }
+      ]
+    },
+    {
+      "name": "richard_book",
+      "id": 31,
+      "source": "data/Missions/enrstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "12"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "28"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "book_richard"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "12"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, gettimber"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "book_richard, bok_richard, 1, 3500, 75, 350, 20, 150"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, gottimber"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "bok_richard"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "virke_ernst"
+        }
+      ]
+    },
+    {
+      "name": "ernst_tools",
+      "id": 30,
+      "source": "data/Missions/ernstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "29"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "16"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needtools"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "fiona_falk, gettools"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, delivertools"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "verktyg_ernst"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "verktyg_ernst"
+        }
+      ]
+    },
+    {
+      "name": "ernst_metalsheets",
+      "id": 29,
+      "source": "data/Missions/ernstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "28"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "metalsheets_ernst"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needmetalsheets"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "metalsheets_ernst, metall_ernst, 1, 3800, 50, 2110, 15"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "metall_ernst"
+        }
+      ]
+    },
+    {
+      "name": "richard_book",
+      "id": 31,
+      "source": "data/Missions/ernstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "12"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "28"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "book_richard"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "12"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, gettimber"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "book_richard, bok_richard, 1, 500, 25, 1740, 20, 150"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, gottimber"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "bok_richard"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "virke_ernst"
+        }
+      ]
+    },
+    {
+      "name": "ernst_timber",
+      "id": 28,
+      "source": "data/Missions/ernstbuild.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "21"
+        },
+        {
+          "state": "complete",
+          "type": "mission_completed",
+          "data": "31"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ernst_eremit, needtimber"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "virke_ernst"
+        }
+      ]
+    },
+    {
+      "name": "erzon_mobilephone",
+      "id": 601,
+      "source": "data/Missions/erzon.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "36"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "602"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "603"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "604"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_erzonmobile"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "erik, 1, B"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_erzonmobile, mobiltelefon_erik, 1, 1855, 25, 1441, 25, 1000"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "mobiltelefon_erik"
+        }
+      ]
+    },
+    {
+      "name": "erzon_fancyclock",
+      "id": 602,
+      "source": "data/Missions/erzon.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "36"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "601"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "603"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "604"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_erzonclock"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "erik, 3, B"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_erzonclock, klocka_erson, 1, 1855, 25, 1441, 25, 1000"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "klocka_erson"
+        }
+      ]
+    },
+    {
+      "name": "erzon_hangglider",
+      "id": 603,
+      "source": "data/Missions/erzon.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "36"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "601"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "602"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "604"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_erzonhangglider"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "erik, 4, B"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_erzonhangglider, hangglidare_erson, 1, 1855, 25, 1441, 25, 1000"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "hangglidare_erson"
+        }
+      ]
+    },
+    {
+      "name": "erzon_sunglasses",
+      "id": 604,
+      "source": "data/Missions/erzon.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "36"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "601"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "602"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "603"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_erzonsunglasses"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "erik, 5, B"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_erzonsunglasses, glasogon_erik, 1, 1855, 25, 1441, 25, 1000"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "glasogon_erik"
+        }
+      ]
+    },
+    {
+      "name": "erik_needhelp_thread",
+      "id": 36,
+      "source": "data/Missions/erzon.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "35"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "601"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "602"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "603"
+        },
+        {
+          "state": "activate",
+          "type": "mission_notactivated",
+          "data": "604"
+        },
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_mobilephone_special"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "3"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "erik, 1, B"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_mobilephone_special, mobiltelefon_erik, 1, 1855, 25, 1441, 25, 1000"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, erik_getthread"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "mobiltelefon_erik"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "sytrad_atle"
+        }
+      ]
+    },
+    {
+      "name": "getfurniture",
+      "id": 9,
+      "source": "data/Missions/ggcollect.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "11"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_table_1"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_table_2"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_chair_1"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_chair_2"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_chair_3"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_chair_4"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, getfurniture"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_table_1, bord_gabriella, 1, 3660, 5, 200, 15, 150"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_table_2, bord_gabriella_01, 1, 3560, 5, 50, 15, 150"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_chair_1, stol_gabriella, 1, 3660, 5, 250, 15, 150"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_chair_2, stol_gabriella_01, 1, 3660, 5, 0, 15, 150"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_chair_3, stol_gabriella_02, 1, 3460, 5, 100, 15, 150"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_chair_4, stol_gabriella_03, 1, 3760, 5, 0, 15, 150"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gotfurniture"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "bord_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "bord_gabriella_01"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "stol_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "stol_gabriella_01"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "stol_gabriella_02"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "stol_gabriella_03"
+        }
+      ]
+    },
+    {
+      "name": "gettablecloth",
+      "id": 10,
+      "source": "data/Missions/ggcollect.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "11"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "9"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "6"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gettablecloth"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, gettablecloth"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "dukar_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gottablecloth"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "dukar_gabriella"
+        }
+      ]
+    },
+    {
+      "name": "getcookpot",
+      "id": 11,
+      "source": "data/Missions/ggcollect.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "11"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "10"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "13"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, getcookpot"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, getcookpot"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "kastrull_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gotcookpot"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "kastrull_gabriella"
+        }
+      ]
+    },
+    {
+      "name": "getsupplies",
+      "id": 19,
+      "source": "data/Missions/ggcollect.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "11"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "11"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "17"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, getsupplies"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "doris_digital, getsupplies"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "varor_gabriella"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "gabriella_gourmet, gotsupplies"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "varor_gabriella"
+        }
+      ]
+    },
+    {
+      "name": "info_mygghanget",
+      "id": 1002,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "22"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "mygghanget, 11, B"
+        }
+      ]
+    },
+    {
+      "name": "info_roymccoy",
+      "id": 1004,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "2"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "roy_mccoy, 122, D"
+        }
+      ]
+    },
+    {
+      "name": "info_samscribbler",
+      "id": 1005,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "3"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "sam_scribbler, 137, E"
+        }
+      ]
+    },
+    {
+      "name": "info_varldsutstallning",
+      "id": 1006,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "14"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "varldsutstallning, 157, F"
+        }
+      ]
+    },
+    {
+      "name": "info_violawallmark",
+      "id": 1007,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "7"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "viola_wallmark, 179, G"
+        }
+      ]
+    },
+    {
+      "name": "info_atleartillerist",
+      "id": 1008,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "6"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "atle_artillerist, 196, H"
+        }
+      ]
+    },
+    {
+      "name": "info_turetapp",
+      "id": 1009,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "4"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "ture_tapp, 212, I"
+        }
+      ]
+    },
+    {
+      "name": "info_richardrevers",
+      "id": 1010,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "12"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "richard_revers, 240, K"
+        }
+      ]
+    },
+    {
+      "name": "info_raymondraser",
+      "id": 1011,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "20"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "raymond_raser, 255, L"
+        }
+      ]
+    },
+    {
+      "name": "info_fionafalk",
+      "id": 1012,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "16"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "fiona_falk, 267, M"
+        }
+      ]
+    },
+    {
+      "name": "info_grottegrundlig",
+      "id": 1013,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "10"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "grotte_grundlig, 284, N"
+        }
+      ]
+    },
+    {
+      "name": "info_gabriellagourmet",
+      "id": 1014,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "11"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "gabriella_gourmet, 309, O"
+        }
+      ]
+    },
+    {
+      "name": "info_brejtonbord",
+      "id": 1015,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "9"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "brejton_bord, 329, P"
+        }
+      ]
+    },
+    {
+      "name": "info_victorvulcan",
+      "id": 1016,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "13"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "victor_vulcan, 347, Q"
+        }
+      ]
+    },
+    {
+      "name": "info_vemontvrak",
+      "id": 1017,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "15"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "vermont_vrak, 368, R"
+        }
+      ]
+    },
+    {
+      "name": "info_dorisdigital",
+      "id": 1018,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "17"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "doris_digital, 388, S"
+        }
+      ]
+    },
+    {
+      "name": "info_ernsteremit",
+      "id": 1019,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "21"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "ernst_eremit, 405, T"
+        }
+      ]
+    },
+    {
+      "name": "info_samposanna",
+      "id": 1020,
+      "source": "data/Missions/locationinfo.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "enter_location",
+          "data": "8"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SOUND",
+          "arguments": "sampo_sanna, 423, U"
+        }
+      ]
+    },
+    {
+      "name": "mecchifinal",
+      "id": 9999,
+      "source": "data/Missions/mecchifinal.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "27"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "101"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "34"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "43"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "41"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "30"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "11"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1004"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1005"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1006"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1007"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1008"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1009"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1010"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1011"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1012"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1013"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1014"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1015"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1016"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1017"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1018"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1019"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1020"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "703"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "706"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "17"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "24"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "7"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "14"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_OUTRO",
+          "arguments": ""
+        }
+      ]
+    },
+    {
+      "name": "mecchi_story_TT",
+      "id": 2000,
+      "source": "data/Missions/mecchistory.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "4"
+        },
+        {
+          "state": "complete",
+          "type": "leave",
+          "data": "4"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ture_tapp, mecchi_story"
+        },
+        {
+          "state": "activate",
+          "command": "GET_AIRPLANEPARTPACKAGE",
+          "arguments": "ture_mecchistory"
+        }
+      ]
+    },
+    {
+      "name": "mecchi_story_VV",
+      "id": 2001,
+      "source": "data/Missions/mecchistory.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "13"
+        },
+        {
+          "state": "complete",
+          "type": "leave",
+          "data": "13"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, mecchi_story"
+        },
+        {
+          "state": "activate",
+          "command": "GET_AIRPLANEPARTPACKAGE",
+          "arguments": "victor_mecchistory"
+        }
+      ]
+    },
+    {
+      "name": "mecchi_story_VR",
+      "id": 2002,
+      "source": "data/Missions/mecchistory.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "15"
+        },
+        {
+          "state": "complete",
+          "type": "leave",
+          "data": "15"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, mecchi_story"
+        },
+        {
+          "state": "activate",
+          "command": "GET_AIRPLANEPARTPACKAGE",
+          "arguments": "vermont_mecchistory"
+        }
+      ]
+    },
+    {
+      "name": "deliver_newspaper_EE",
+      "id": 2,
+      "source": "data/Missions/newspapers.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "14"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "3"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, newspaper_emma"
+        },
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "tidning_emma"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, deliver_newspaper_emma"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "tidning_emma"
+        }
+      ]
+    },
+    {
+      "name": "deliver_newspaper_TT",
+      "id": 5,
+      "source": "data/Missions/newspapers.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "2"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "4"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "3"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, newspaper_ture"
+        },
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "tidning_ture"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ture_tapp, deliver_newspaper"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "tidning_ture"
+        }
+      ]
+    },
+    {
+      "name": "deliver_newspaper_VR",
+      "id": 12,
+      "source": "data/Missions/newspapers.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "15"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "2002"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "15"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, get_newspaper"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, newspaper_vermont"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "tidning_vermont"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, deliver_newspaper"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "tidning_vermont"
+        }
+      ]
+    },
+    {
+      "name": "deliver_newspaper_BB",
+      "id": 18,
+      "source": "data/Missions/newspapers.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "2001"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "3"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "9"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_RADIO",
+          "arguments": "brejton, 1, B"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sam_scribbler, newspaper_brejton"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "tidning_brejton"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, deliver_newspaper"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "tidning_brejton"
+        }
+      ]
+    },
+    {
+      "name": "photo_impactcraters_one",
+      "id": 701,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "6"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_impactcrater_one"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_impactcrater_one, meteorfoton_atle_00, 1, 2500, 5, 1300, 15"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, needphotos"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "atle_artillerist, phototaken"
+        }
+      ]
+    },
+    {
+      "name": "photo_impactcraters_two",
+      "id": 702,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "701"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_impactcrater_two"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_impactcrater_two, meteorfoton_atle_00, 0, 2500, 5, 1080, 15"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "meteorfoton_atle_00"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "meteorfoton_atle_01"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "atle_artillerist, phototaken"
+        }
+      ]
+    },
+    {
+      "name": "photo_impactcraters_three",
+      "id": 703,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "702"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_impactcrater_three"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "6"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_impactcrater_three, meteorfoton_atle_00, 0, 2410, 15, 1060, 15"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "meteorfoton_atle_01"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "meteorfoton_atle_02"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "atle_artillerist, allphotostaken"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, deliverphotos"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "meteorfoton_atle_02"
+        }
+      ]
+    },
+    {
+      "name": "photo_birds_one",
+      "id": 704,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "16"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_bird_one"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_bird_one, fagelfoton_fiona_00, 1, 3686, 90, 1450, 15"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "fiona_falk, needphotos"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "fiona_falk, phototaken"
+        }
+      ]
+    },
+    {
+      "name": "photo_birds_two",
+      "id": 705,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "704"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_bird_two"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_bird_two, fagelfoton_fiona_00, 0, 3603, 95, 1345, 15"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "fagelfoton_fiona_00"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "fagelfoton_fiona_01"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "fiona_falk, phototaken"
+        }
+      ]
+    },
+    {
+      "name": "photo_birds_three",
+      "id": 706,
+      "source": "data/Missions/photograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "705"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "photo_bird_three"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "16"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENT",
+          "arguments": "photo_bird_three, fagelfoton_fiona_00, 0, 3554, 15, 1382, 15"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "fagelfoton_fiona_01"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "fagelfoton_fiona_02"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPTMODEFLY",
+          "arguments": "fiona_falk, allphotostaken"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "fiona_falk, deliverphotos"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "fagelfoton_fiona_02"
+        }
+      ]
+    },
+    {
+      "name": "powerplant_getup",
+      "id": 16,
+      "source": "data/Missions/powerplant.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "14"
+        },
+        {
+          "state": "complete",
+          "type": "mission_rewarded",
+          "data": "26"
+        },
+        {
+          "state": "complete",
+          "type": "item_onplane",
+          "data": "281"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "10"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, need_cable"
+        }
+      ]
+    },
+    {
+      "name": "powerplant_repair",
+      "id": 17,
+      "source": "data/Missions/powerplant.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "16"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "17"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "10"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, need_newpowerplant"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "doris_digital, get_powerplant"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "elverk_grotte"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, deliver_newpowerplant"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "elverk_grotte"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "kabel_grotte"
+        }
+      ]
+    },
+    {
+      "name": "getcable",
+      "id": 26,
+      "source": "data/Missions/powerplant.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "15"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "16"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "dropflyers_snoozeburg"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "15"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, getcable"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_DROPFLYERSMAPEVENT",
+          "arguments": "dropflyers_snoozeburg, 1842, 0, 1390, 70"
+        },
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "flygblad_snoozeburg"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "flygblad_snoozeburg"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, gotcable"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "kabel_grotte"
+        }
+      ]
+    },
+    {
+      "name": "randomdoris_1",
+      "id": 5001,
+      "source": "data/Missions/randomdoris.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "doris_radio_1"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "doris_radio_1"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "doris_randompart"
+        }
+      ]
+    },
+    {
+      "name": "randomdoris_2",
+      "id": 5002,
+      "source": "data/Missions/randomdoris.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "5001"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "1015"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "doris_radio_2"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "doris_radio_2"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "doris_randompart"
+        }
+      ]
+    },
+    {
+      "name": "randomdoris_3",
+      "id": 5003,
+      "source": "data/Missions/randomdoris.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "5002"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "41"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "doris_radio_3"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "doris_radio_3"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "doris_randompart"
+        }
+      ]
+    },
+    {
+      "name": "randommia_1",
+      "id": 6001,
+      "source": "data/Missions/randommia.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "mia_radio_1"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "mia_radio_1"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "mia_randompart"
+        }
+      ]
+    },
+    {
+      "name": "randommia_2",
+      "id": 6002,
+      "source": "data/Missions/randommia.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "6001"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "mia_radio_2"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "mia_radio_2"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "mia_randompart"
+        }
+      ]
+    },
+    {
+      "name": "randommia_3",
+      "id": 6003,
+      "source": "data/Missions/randommia.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "1"
+        },
+        {
+          "state": "activate",
+          "type": "mission_completed",
+          "data": "6002"
+        },
+        {
+          "state": "complete",
+          "type": "package_depleted",
+          "data": "mia_radio_3"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "7777"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GETRANDOMPARTFROMPACKAGE",
+          "arguments": "mia_radio_3"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_BARNSCRIPT",
+          "arguments": "mia_randompart"
+        }
+      ]
+    },
+    {
+      "name": "find_reindeer",
+      "id": 38,
+      "source": "data/Missions/reindeer.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "8"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_reindeer"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "8"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sampo_sanna, getreindeer"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "sampo_sanna, gotreindeer"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_reindeer, ren_samposanna, 1, 617, 100, 2822, 30, 100"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "ren_samposanna"
+        }
+      ]
+    },
+    {
+      "name": "rope",
+      "id": 8,
+      "source": "data/Missions/rope.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "12"
+        },
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "7"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "12"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, getrope"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "richard_revers, gotrope"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "rep_starkt_emma"
+        }
+      ]
+    },
+    {
+      "name": "seismograph_partone",
+      "id": 21,
+      "source": "data/Missions/seismograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "13"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "9"
+        },
+        {
+          "state": "reward",
+          "type": "map_event",
+          "data": "found_seismograph_partone"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, getseismograph_partone"
+        },
+        {
+          "state": "complete",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_seismograph_partone, seismografdel1_victor, 1, 2545, 90, 2900, 30, 100"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "brejton_bord, getseismograph_partone"
+        }
+      ]
+    },
+    {
+      "name": "seismograph_partthree",
+      "id": 24,
+      "source": "data/Missions/seismograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "22"
+        },
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "13"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "caught_bird_seismograph"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "13"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, getseismograph_partthree"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, gotseismograph_partthree"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_BIRDMAPEVENT",
+          "arguments": "caught_bird_seismograph, 500, 50, -200, 20"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "seismografdel3_victor"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "seismografdel3_victor"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "hav_victor"
+        }
+      ]
+    },
+    {
+      "name": "seismograph_parttwo",
+      "id": 22,
+      "source": "data/Missions/seismograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "21"
+        },
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "13"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "15"
+        },
+        {
+          "state": "reward",
+          "type": "mission_rewarded",
+          "data": "23"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "13"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "LOSE_ITEM",
+          "arguments": "seismografdel1_victor"
+        },
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "victor_vulcan, getseismograph_parttwo"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, getseismograph_parttwo"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "seismografdel2_victor"
+        }
+      ]
+    },
+    {
+      "name": "leaflets_VV_seismograph",
+      "id": 23,
+      "source": "data/Missions/seismograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "22"
+        },
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "15"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "dropflyers_exhibition"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "15"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "flygblad_utstallning"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_DROPFLYERSMAPEVENT",
+          "arguments": "dropflyers_exhibition, 1520, 0, 350, 100"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "flygblad_utstallning"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "vermont_vrak, spread_leaflets_seismograph"
+        },
+        {
+          "state": "reward",
+          "command": "GET_ITEM",
+          "arguments": "seismografdel2_victor"
+        }
+      ]
+    },
+    {
+      "name": "seismograph_getnet",
+      "id": 25,
+      "source": "data/Missions/seismograph.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_activated",
+          "data": "24"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "7"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "13"
+        }
+      ],
+      "actions": [
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "viola_wallmark, getnet"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "hav_victor"
+        }
+      ]
+    },
+    {
+      "name": "gettent",
+      "id": 3,
+      "source": "data/Missions/tent.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "14"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "2"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "14"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, needtent_emma"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "roy_mccoy, gottent"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "talttrasigt_emma"
+        }
+      ]
+    },
+    {
+      "name": "repairtent",
+      "id": 4,
+      "source": "data/Missions/tent.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "14"
+        },
+        {
+          "state": "activate",
+          "type": "item_inventory",
+          "data": "talttrasigt_emma"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "6"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "14"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, repairtent_emma"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "atle_artillerist, tentrepair"
+        },
+        {
+          "state": "activate",
+          "command": "LOSE_ITEM",
+          "arguments": "talttrasigt_emma"
+        },
+        {
+          "state": "activate",
+          "command": "GET_ITEM",
+          "arguments": "talttrasigt_atle"
+        },
+        {
+          "state": "complete",
+          "command": "LOSE_ITEM",
+          "arguments": "talttrasigt_atle"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "talt_emma"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, needrope_emma"
+        }
+      ]
+    },
+    {
+      "name": "raisetent",
+      "id": 7,
+      "source": "data/Missions/tent.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "4"
+        },
+        {
+          "state": "complete",
+          "type": "mission_rewarded",
+          "data": "8"
+        },
+        {
+          "state": "reward",
+          "type": "item_onplane",
+          "data": "281"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "14"
+        }
+      ],
+      "actions": [
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "varldsutstallning, tentraised_emma"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "talt_emma"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "rep_starkt_emma"
+        }
+      ]
+    },
+    {
+      "name": "vacuumcleaner",
+      "id": 14,
+      "source": "data/Missions/vacuumcleaner.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "complete",
+          "type": "arrive",
+          "data": "4"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "10"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, vacuumbroken"
+        },
+        {
+          "state": "complete",
+          "command": "PLAY_SCRIPT",
+          "arguments": "ture_tapp, get_vacuumparts"
+        },
+        {
+          "state": "complete",
+          "command": "GET_ITEM",
+          "arguments": "dammsugardelar_grotte"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "dammsugardelar_grotte"
+        }
+      ]
+    },
+    {
+      "name": "vacuumbags",
+      "id": 15,
+      "source": "data/Missions/vacuumcleaner.txt",
+      "dependencies": [
+        {
+          "state": "activate",
+          "type": "arrive",
+          "data": "10"
+        },
+        {
+          "state": "activate",
+          "type": "mission_rewarded",
+          "data": "14"
+        },
+        {
+          "state": "complete",
+          "type": "map_event",
+          "data": "found_vacuumbags"
+        },
+        {
+          "state": "reward",
+          "type": "arrive",
+          "data": "10"
+        }
+      ],
+      "actions": [
+        {
+          "state": "activate",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, need_vacuumbags"
+        },
+        {
+          "state": "activate",
+          "command": "ADD_MAPEVENTRANDOMPOS",
+          "arguments": "found_vacuumbags, dammsugarpase_grotte, 1, 2080, 50, 2000, 20, 200"
+        },
+        {
+          "state": "reward",
+          "command": "PLAY_SCRIPT",
+          "arguments": "grotte_grundlig, deliver_vacuumbags"
+        },
+        {
+          "state": "reward",
+          "command": "LOSE_ITEM",
+          "arguments": "dammsugarpase_grotte"
+        }
+      ]
+    }
+  ]
+}
