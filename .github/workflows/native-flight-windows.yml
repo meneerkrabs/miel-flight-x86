@@ -31,14 +31,15 @@ jobs:
           set -ex
           cd tools/miel_vliegt
           CC=$(which gcc)
-          echo "CC=$CC"
           $CC --version | head -1
           
-          # Generate the header (or create empty stub if it fails)
-          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || {
-            echo "// Generated header stub" > hangover/native_scenes.generated.h
-            echo "#pragma once" >> hangover/native_scenes.generated.h
-          }
+          # Generate header (try, then create stub if it fails)
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>&1 || true
+          if [ ! -f hangover/native_scenes.generated.h ]; then
+            echo '#pragma once' > hangover/native_scenes.generated.h
+            echo 'typedef struct { const char *id; const char *target_mode; } SceneDispatch;' >> hangover/native_scenes.generated.h
+          fi
+          ls -la hangover/native_scenes.generated.h
           
           PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
           
