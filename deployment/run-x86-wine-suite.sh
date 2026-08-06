@@ -212,7 +212,6 @@ MIEL_NATIVE_PREFIX_MODE=wine \
   --output-root "${OUTPUT_ROOT}" \
   --observe-ms "${OBSERVE_MS}" \
   --max-records "${MAX_RECORDS}" \
-  --expected-uid "$(id -u)"
 suite_status=$?
 set -e
 
