@@ -135,11 +135,22 @@ declare -A input_paths=(
   [miel_ini]="${GAME_ROOT}/Miel.ini"
 )
 
+# Compute SHA256 for all inputs
+declare -A input_sha256=()
+for label in "${!input_paths[@]}"; do
+  input_sha256["${label}"]="$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)"
+done
+
 identities_tsv="${RUN_ROOT}/input-identities.tsv"
 : >"${identities_tsv}"
 for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-  sha=$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)
-  printf '%s\t%s\t%s\n' "${label}" "${sha}" "${input_paths[${label}]}" >>"${identities_tsv}"
+  printf '%s\t%s\t%s\n' "${label}" "${input_sha256[${label}]}" "${input_paths[${label}]}" >>"${identities_tsv}"
+done
+
+# Build SHA256 arguments for the suite
+sha256_args=()
+for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
+  sha256_args+=("--${label//_/-}-sha256" "${input_sha256[${label}]}")
 done
 
 # Start Xvfb
