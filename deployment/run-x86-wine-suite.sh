@@ -163,14 +163,6 @@ Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
 sleep 2
 export DISPLAY=:99
 
-# Initialize Wine prefix
-echo "=== Initializing Wine prefix ==="
-export WINEPREFIX="${WINE_PREFIX}"
-mkdir -p "${WINE_PREFIX}"
-WINEDEBUG=-all wineboot --init 2>/dev/null || true
-sleep 3
-echo "=== Wine prefix ready ==="
-wine --version
 
 # Write runner receipt
 write_receipt() {
