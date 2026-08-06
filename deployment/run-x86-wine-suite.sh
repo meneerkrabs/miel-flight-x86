@@ -193,25 +193,33 @@ PY
 
 write_receipt RUNNING 0
 
-# Diagnostic: test game from PROXY_ROOT (simulating observer launcher)
-echo "=== DIAGNOSTIC: Game from PROXY_ROOT (like launcher) ==="
-# Copy ALL game files to proxy root (not just exe + DINPUT)
+# Diagnostic: test observer launcher directly
+echo "=== DIAGNOSTIC: Observer launcher test ==="
 cp -a "${GAME_ROOT}/." "${PROXY_ROOT}/"
-# Ensure DINPUT proxy is the observer one (not the game's original)
 cp "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
 cp "${TOOLS_SRC}/dinput-real.dll" "${PROXY_ROOT}/dinput-real.dll"
 cp "${TOOLS_SRC}/native-observer-hook.dll" "${PROXY_ROOT}/native-observer-hook.dll"
-cp "${TOOLS_SRC}/native-observer-launcher.exe" "${PROXY_ROOT}/native-observer-launcher.exe"
-echo "Proxy dir contents:" && ls "${PROXY_ROOT}/" | head -20
+LAUNCHER="${TOOLS_SRC}/native-observer-launcher.exe"
+echo "Launcher: ${LAUNCHER}"
+ls -la "${LAUNCHER}" || echo "LAUNCHER MISSING"
 export WINEPREFIX="${RUN_ROOT}/diag-wine"
 export WINEARCH=win32
-export WINEDEBUG=-all
+export WINEDEBUG=warn+all
 export WINEDLLOVERRIDES="dinput=n,b"
-echo "=== Running game from PROXY_ROOT ==="
+export MIEL_REAL_DINPUT="${PROXY_ROOT}/dinput-real.dll"
+export MIEL_OBSERVER_DLL="${PROXY_ROOT}/native-observer-hook.dll"
 cd "${PROXY_ROOT}"
-timeout 15 wine MulleMeck.exe 2>&1 | tail -30 || true
-echo "=== Game from PROXY_ROOT exit: $? ==="
-unset WINEDLLOVERRIDES
+timeout 30 wine "${LAUNCHER}" \
+  --target "${PROXY_ROOT}/MulleMeck.exe" \
+  --cwd "${GAME_ROOT}" \
+  --observer "${PROXY_ROOT}/native-observer-hook.dll" \
+  --real-dinput "${PROXY_ROOT}/dinput-real.dll" \
+  --observe-ms 10000 \
+  2>&1 | tail -50 || true
+echo "=== Launcher exit: $? ==="
+# Check for receipt
+cat "${PROXY_ROOT}/launch-receipt.json" 2>/dev/null || cat "${GAME_ROOT}/launch-receipt.json" 2>/dev/null || echo "No receipt found"
+unset WINEDLLOVERRIDES MIEL_REAL_DINPUT MIEL_OBSERVER_DLL
 
 # Debug: show SHA256 args
 echo "=== SHA256 args count: ${#sha256_args[@]} ==="
