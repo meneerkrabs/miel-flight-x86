@@ -33,8 +33,7 @@ jobs:
         run: |
           set -ex
           cd tools/miel_vliegt
-          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || \
-            PYTHONPATH=. python3 -m tools.miel_vliegt.native_scene_navigator emit-header hangover/native_scenes.generated.h 2>/dev/null || true
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || true
           PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
           EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
           mkdir -p /opt/miel
@@ -66,45 +65,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
 
-      - name: Diagnostic: test Wine game launch
-        run: |
-          set -ex
-          # Extract game files for direct test
-          mkdir -p /tmp/game-test
-          cd tools/miel_vliegt
-          ISO_DIR="$RUNNER_TEMP/miel-isos"
-          7z x -y -o/tmp/game-test/installer "$PRIVATE_ISO" >/dev/null
-          mkdir -p /tmp/game-test/system
-          cd /tmp/game-test/system
-          unshield -g "System Files" x /tmp/game-test/installer/data1.cab
-          7z e -y -o/tmp/game-test/system "$PRIVATE_ISO" data.up map.up sounds.up Miel.ini
-          cd /tmp/game-test/system/System_Files
-          
-          # Start Xvfb
-          Xvfb :99 -screen 0 646x512x16 -nolisten tcp &
-          sleep 2
-          export DISPLAY=:99
-          
-          # Init wine prefix
-          export WINEPREFIX=/tmp/game-test/wine-prefix
-          export WINEARCH=win32
-          export WINEDEBUG=-all
-          wineboot --init 2>/dev/null || true
-          sleep 3
-          
-          # Try running the game for 10 seconds
-          echo "=== Testing game launch ==="
-          timeout 15 wine MulleMeck.exe 2>&1 | tail -30 || true
-          echo "=== Game launch test done (exit: $?) ==="
-        env:
-          PRIVATE_ISO: ${{ steps.download-iso.outputs.PRIVATE_ISO }}
-
       - name: Run suite (native x86 Wine, no FEX, no Docker)
         run: |
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=wine
           NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
-          # Use dedicated wine suite runner (no Docker/FEX complexity)
           deployment/run-x86-wine-suite.sh \
             --run-root "$NATIVE_RUN_ROOT" \
             --private-iso "$PRIVATE_ISO"
