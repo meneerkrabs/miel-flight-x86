@@ -197,6 +197,12 @@ PY
 
 write_receipt RUNNING 0
 
+# Debug: show SHA256 args
+echo "=== SHA256 args count: ${#sha256_args[@]} ==="
+for arg in "${sha256_args[@]}"; do
+  echo "  arg: ${arg}"
+done
+
 # Run the suite
 echo "=== Running suite ==="
 set +e
