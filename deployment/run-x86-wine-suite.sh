@@ -107,14 +107,6 @@ PYFIX
 mkdir -p "${GAME_ROOT}/Data/User"
 install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
 
-# Copy exe and proxy DINPUT.dll to proxy directory
-install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
-install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
-
-# Clean state snapshot
-mkdir -m 0700 "${CLEAN_STATE_ROOT}"
-cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
-
 # Resolve observer tools (prefer /opt/miel from workflow build)
 if [[ -f /opt/miel/native-observer-hook.dll ]]; then
   TOOLS_SRC="/opt/miel"
@@ -122,6 +114,14 @@ else
   TOOLS_SRC="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover"
 fi
 echo "Observer tools from: ${TOOLS_SRC}"
+
+# Copy exe and proxy DINPUT.dll to proxy directory
+install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
+install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
+
+# Clean state snapshot
+mkdir -m 0700 "${CLEAN_STATE_ROOT}"
+cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
 
 # Input identities
 declare -A input_paths=(
