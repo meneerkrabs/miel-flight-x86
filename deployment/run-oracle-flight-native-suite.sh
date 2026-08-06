@@ -15,6 +15,9 @@ RUN_ROOT=""
 PRIVATE_ISO="/home/ubuntu/miel-isos/Mielvliegt.iso"
 IMAGE_REFERENCE=""
 CONTAINER_ID=""
+CONTAINER_IMAGE=""
+IMAGE_ID=""
+IMAGE_SHA256=""
 PROBE_CONTAINER=""
 PROBE_ROOT=""
 VALIDATION_RESULT=""
@@ -223,6 +226,7 @@ receipt = {
 }
 }
 
+echo "DEBUG: MIEL_NATIVE_BACKEND_ID=${MIEL_NATIVE_BACKEND_ID:-UNSET}" 
 if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" || "${MIEL_NATIVE_BACKEND_ID:-fex}" == "wine" ]]; then
   BACKEND="${MIEL_NATIVE_BACKEND_ID:-fex}"
   echo "=== ${BACKEND} backend: skipping Docker entirely ==="
@@ -234,8 +238,8 @@ if [[ "${MIEL_NATIVE_BACKEND_ID:-fex}" == "native" || "${MIEL_NATIVE_BACKEND_ID:
     TOOLS_SRC="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover"
   fi
   echo "Using observer tools from: ${TOOLS_SRC}"
-  readonly IMAGE_ID="${BACKEND}"
-  readonly CONTAINER_ID="${BACKEND}"
+  IMAGE_ID="${BACKEND}"
+  CONTAINER_ID="${BACKEND}"
 
   # Backend-specific settings set dynamically below
 
