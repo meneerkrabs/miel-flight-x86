@@ -193,6 +193,17 @@ PY
 
 write_receipt RUNNING 0
 
+# Diagnostic: test direct game launch under Wine (before suite)
+echo "=== DIAGNOSTIC: Direct game launch test ==="
+GAME_TEST_ROOT="${RUN_ROOT}/game-test"
+mkdir -p "${GAME_TEST_ROOT}"
+cp -a "${GAME_ROOT}/." "${GAME_TEST_ROOT}/"
+export WINEPREFIX="${RUN_ROOT}/diag-wine"
+export WINEARCH=win32
+export WINEDEBUG=-all
+timeout 15 wine "${GAME_TEST_ROOT}/MulleMeck.exe" 2>&1 | tail -30 || true
+echo "=== Game test exit: $? ==="
+
 # Debug: show SHA256 args
 echo "=== SHA256 args count: ${#sha256_args[@]} ==="
 for arg in "${sha256_args[@]}"; do
