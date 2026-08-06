@@ -1875,17 +1875,24 @@ def run_scene_navigation(
     )
     # DEBUG: dump launcher output on failure
     if start_patch_launch and start_patch_launch.get("exit_code") != 0:
-        import sys as _sys
-        _stdout = start_patch_launch.get("stdout", "") or ""
-        _stderr = start_patch_launch.get("stderr", "") or ""
-        print("=== LAUNCHER FAILED exit={} ===".format(start_patch_launch.get("exit_code")), file=_sys.stderr)
-        if _stdout: print("STDOUT_TAIL:", _stdout[-800:], file=_sys.stderr)
-        if _stderr: print("STDERR_TAIL:", _stderr[-800:], file=_sys.stderr)
-        for _p in [str(output_dir / "launch-receipt.json"), str(cwd / "launch-receipt.json")]:
-            try:
-                print("RECEIPT:", Path(_p).read_text()[:1000], file=_sys.stderr)
-                break
-            except Exception: pass
+        import sys as _sys, json as _json
+        print("=== LAUNCHER FAILED ===", file=_sys.stderr)
+        print("KEYS:", list(start_patch_launch.keys()), file=_sys.stderr)
+        print("EXIT:", start_patch_launch.get("exit_code"), file=_sys.stderr)
+        print("TIMED_OUT:", start_patch_launch.get("timed_out"), file=_sys.stderr)
+        _text = str(start_patch_launch.get("stdout", "") or start_patch_launch.get("output", "") or "")
+        if _text: print("OUTPUT_TAIL:", _text[-1200:], file=_sys.stderr)
+        else: print("NO OUTPUT CAPTURED", file=_sys.stderr)
+        # Try to find receipt JSON anywhere in cwd or output_dir
+        import subprocess as _sp
+        _find = _sp.run(["find", str(cwd), str(output_dir), "-name", "*receipt*", "-type", "f"],
+                       capture_output=True, text=True, timeout=5)
+        print("RECEIPT_FILES:", _find.stdout.strip()[:500], file=_sys.stderr)
+        for _line in _find.stdout.strip().split("\n"):
+            if _line and _line.endswith(".json"):
+                try:
+                    print("RECEIPT_CONTENT:", Path(_line).read_text()[:1500], file=_sys.stderr)
+                except Exception: pass
 
     start_patch_confirmed = bool(
         observer_launcher_receipt
