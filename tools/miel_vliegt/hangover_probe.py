@@ -1873,6 +1873,20 @@ def run_scene_navigation(
             encoding="utf-8", errors="replace",
         )
     )
+    # DEBUG: dump launcher output on failure
+    if start_patch_launch and start_patch_launch.get("exit_code") != 0:
+        import sys as _sys
+        _stdout = start_patch_launch.get("stdout", "") or ""
+        _stderr = start_patch_launch.get("stderr", "") or ""
+        print("=== LAUNCHER FAILED exit={} ===".format(start_patch_launch.get("exit_code")), file=_sys.stderr)
+        if _stdout: print("STDOUT_TAIL:", _stdout[-800:], file=_sys.stderr)
+        if _stderr: print("STDERR_TAIL:", _stderr[-800:], file=_sys.stderr)
+        for _p in [str(output_dir / "launch-receipt.json"), str(cwd / "launch-receipt.json")]:
+            try:
+                print("RECEIPT:", Path(_p).read_text()[:1000], file=_sys.stderr)
+                break
+            except Exception: pass
+
     start_patch_confirmed = bool(
         observer_launcher_receipt
         and observer_loaded
