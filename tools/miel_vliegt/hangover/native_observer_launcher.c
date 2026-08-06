@@ -552,7 +552,7 @@ int main(int argc, char **argv)
         return 4;
     }
     process_created = CreateProcessA(
-        options.target, command_line, NULL, NULL, FALSE, CREATE_SUSPENDED,
+        options.target, command_line, NULL, NULL, FALSE, 0,
         NULL, options.cwd, &startup, &process);
     environment_restored = restore_child_environment(child_environment);
     if (!process_created) {
@@ -570,7 +570,7 @@ int main(int argc, char **argv)
         CloseHandle(process.hProcess);
         return 4;
     }
-    evidence.created_suspended = TRUE;
+    evidence.created_suspended = FALSE; // Wine: no CREATE_SUSPENDED
     if (!create_observer_events(process.dwProcessId, &observer_events)) {
         terminate_failed_target(&options, &evidence, &process, "events",
                                 "preowned-observer-events-failed");
@@ -583,7 +583,7 @@ int main(int argc, char **argv)
                                 "native-dispatch-identity-mapping-failed");
         goto done;
     }
-    if (ResumeThread(process.hThread) != 1u) {
+    if (ResumeThread(process.hThread) == (DWORD)-1) {
         terminate_failed_target(&options, &evidence, &process, "resume",
                                 "unexpected-suspend-count");
         goto done;
