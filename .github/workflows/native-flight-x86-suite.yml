@@ -2,36 +2,49 @@ name: Native flight x86 suite (no FEX)
 
 on:
   workflow_dispatch:
-    inputs:
-      iso_release_tag:
-        description: 'Release tag with encrypted ISO'
-        required: false
-        type: string
-        default: 'flight-iso-v1'
 
 permissions:
   contents: read
 
 jobs:
-  x86-native-suite:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    env:
-      ISO_RELEASE_TAG: flight-iso-v1
-
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Build x86 Wine Docker image
         run: |
           docker build \
             -t miel-flight-x86-wine:latest \
             -f tools/miel_vliegt/x86_wine/Dockerfile \
             .
+          echo "Docker image built successfully"
+          docker images miel-flight-x86-wine
+      - name: Save Docker image
+        run: docker save miel-flight-x86-wine:latest | gzip > /tmp/miel-flight-x86-wine.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/miel-flight-x86-wine.tar.gz
+          retention-days: 1
 
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ISO_RELEASE_TAG: flight-iso-v1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load Docker image
+        run: docker load < /tmp/miel-flight-x86-wine.tar.gz
       - name: Download and decrypt ISO
         run: |
           ISO_DIR="$RUNNER_TEMP/miel-isos"
@@ -45,25 +58,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
-
-      - name: Run suite (x86 Wine, no FEX)
+      - name: Run suite
         run: |
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=wine
           NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
           mkdir -p "$NATIVE_RUN_ROOT"
-          arguments=(
-            --run-root "$NATIVE_RUN_ROOT"
-            --private-iso "$PRIVATE_ISO"
-            --image-reference miel-flight-x86-wine:latest
-          )
-          deployment/run-oracle-flight-native-suite.sh "${arguments[@]}" \
+          deployment/run-oracle-flight-native-suite.sh \
+            --run-root "$NATIVE_RUN_ROOT" \
+            --private-iso "$PRIVATE_ISO" \
+            --image-reference miel-flight-x86-wine:latest \
             2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
-
-      - name: Upload results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: flight-x86-${{ github.run_id }}
+          name: flight-x86-results
           path: ${{ runner.temp }}/miel-native/
-          retention-days: 30
