@@ -193,16 +193,22 @@ PY
 
 write_receipt RUNNING 0
 
-# Diagnostic: test direct game launch under Wine (before suite)
-echo "=== DIAGNOSTIC: Direct game launch test ==="
+# Diagnostic: test direct game launch with DINPUT proxy under Wine
+echo "=== DIAGNOSTIC: Game launch with DINPUT proxy ==="
 GAME_TEST_ROOT="${RUN_ROOT}/game-test"
 mkdir -p "${GAME_TEST_ROOT}"
 cp -a "${GAME_ROOT}/." "${GAME_TEST_ROOT}/"
+# Copy the DINPUT proxy and real dinput
+cp "${TOOLS_SRC}/DINPUT.dll" "${GAME_TEST_ROOT}/DINPUT.dll"
+cp "${TOOLS_SRC}/dinput-real.dll" "${GAME_TEST_ROOT}/dinput-real.dll"
+cp "${TOOLS_SRC}/native-observer-hook.dll" "${GAME_TEST_ROOT}/native-observer-hook.dll"
 export WINEPREFIX="${RUN_ROOT}/diag-wine"
 export WINEARCH=win32
 export WINEDEBUG=-all
+export WINEDLLOVERRIDES="dinput=n,b"
 timeout 15 wine "${GAME_TEST_ROOT}/MulleMeck.exe" 2>&1 | tail -30 || true
 echo "=== Game test exit: $? ==="
+unset WINEDLLOVERRIDES
 
 # Debug: show SHA256 args
 echo "=== SHA256 args count: ${#sha256_args[@]} ==="
