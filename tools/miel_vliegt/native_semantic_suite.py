@@ -45,6 +45,7 @@ BACKENDS = {
     "box64": "wowbox64.dll",
     "fex": "libwow64fex.dll",
     "wine": "i386",
+    "native": "windows",
 }
 FEX_CALIBRATED_SUITE_OBSERVE_MS = 3_600_000
 BACKEND_HODLL_PATHS = {
