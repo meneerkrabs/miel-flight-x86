@@ -211,7 +211,7 @@ python3 tools/miel_vliegt/native_semantic_suite.py \
   --prefix-mode cold-audit \
   --expected-uid "$(id -u)" \
   --backend-id wine \
-  --backend-hodll wine \
+  --backend-hodll i386 \
   --container-image wine \
   --container-image-sha256 wine \
   --container-id wine \
