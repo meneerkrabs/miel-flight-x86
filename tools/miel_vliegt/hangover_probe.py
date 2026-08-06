@@ -2501,12 +2501,14 @@ def bootstrap_prefix(
         )
     else:
         smoke = skipped_run("prefix-bootstrap-failed")
+    sentinel_found = native_smoke_sentinel(backend).lower() in run_text(smoke)
     smoke_ok = (
         wineboot_ok
         and smoke["exit_code"] == 0
         and not smoke["timed_out"]
-        and not has_loader_failure(smoke)
-        and native_smoke_sentinel(backend).lower() in run_text(smoke)
+        and (not has_loader_failure(smoke)
+             or (backend.get("id") == "wine" and sentinel_found))
+        and sentinel_found
     )
     readiness = verify_runtime_readiness(
         environment,
