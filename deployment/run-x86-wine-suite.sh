@@ -107,8 +107,9 @@ PYFIX
 mkdir -p "${GAME_ROOT}/Data/User"
 install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
 
-# Copy exe to proxy directory (disposable target must be separate from game root)
+# Copy exe and proxy DINPUT.dll to proxy directory
 install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
+install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
 
 # Clean state snapshot
 mkdir -m 0700 "${CLEAN_STATE_ROOT}"
@@ -129,7 +130,7 @@ declare -A input_paths=(
   [user_profile]="${FIXTURE_ROOT}/user0.dat"
   [observer_dll]="${TOOLS_SRC}/native-observer-hook.dll"
   [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
-  [proxy_dinput]="${TOOLS_SRC}/DINPUT.dll"
+  [proxy_dinput]="${PROXY_ROOT}/DINPUT.dll"
   [real_dinput]="${TOOLS_SRC}/dinput-real.dll"
   [smoke_executable]="${TOOLS_SRC}/wine-readiness-canary.exe"
   [data_archive]="${GAME_ROOT}/data.up"
