@@ -107,6 +107,9 @@ PYFIX
 mkdir -p "${GAME_ROOT}/Data/User"
 install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
 
+# Copy exe to proxy directory (disposable target must be separate from game root)
+install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
+
 # Clean state snapshot
 mkdir -m 0700 "${CLEAN_STATE_ROOT}"
 cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
@@ -122,7 +125,7 @@ echo "Observer tools from: ${TOOLS_SRC}"
 # Input identities
 declare -A input_paths=(
   [source_executable]="${GAME_ROOT}/MulleMeck.exe"
-  [disposable_target]="${GAME_ROOT}/MulleMeck.exe"
+  [disposable_target]="${PROXY_ROOT}/MulleMeck.exe"
   [user_profile]="${FIXTURE_ROOT}/user0.dat"
   [observer_dll]="${TOOLS_SRC}/native-observer-hook.dll"
   [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
