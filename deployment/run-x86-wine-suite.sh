@@ -203,11 +203,13 @@ for arg in "${sha256_args[@]}"; do
   echo "  arg: ${arg}"
 done
 
-# Run the suite
-echo "=== Running suite ==="
+# Run the suite — call Python directly
+echo "=== Running suite (direct Python) ==="
 set +e
-MIEL_NATIVE_PREFIX_MODE=wine \
-  "${SUITE_LAUNCHER}" \
+cd "${REPOSITORY_ROOT}"
+python3 tools/miel_vliegt/native_semantic_suite.py \
+  --prefix-mode cold-audit \
+  --expected-uid "$(id -u)" \
   --backend-id wine \
   --backend-hodll wine \
   --container-image wine \
@@ -218,6 +220,7 @@ MIEL_NATIVE_PREFIX_MODE=wine \
   --disposable-target "${input_paths[disposable_target]}" \
   --game-root "${GAME_ROOT}" \
   --state-root "${GAME_ROOT}" \
+  --clean-state-root "${CLEAN_STATE_ROOT}" \
   --user-profile "${input_paths[user_profile]}" \
   --observer-dll "${input_paths[observer_dll]}" \
   --observer-launcher "${input_paths[observer_launcher]}" \
@@ -229,6 +232,7 @@ MIEL_NATIVE_PREFIX_MODE=wine \
   --output-root "${OUTPUT_ROOT}" \
   --observe-ms "${OBSERVE_MS}" \
   --max-records "${MAX_RECORDS}" \
+  "${sha256_args[@]}"
 suite_status=$?
 set -e
 
