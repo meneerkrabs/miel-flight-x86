@@ -71,12 +71,11 @@ jobs:
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=wine
           NATIVE_RUN_ROOT="$RUNNER_TEMP/miel-native"
-          mkdir -p "$NATIVE_RUN_ROOT"
+          # Deployment script creates RUN_ROOT itself; don't pre-create it
           deployment/run-oracle-flight-native-suite.sh \
             --run-root "$NATIVE_RUN_ROOT" \
             --private-iso "$PRIVATE_ISO" \
-            --image-reference skip \
-            2>&1 | tee "$NATIVE_RUN_ROOT/native-suite.log"
+            --image-reference skip
 
       - uses: actions/upload-artifact@v4
         if: always()
