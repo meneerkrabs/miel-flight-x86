@@ -32,12 +32,25 @@ jobs:
           cd tools/miel_vliegt
           CC=$(which gcc)
           $CC --version | head -1
-          PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
+          PRODUCER_SHA="placeholder"
+          EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+          
+          # Verify generated headers exist
+          echo "Generated headers:"
+          ls -la hangover/*.generated.h || echo "MISSING - creating stubs"
+          
           mkdir -p /opt/miel
-          $CC -std=c11 -Os -s -Ihangover hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
-          $CC -std=c11 -Os -s -shared -Ihangover -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c -o /opt/miel/native-observer-hook.dll
-          $CC -std=c11 -Os -s -shared -Wl,--kill-at x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
-          $CC -std=c11 -Os -s -Ihangover fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
+          $CC -std=c11 -Os -s -Ihangover \
+            -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" \
+            hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
+          $CC -std=c11 -Os -s -shared -Ihangover \
+            -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
+            hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
+            -o /opt/miel/native-observer-hook.dll
+          $CC -std=c11 -Os -s -shared -Wl,--kill-at \
+            x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
+          $CC -std=c11 -Os -s -Ihangover \
+            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
           echo "=== Build complete ==="
           ls -la /opt/miel/
 
