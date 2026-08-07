@@ -19,12 +19,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Wine and build tools
+      - name: Install WineHQ and build tools
         run: |
           sudo dpkg --add-architecture i386
+          sudo mkdir -pm755 /etc/apt/keyrings
+          sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+          sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
           sudo apt-get update
-          sudo apt-get install -y wine wine32 wine64 libwine libwine:i386 \
-            libgl1-mesa-dri libgl1-mesa-dri:i386 libgl1 libgl1:i386 \
+          sudo apt-get install -y --install-recommends winehq-staging
+          sudo apt-get install -y libgl1-mesa-dri libgl1-mesa-dri:i386 libgl1 libgl1:i386 \
             fonts-liberation xauth xvfb p7zip-full unshield \
             gcc-mingw-w64-i686
           wine --version
