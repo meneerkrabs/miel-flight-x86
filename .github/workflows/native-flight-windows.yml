@@ -221,6 +221,29 @@ jobs:
           cat "$RUN_ROOT/direct-test/stderr.log" 2>/dev/null | tail -20 || echo "No stderr"
           cd "$REPOSITORY_ROOT"
           
+          # Install dgVoodoo2: DX1-8 → DX11 wrapper (makes old games work on Win10/11)
+          echo "=== Installing dgVoodoo2 DX wrapper ==="
+          curl -sL "https://github.com/dege-dosx/dgVoodoo2/releases/download/v2.82/dgVoodoo2_82.zip" -o /tmp/dgvoodoo.zip 2>/dev/null
+          if [ -f /tmp/dgvoodoo.zip ] && [ -s /tmp/dgvoodoo.zip ]; then
+            mkdir -p /tmp/dgvoodoo
+            cd /tmp/dgvoodoo && 7z x /tmp/dgvoodoo.zip >/dev/null 2>&1 || true
+            # Copy the DX wrapper DLLs to the game proxy directory
+            cp /tmp/dgvoodoo/MS/x86/DDraw.dll "$PROXY_ROOT/DDraw.dll" 2>/dev/null || true
+            cp /tmp/dgvoodoo/MS/x86/D3DImm.dll "$PROXY_ROOT/D3DImm.dll" 2>/dev/null || true
+            cp /tmp/dgvoodoo/MS/x86/D3D8.dll "$PROXY_ROOT/D3D8.dll" 2>/dev/null || true
+            cp /tmp/dgvoodoo/MS/x86/D3D9.dll "$PROXY_ROOT/D3D9.dll" 2>/dev/null || true
+            cp /tmp/dgvoodoo/MS/x86/DInput.dll "$PROXY_ROOT/DInput8.dll" 2>/dev/null || true
+            # Copy dgVoodoo config (force software rendering, disable watermark)
+            cp /tmp/dgvoodoo/dgVoodoo.conf "$PROXY_ROOT/dgVoodoo.conf" 2>/dev/null || true
+            # Modify config for software rendering
+            sed -i 's/ScalingMode =.*/ScalingMode = unspecified/' "$PROXY_ROOT/dgVoodoo.conf" 2>/dev/null || true
+            echo "dgVoodoo2 installed"
+            ls "$PROXY_ROOT/"*.dll | head -10
+          else
+            echo "dgVoodoo2 download failed"
+          fi
+          cd "$REPOSITORY_ROOT"
+          
           echo "=== Starting background input keeper ==="
           powershell.exe -NoProfile -WindowStyle Hidden -Command "while($true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
           KEEPER_PID=$!
