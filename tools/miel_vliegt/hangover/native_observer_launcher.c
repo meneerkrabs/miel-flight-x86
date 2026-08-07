@@ -560,7 +560,7 @@ int main(int argc, char **argv)
         return 4;
     }
     process_created = CreateProcessA(
-        options.target, command_line, NULL, NULL, FALSE, 0,
+        options.target, command_line, NULL, NULL, TRUE, 0,
         NULL, options.cwd, &startup, &process);
     environment_restored = restore_child_environment(child_environment);
     if (!process_created) {
