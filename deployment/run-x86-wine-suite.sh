@@ -151,31 +151,6 @@ PEEOF
 fi
 echo "=== End imports ==="
 
-# Critical test: does Wine load DINPUT proxy from C:\game\?
-echo "=== CRITICAL: DINPUT proxy load test from C: drive ==="
-TESTPREFIX="${RUN_ROOT}/test-prefix"
-rm -rf "${TESTPREFIX}" 2>/dev/null || true
-mkdir -p "${TESTPREFIX}/drive_c/game"
-# Copy game files
-cp -a "${PRIVATE_GAME_ROOT}/." "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
-cp "${RUN_ROOT}/private-installer/data.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
-cp "${RUN_ROOT}/private-installer/map.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
-cp "${RUN_ROOT}/private-installer/sounds.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
-cp "${RUN_ROOT}/private-installer/Miel.ini" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
-# Copy proxy
-cp /opt/miel/DINPUT.dll "${TESTPREFIX}/drive_c/game/"
-cp /opt/miel/dinput-real.dll "${TESTPREFIX}/drive_c/game/"
-cp /opt/miel/native-observer-hook.dll "${TESTPREFIX}/drive_c/game/"
-echo "Files in C:\game\:" && ls "${TESTPREFIX}/drive_c/game/" | head -10
-# Init prefix
-WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
-sleep 2
-# Run game with DLL loading trace
-echo "=== Running game with +loaddll ==="
-cd "${TESTPREFIX}/drive_c/game"
-WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll,+module timeout 10 wine C:\game\MulleMeck.exe 2>&1 | grep -i "dinput\|DirectInput\|proxy\|MVP\|build_module.*DINPUT" | head -20 || true
-echo "=== DLL load test done ==="
-
 write_receipt RUNNING 0
 
 # Debug: show SHA256 args
