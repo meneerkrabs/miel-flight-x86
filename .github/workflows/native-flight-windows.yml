@@ -96,7 +96,8 @@ jobs:
           RUN_ROOT="$RUNNER_TEMP/miel-native"
           mkdir -p "$RUN_ROOT/game"
           cd "$RUN_ROOT/game"
-          tar xzf "$RUNNER_TEMP/game-files.tar.gz"
+          GAME_TAR=$(cygpath -u "$RUNNER_TEMP/game-files.tar.gz" 2>/dev/null || echo "$RUNNER_TEMP/game-files.tar.gz")
+          tar xzf "$GAME_TAR"
           cd "$REPOSITORY_ROOT"
           
           # Setup directories
