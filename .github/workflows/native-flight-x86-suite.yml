@@ -83,4 +83,5 @@ jobs:
         if: always()
         with:
           name: flight-x86-results
+          retention-days: 1
           path: ${{ runner.temp }}/miel-native/

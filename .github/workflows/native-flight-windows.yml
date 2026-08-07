@@ -37,6 +37,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: game-files
+          retention-days: 1
           path: /tmp/game-files.tar.gz
 
   windows:
@@ -86,6 +87,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: game-files
+          retention-days: 1
           path: ${{ runner.temp }}
 
       - name: Setup game and run suite
@@ -177,4 +179,5 @@ jobs:
         if: always()
         with:
           name: flight-windows-results
+          retention-days: 1
           path: ${{ runner.temp }}/miel-native/
