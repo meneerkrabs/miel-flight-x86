@@ -1873,26 +1873,15 @@ def run_scene_navigation(
             encoding="utf-8", errors="replace",
         )
     )
-    # DEBUG: dump launcher output on failure
+    # DEBUG: dump entire launcher result
     if start_patch_launch and start_patch_launch.get("exit_code") != 0:
         import sys as _sys, json as _json
-        print("=== LAUNCHER FAILED ===", file=_sys.stderr)
-        print("KEYS:", list(start_patch_launch.keys()), file=_sys.stderr)
-        print("EXIT:", start_patch_launch.get("exit_code"), file=_sys.stderr)
-        print("TIMED_OUT:", start_patch_launch.get("timed_out"), file=_sys.stderr)
-        _text = str(start_patch_launch.get("output_tail", "") or "")
-        if _text: print("OUTPUT_TAIL:", _text[-1200:], file=_sys.stderr)
-        else: print("NO OUTPUT CAPTURED", file=_sys.stderr)
-        # Try to find receipt JSON anywhere in cwd or output_dir
-        import subprocess as _sp
-        _find = _sp.run(["find", str(cwd), str(output_dir), "-name", "*receipt*", "-type", "f"],
-                       capture_output=True, text=True, timeout=5)
-        print("RECEIPT_FILES:", _find.stdout.strip()[:500], file=_sys.stderr)
-        for _line in _find.stdout.strip().split("\n"):
-            if _line and _line.endswith(".json"):
-                try:
-                    print("RECEIPT_CONTENT:", Path(_line).read_text()[:1500], file=_sys.stderr)
-                except Exception: pass
+        print("=== LAUNCHER FULL DUMP ===", file=_sys.stderr)
+        for _k, _v in start_patch_launch.items():
+            _vs = str(_v)
+            if len(_vs) > 500: _vs = _vs[:500] + "..."
+            print(f"  {_k}: {_vs}", file=_sys.stderr)
+        print("=== END DUMP ===", file=_sys.stderr)
 
     start_patch_confirmed = bool(
         observer_launcher_receipt
