@@ -151,135 +151,30 @@ PEEOF
 fi
 echo "=== End imports ==="
 
-# Check DINPUT proxy DLL
-echo "=== DINPUT proxy check ==="
-file /opt/miel/DINPUT.dll
-i686-w64-mingw32-objdump -p /opt/miel/DINPUT.dll 2>/dev/null | grep -A 20 "Export" || echo "No objdump"
-echo "=== End DINPUT check ==="
-
-# Try loading DINPUT.dll via Wine with verbose DLL loading
-echo "=== Wine DLL load test ==="
+# Critical test: does Wine load DINPUT proxy from C:\game\?
+echo "=== CRITICAL: DINPUT proxy load test from C: drive ==="
 TESTPREFIX="${RUN_ROOT}/test-prefix"
-WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
-# Copy game and proxy to C: drive (not Z:)
+rm -rf "${TESTPREFIX}" 2>/dev/null || true
 mkdir -p "${TESTPREFIX}/drive_c/game"
+# Copy game files
+cp -a "${PRIVATE_GAME_ROOT}/." "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
+cp "${RUN_ROOT}/private-installer/data.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
+cp "${RUN_ROOT}/private-installer/map.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
+cp "${RUN_ROOT}/private-installer/sounds.up" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
+cp "${RUN_ROOT}/private-installer/Miel.ini" "${TESTPREFIX}/drive_c/game/" 2>/dev/null || true
+# Copy proxy
 cp /opt/miel/DINPUT.dll "${TESTPREFIX}/drive_c/game/"
-cp /opt/miel/wine-readiness-canary.exe "${TESTPREFIX}/drive_c/game/"
 cp /opt/miel/dinput-real.dll "${TESTPREFIX}/drive_c/game/"
-echo "=== Running from C: drive with +loaddll ==="
-cd "${TESTPREFIX}/drive_c/game"
-WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll wine C:\\game\\wine-readiness-canary.exe --rpcss-timeout-ms 5000 2>&1 | grep -i "dinput\|DINPUT\|proxy\|MVP\|load" | head -15 || echo "No relevant output"
-echo "=== End load test ==="
-
-GAME_ROOT="${RUN_ROOT}/game"
-PROXY_ROOT="${RUN_ROOT}/proxy"
-TOOLS_ROOT="${RUN_ROOT}/tools"
-FIXTURE_ROOT="${RUN_ROOT}/fixture"
-WINE_PREFIX="${RUN_ROOT}/wine-prefix"
-SUITE_ROOT="${RUN_ROOT}/calibrated-suite"
-OUTPUT_ROOT="${RUN_ROOT}/output"
-CLEAN_STATE_ROOT="${RUN_ROOT}/game-clean"
-mkdir -m 0700 "${GAME_ROOT}" "${PROXY_ROOT}" "${TOOLS_ROOT}" "${FIXTURE_ROOT}"
-
-cp -a "${PRIVATE_GAME_ROOT}/." "${GAME_ROOT}/"
-7z e -y "-o${GAME_ROOT}" "${PRIVATE_ISO}" data.up map.up sounds.up Miel.ini
-
-# Restore user fixture
-python3 - "${INITIAL_USER_FIXTURE}" "${FIXTURE_ROOT}/user0.dat" <<'PYFIX'
-import base64, gzip, sys
-from pathlib import Path
-source, target = Path(sys.argv[1]), Path(sys.argv[2])
-encoded = "".join(source.read_text(encoding="ascii").split())
-target.write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
-PYFIX
-mkdir -p "${GAME_ROOT}/Data/User"
-install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
-
-# Resolve observer tools (prefer /opt/miel from workflow build)
-if [[ -f /opt/miel/native-observer-hook.dll ]]; then
-  TOOLS_SRC="/opt/miel"
-else
-  TOOLS_SRC="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover"
-fi
-echo "Observer tools from: ${TOOLS_SRC}"
-
-# Copy exe, proxy DINPUT, observer hook, and real dinput to proxy directory
-install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
-install -m 0600 /opt/miel/DINPUT.dll "${PROXY_ROOT}/DINPUT.dll"
-install -m 0600 "${TOOLS_SRC}/native-observer-hook.dll" "${PROXY_ROOT}/native-observer-hook.dll"
-install -m 0600 "${TOOLS_SRC}/dinput-real.dll" "${PROXY_ROOT}/dinput-real.dll"
-
-# Clean state snapshot
-mkdir -m 0700 "${CLEAN_STATE_ROOT}"
-cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
-
-# Input identities
-declare -A input_paths=(
-  [source_executable]="${GAME_ROOT}/MulleMeck.exe"
-  [disposable_target]="${PROXY_ROOT}/MulleMeck.exe"
-  [user_profile]="${FIXTURE_ROOT}/user0.dat"
-  [observer_dll]="${PROXY_ROOT}/native-observer-hook.dll"
-  [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
-  [proxy_dinput]="${PROXY_ROOT}/DINPUT.dll"
-  [real_dinput]="${PROXY_ROOT}/dinput-real.dll"
-  [smoke_executable]=/opt/miel/wine-readiness-canary.exe
-  [data_archive]="${GAME_ROOT}/data.up"
-  [map_archive]="${GAME_ROOT}/map.up"
-  [sounds_archive]="${GAME_ROOT}/sounds.up"
-  [miel_ini]="${GAME_ROOT}/Miel.ini"
-)
-
-# Compute SHA256 for all inputs
-declare -A input_sha256=()
-for label in "${!input_paths[@]}"; do
-  input_sha256["${label}"]="$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)"
-done
-
-identities_tsv="${RUN_ROOT}/input-identities.tsv"
-: >"${identities_tsv}"
-for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-  printf '%s\t%s\t%s\n' "${label}" "${input_sha256[${label}]}" "${input_paths[${label}]}" >>"${identities_tsv}"
-done
-
-# Build SHA256 arguments for the suite
-sha256_args=()
-for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-  sha256_args+=("--${label//_/-}-sha256" "${input_sha256[${label}]}")
-done
-
-# Start Xvfb
-echo "=== Starting Xvfb ==="
-Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+cp /opt/miel/native-observer-hook.dll "${TESTPREFIX}/drive_c/game/"
+echo "Files in C:\game\:" && ls "${TESTPREFIX}/drive_c/game/" | head -10
+# Init prefix
+WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
 sleep 2
-export DISPLAY=:99
-
-
-# Write runner receipt
-write_receipt() {
-  local status="$1" suite_exit="$2"
-  python3 - "${RUN_ROOT}/runner-receipt.json" "${status}" "${suite_exit}" \
-    "${identities_tsv}" "${OUTPUT_ROOT}" "${OBSERVE_MS}" "${MAX_RECORDS}" \
-    "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" <<'PY'
-import json, sys
-from pathlib import Path
-(output_path, status, suite_exit, identities_path, suite_output,
- observe_ms, max_records, commit) = sys.argv[1:]
-inputs = {}
-for line in Path(identities_path).read_text(encoding="utf-8").splitlines():
-    label, sha256, path = line.split("\t")
-    inputs[label] = {"path": path, "sha256": sha256}
-receipt = {
-    "schema": 1, "protocol": "miel-vliegt-x86-wine-suite-runner",
-    "status": status, "suite_exit_code": int(suite_exit),
-    "repository_commit": commit, "observe_ms": int(observe_ms),
-    "max_records": int(max_records), "backend": "wine",
-    "inputs": inputs, "suite_output_root": suite_output,
-}
-Path(output_path + ".tmp").write_text(
-    json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-Path(output_path + ".tmp").replace(output_path)
-PY
-}
+# Run game with DLL loading trace
+echo "=== Running game with +loaddll ==="
+cd "${TESTPREFIX}/drive_c/game"
+WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll,+module timeout 10 wine C:\game\MulleMeck.exe 2>&1 | grep -i "dinput\|DirectInput\|proxy\|MVP\|build_module.*DINPUT" | head -15
+echo "=== DLL load test done ==="
 
 write_receipt RUNNING 0
 
