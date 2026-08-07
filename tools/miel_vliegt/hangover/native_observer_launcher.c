@@ -565,8 +565,16 @@ int main(int argc, char **argv)
                       "child-environment-binding-failed");
         return 4;
     }
+    /* On native Windows, use CREATE_SUSPENDED to give the DINPUT proxy's
+       bootstrap thread time to detect Cc.dll and initialize the observer
+       before the game's main loop runs and potentially exits.
+       On Wine, CREATE_SUSPENDED can cause issues, so use 0. */
+    HMODULE ntdll_mod = GetModuleHandleA("ntdll.dll");
+    BOOL running_on_wine = ntdll_mod &&
+        GetProcAddress(ntdll_mod, "wine_get_version") != NULL;
+    DWORD creation_flags = running_on_wine ? 0 : CREATE_SUSPENDED;
     process_created = CreateProcessA(
-        options.target, command_line, NULL, NULL, TRUE, 0,
+        options.target, command_line, NULL, NULL, TRUE, creation_flags,
         NULL, options.cwd, &startup, &process);
     environment_restored = restore_child_environment(child_environment);
     if (!process_created) {
@@ -584,7 +592,7 @@ int main(int argc, char **argv)
         CloseHandle(process.hProcess);
         return 4;
     }
-    evidence.created_suspended = FALSE; // Wine: no CREATE_SUSPENDED
+    evidence.created_suspended = (creation_flags & CREATE_SUSPENDED) != 0;
     if (!create_observer_events(process.dwProcessId, &observer_events)) {
         terminate_failed_target(&options, &evidence, &process, "events",
                                 "preowned-observer-events-failed");
@@ -597,10 +605,13 @@ int main(int argc, char **argv)
                                 "native-dispatch-identity-mapping-failed");
         goto done;
     }
-    if (ResumeThread(process.hThread) == (DWORD)-1) {
+    /* Only call ResumeThread if we used CREATE_SUSPENDED */
+    if (creation_flags & CREATE_SUSPENDED) {
+        if (ResumeThread(process.hThread) == (DWORD)-1) {
         terminate_failed_target(&options, &evidence, &process, "resume",
                                 "unexpected-suspend-count");
-        goto done;
+            goto done;
+        }
     }
     evidence.main_thread_resumed = TRUE;
     evidence.main_thread_resume_count = 1u;
