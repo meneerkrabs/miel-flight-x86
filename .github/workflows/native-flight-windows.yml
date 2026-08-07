@@ -178,7 +178,11 @@ jobs:
           echo "Wrote config.ini to proxy dir (streammap=false)"
           
           # Direct game diagnostic: run game WITHOUT launcher to test observer hook
-          echo "=== Direct observer test ==="
+          # Check if dinput.dll is a Known DLL (would prevent proxy loading on native Windows)
+          echo "=== Known DLLs check ==="
+          powershell.exe -NoProfile -Command "(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs').PSObject.Properties | Where-Object { $_.Value -match 'dinput' -or $_.Name -match 'dinput' } | Format-Table" 2>/dev/null || echo "No dinput in KnownDLLs"
+          
+                    echo "=== Direct observer test ==="
           mkdir -p "$RUN_ROOT/direct-test"
           export MIEL_OBSERVER_LOG="$RUN_ROOT/direct-test/observer.log"
           export MIEL_OBSERVER_SCENARIO="$RUN_ROOT/direct-test/controls.mvo"
