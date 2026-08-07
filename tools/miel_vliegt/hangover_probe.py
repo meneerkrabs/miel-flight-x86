@@ -780,8 +780,11 @@ def wine_z_path(path: Path) -> str:
         for i, part in enumerate(parts):
             if part in ("game", "proxy") and i > 0 and parts[i-1] == "miel-native":
                 # This is a game or proxy file - map to C:\game\
-                filename = path.name
-                return "C:\\game\\" + filename
+                rel_parts = parts[i+1:]
+                if not rel_parts:
+                    return "C:\\game\\"
+                rel = str(Path(*rel_parts)).replace("/", "\\")
+                return "C:\\game\\" + rel
         # For output/receipt files, use Z: (Wine can read files from Z:)
         # Actually, use Z: for everything else
     return "Z:" + str(path).replace("/", "\\")
