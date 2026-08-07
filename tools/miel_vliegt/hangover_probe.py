@@ -1873,15 +1873,15 @@ def run_scene_navigation(
             encoding="utf-8", errors="replace",
         )
     )
-    # DEBUG: dump entire launcher result
+    # DEBUG: show full launcher command on failure
     if start_patch_launch and start_patch_launch.get("exit_code") != 0:
-        import sys as _sys, json as _json
-        print("=== LAUNCHER FULL DUMP ===", file=_sys.stderr)
-        for _k, _v in start_patch_launch.items():
-            _vs = str(_v)
-            if len(_vs) > 500: _vs = _vs[:500] + "..."
-            print(f"  {_k}: {_vs}", file=_sys.stderr)
-        print("=== END DUMP ===", file=_sys.stderr)
+        import sys as _sys
+        print("=== LAUNCHER CMD ===", file=_sys.stderr)
+        _cmd = start_patch_launch.get("command", [])
+        for _i, _arg in enumerate(_cmd):
+            print(f"  [{_i}] {_arg}", file=_sys.stderr)
+        print(f"  exit={start_patch_launch.get('exit_code')} duration={start_patch_launch.get('phase_timestamps',{}).get('duration_ns',0)/1e9:.3f}s", file=_sys.stderr)
+        print("=== END CMD ===", file=_sys.stderr)
 
     start_patch_confirmed = bool(
         observer_launcher_receipt
