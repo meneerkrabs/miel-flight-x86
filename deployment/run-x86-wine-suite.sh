@@ -153,10 +153,10 @@ echo "=== End imports ==="
 
 # Check DINPUT proxy DLL format
 echo "=== DINPUT proxy check ==="
-file "${TOOLS_SRC}/DINPUT.dll" 2>/dev/null || echo "file cmd not available"
+file /opt/miel/DINPUT.dll 2>/dev/null || echo "file cmd not available"
 python3 - <<'DLCHECK'
 import struct, sys
-dll_path = "${TOOLS_SRC}/DINPUT.dll"
+dll_path = /opt/miel/DINPUT.dll
 try:
     with open(dll_path, "rb") as f:
         data = f.read(1024)
@@ -184,7 +184,7 @@ echo "=== End DINPUT check ==="
 # Try loading DINPUT.dll via rundll32 to see if Wine can load it
 echo "=== Wine DINPUT load test ==="
 WINEPREFIX="${RUN_ROOT}/test-prefix" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
-WINEPREFIX="${RUN_ROOT}/test-prefix" WINEARCH=win32 WINEDEBUG=+loaddll wine "${TOOLS_SRC}/wine-readiness-canary.exe" --rpcss-timeout-ms 5000 2>&1 | grep -i "dinput\|DINPUT\|proxy\|MVP" | head -10 || echo "No dinput in output"
+WINEPREFIX="${RUN_ROOT}/test-prefix" WINEARCH=win32 WINEDEBUG=+loaddll wine /opt/miel/wine-readiness-canary.exe --rpcss-timeout-ms 5000 2>&1 | grep -i "dinput\|DINPUT\|proxy\|MVP" | head -10 || echo "No dinput in output"
 echo "=== End load test ==="
 
 GAME_ROOT="${RUN_ROOT}/game"
@@ -221,7 +221,7 @@ echo "Observer tools from: ${TOOLS_SRC}"
 
 # Copy exe, proxy DINPUT, observer hook, and real dinput to proxy directory
 install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
-install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
+install -m 0600 /opt/miel/DINPUT.dll "${PROXY_ROOT}/DINPUT.dll"
 install -m 0600 "${TOOLS_SRC}/native-observer-hook.dll" "${PROXY_ROOT}/native-observer-hook.dll"
 install -m 0600 "${TOOLS_SRC}/dinput-real.dll" "${PROXY_ROOT}/dinput-real.dll"
 
@@ -238,7 +238,7 @@ declare -A input_paths=(
   [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
   [proxy_dinput]="${PROXY_ROOT}/DINPUT.dll"
   [real_dinput]="${PROXY_ROOT}/dinput-real.dll"
-  [smoke_executable]="${TOOLS_SRC}/wine-readiness-canary.exe"
+  [smoke_executable]=/opt/miel/wine-readiness-canary.exe
   [data_archive]="${GAME_ROOT}/data.up"
   [map_archive]="${GAME_ROOT}/map.up"
   [sounds_archive]="${GAME_ROOT}/sounds.up"
