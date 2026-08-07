@@ -1880,7 +1880,7 @@ def run_scene_navigation(
         print("KEYS:", list(start_patch_launch.keys()), file=_sys.stderr)
         print("EXIT:", start_patch_launch.get("exit_code"), file=_sys.stderr)
         print("TIMED_OUT:", start_patch_launch.get("timed_out"), file=_sys.stderr)
-        _text = str(start_patch_launch.get("stdout", "") or start_patch_launch.get("output", "") or "")
+        _text = str(start_patch_launch.get("output_tail", "") or "")
         if _text: print("OUTPUT_TAIL:", _text[-1200:], file=_sys.stderr)
         else: print("NO OUTPUT CAPTURED", file=_sys.stderr)
         # Try to find receipt JSON anywhere in cwd or output_dir
