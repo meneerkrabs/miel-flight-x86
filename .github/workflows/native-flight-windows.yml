@@ -65,7 +65,7 @@ jobs:
           export PATH="/c/msys64/mingw32/bin:$PATH"
           cd tools/miel_vliegt
           python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || true
-          PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
+          PRODUCER_SHA=$(PYTHONPATH=. python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
           EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
           mkdir -p /opt/miel
           CC=$(which i686-w64-mingw32-gcc 2>/dev/null || which gcc)
