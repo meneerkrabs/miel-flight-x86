@@ -7,12 +7,42 @@ permissions:
   contents: read
 
 jobs:
-  windows-suite:
+  extract:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download ISO
+        run: |
+          mkdir -p /tmp/isos
+          gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 \
+            --pattern "Mielvliegt.iso.gpg" --dir /tmp/isos
+          echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
+            --passphrase-fd 0 --output /tmp/isos/Mielvliegt.iso /tmp/isos/Mielvliegt.iso.gpg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
+      - name: Extract game files
+        run: |
+          sudo apt-get install -y p7zip-full unshield
+          mkdir -p /tmp/game-files
+          7z x -y -o/tmp/game-files/installer /tmp/isos/Mielvliegt.iso >/dev/null
+          cd /tmp/game-files && mkdir system && cd system
+          unshield -g "System Files" x /tmp/game-files/installer/data1.cab
+          7z e -y -o/tmp/game-files/system/System_Files /tmp/isos/Mielvliegt.iso data.up map.up sounds.up Miel.ini
+          # Package everything
+          cd /tmp/game-files/system/System_Files
+          tar czf /tmp/game-files.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-files
+          path: /tmp/game-files.tar.gz
+
+  windows:
+    needs: extract
     runs-on: windows-latest
     timeout-minutes: 120
-    env:
-      ISO_RELEASE_TAG: flight-iso-v1
-
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -22,15 +52,10 @@ jobs:
         shell: pwsh
         run: choco install 7zip -y --no-progress
 
-      - name: Install MSYS2 and 32-bit MinGW
+      - name: Install MSYS2 32-bit MinGW
         shell: pwsh
         run: |
-          # MSYS2 is pre-installed on windows-latest at C:\msys64
-          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm mingw-w64-i686-gcc mingw-w64-i686-make autoconf automake libtool make pkg-config zlib-devel
-          # Build unshield from source (MSYS2 doesn't package it)
-          cd /tmp && git clone https://github.com/twogood/unshield.git && cd unshield
-          autoreconf -fi && ./configure --prefix=/usr && make -j4 && make install
-          which unshield && unshield --version"
+          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm mingw-w64-i686-gcc mingw-w64-i686-make"
           echo "C:\msys64\mingw32\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build observer tools
@@ -38,8 +63,6 @@ jobs:
         run: |
           set -ex
           export PATH="/c/msys64/mingw32/bin:$PATH"
-          which i686-w64-mingw32-gcc || which gcc
-          gcc --version | head -1
           cd tools/miel_vliegt
           python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || true
           PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
@@ -58,35 +81,97 @@ jobs:
           $CC -m32 -std=c11 -Os -s -Ihangover \
             fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe -lole32
           echo "=== Build complete ==="
-          ls -la /opt/miel/
 
-      - name: Download and decrypt ISO
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
-        run: |
-          ISO_DIR="$RUNNER_TEMP/miel-isos"
-          mkdir -p "$ISO_DIR"
-          gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 \
-            --pattern "Mielvliegt.iso.gpg" --dir "$ISO_DIR"
-          echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
-            --passphrase-fd 0 --output "$ISO_DIR/Mielvliegt.iso" "$ISO_DIR/Mielvliegt.iso.gpg"
-          rm "$ISO_DIR/Mielvliegt.iso.gpg"
-          echo "PRIVATE_ISO=$ISO_DIR/Mielvliegt.iso" >> "$GITHUB_ENV"
+      - name: Download game files
+        uses: actions/download-artifact@v4
+        with:
+          name: game-files
+          path: ${{ runner.temp }}
 
-      - name: Run flight suite (native Windows)
+      - name: Setup game and run suite
         shell: bash
         run: |
+          set -ex
           export REPOSITORY_ROOT="$(pwd)"
-          export MIEL_NATIVE_BACKEND_ID=native
-          mkdir -p "$RUNNER_TEMP/miel-native"
-          deployment/run-windows-suite.sh \
-            --run-root "$RUNNER_TEMP/miel-native" \
-            --private-iso "$PRIVATE_ISO"
+          RUN_ROOT="$RUNNER_TEMP/miel-native"
+          mkdir -p "$RUN_ROOT/game"
+          cd "$RUN_ROOT/game"
+          tar xzf "$RUNNER_TEMP/game-files.tar.gz"
+          cd "$REPOSITORY_ROOT"
+          
+          # Setup directories
+          GAME_ROOT="$RUN_ROOT/game"
+          PROXY_ROOT="$RUN_ROOT/proxy"
+          FIXTURE_ROOT="$RUN_ROOT/fixture"
+          SUITE_ROOT="$RUN_ROOT/suite"
+          OUTPUT_ROOT="$RUN_ROOT/output"
+          CLEAN_STATE_ROOT="$RUN_ROOT/game-clean"
+          mkdir -p "$PROXY_ROOT" "$FIXTURE_ROOT" "$SUITE_ROOT" "$OUTPUT_ROOT" "$CLEAN_STATE_ROOT"
+          
+          TOOLS_SRC="/opt/miel"
+          install -m 0600 "$GAME_ROOT/MulleMeck.exe" "$PROXY_ROOT/MulleMeck.exe"
+          install -m 0600 "$TOOLS_SRC/DINPUT.dll" "$PROXY_ROOT/DINPUT.dll"
+          install -m 0600 "$TOOLS_SRC/native-observer-hook.dll" "$PROXY_ROOT/native-observer-hook.dll"
+          
+          # Copy system32 dinput as real
+          cp "C:/windows/system32/dinput.dll" "$PROXY_ROOT/dinput-real.dll" || cp "C:/Windows/SysWOW64/dinput.dll" "$PROXY_ROOT/dinput-real.dll" || true
+          
+          # Restore user fixture
+          python3 -c "import base64,gzip,sys; from pathlib import Path; s,t=Path(sys.argv[1]),Path(sys.argv[2]); t.write_bytes(gzip.decompress(base64.b64decode(''.join(s.read_text().split()))))" "$REPOSITORY_ROOT/tools/miel_vliegt/fixtures/native_dispatch_driver/initial-user0.dat.gz.b64" "$FIXTURE_ROOT/user0.dat"
+          mkdir -p "$GAME_ROOT/Data/User"
+          install -m 0600 "$FIXTURE_ROOT/user0.dat" "$GAME_ROOT/Data/User/user0.dat"
+          cp -a "$GAME_ROOT/." "$CLEAN_STATE_ROOT/"
+          
+          # Build SHA256 args
+          declare -A input_paths=(
+            [source_executable]="$GAME_ROOT/MulleMeck.exe"
+            [disposable_target]="$PROXY_ROOT/MulleMeck.exe"
+            [user_profile]="$FIXTURE_ROOT/user0.dat"
+            [observer_dll]="$PROXY_ROOT/native-observer-hook.dll"
+            [observer_launcher]="$TOOLS_SRC/native-observer-launcher.exe"
+            [proxy_dinput]="$PROXY_ROOT/DINPUT.dll"
+            [real_dinput]="$PROXY_ROOT/dinput-real.dll"
+            [smoke_executable]="$TOOLS_SRC/wine-readiness-canary.exe"
+            [data_archive]="$GAME_ROOT/data.up"
+            [map_archive]="$GAME_ROOT/map.up"
+            [sounds_archive]="$GAME_ROOT/sounds.up"
+            [miel_ini]="$GAME_ROOT/Miel.ini"
+          )
+          sha256_args=()
+          for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
+            sha="$(sha256sum "${input_paths[$label]}" | cut -d' ' -f1)"
+            sha256_args+=("--${label//_/-}-sha256" "$sha")
+          done
+          
+          echo "=== Running suite (native Windows) ==="
+          python3 tools/miel_vliegt/native_semantic_suite.py \
+            --prefix-mode cold-audit \
+            --expected-uid "$(id -u)" \
+            --backend-id native \
+            --backend-hodll windows \
+            --container-image native \
+            --container-image-sha256 native \
+            --container-id native \
+            --container-mount-root "$RUN_ROOT" \
+            --source-executable "${input_paths[source_executable]}" \
+            --disposable-target "${input_paths[disposable_target]}" \
+            --game-root "$GAME_ROOT" \
+            --state-root "$GAME_ROOT" \
+            --clean-state-root "$CLEAN_STATE_ROOT" \
+            --user-profile "${input_paths[user_profile]}" \
+            --observer-dll "${input_paths[observer_dll]}" \
+            --observer-launcher "${input_paths[observer_launcher]}" \
+            --proxy-dinput "${input_paths[proxy_dinput]}" \
+            --real-dinput "${input_paths[real_dinput]}" \
+            --smoke-executable "${input_paths[smoke_executable]}" \
+            --suite-root "$SUITE_ROOT" \
+            --output-root "$OUTPUT_ROOT" \
+            --observe-ms 3600000 \
+            --max-records 1000000 \
+            "${sha256_args[@]}" || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: flight-windows-results
-          path: ${{ runner.temp }}/miel-native*/
+          path: ${{ runner.temp }}/miel-native/
