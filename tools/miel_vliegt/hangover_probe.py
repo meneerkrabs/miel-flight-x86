@@ -2593,6 +2593,17 @@ def bootstrap_prefix(
             print(f"SMOKE sentinel '{sentinel}' in output: {sentinel.lower() in run_text(smoke)}", file=sys.stderr)
         else:
             print(f"SMOKE skipped: {smoke.get('skipped', 'N/A') if isinstance(smoke, dict) else 'N/A'}", file=sys.stderr)
+    
+    # Wine backend: copy observer DLLs to prefix system32 for reliable loading
+    if backend.get("id") == "wine" and smoke_executable.parent.is_dir():
+        system32 = prefix / "drive_c" / "windows" / "system32"
+        system32.mkdir(parents=True, exist_ok=True)
+        for tool_file in ["DINPUT.dll", "native-observer-hook.dll", "dinput-real.dll"]:
+            src = smoke_executable.parent / tool_file
+            if src.exists():
+                shutil.copy2(src, system32 / tool_file)
+                print(f"Copied {tool_file} to Wine system32", file=__import__('sys').stderr)
+    
     return {
         "checks": checks,
         "runs": {
