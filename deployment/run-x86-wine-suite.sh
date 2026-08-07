@@ -115,9 +115,11 @@ else
 fi
 echo "Observer tools from: ${TOOLS_SRC}"
 
-# Copy exe and proxy DINPUT.dll to proxy directory
+# Copy exe, proxy DINPUT, observer hook, and real dinput to proxy directory
 install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
 install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
+install -m 0600 "${TOOLS_SRC}/native-observer-hook.dll" "${PROXY_ROOT}/native-observer-hook.dll"
+install -m 0600 "${TOOLS_SRC}/dinput-real.dll" "${PROXY_ROOT}/dinput-real.dll"
 
 # Clean state snapshot
 mkdir -m 0700 "${CLEAN_STATE_ROOT}"
@@ -128,10 +130,10 @@ declare -A input_paths=(
   [source_executable]="${GAME_ROOT}/MulleMeck.exe"
   [disposable_target]="${PROXY_ROOT}/MulleMeck.exe"
   [user_profile]="${FIXTURE_ROOT}/user0.dat"
-  [observer_dll]="${TOOLS_SRC}/native-observer-hook.dll"
+  [observer_dll]="${PROXY_ROOT}/native-observer-hook.dll"
   [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
   [proxy_dinput]="${PROXY_ROOT}/DINPUT.dll"
-  [real_dinput]="${TOOLS_SRC}/dinput-real.dll"
+  [real_dinput]="${PROXY_ROOT}/dinput-real.dll"
   [smoke_executable]="${TOOLS_SRC}/wine-readiness-canary.exe"
   [data_archive]="${GAME_ROOT}/data.up"
   [map_archive]="${GAME_ROOT}/map.up"
