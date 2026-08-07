@@ -156,41 +156,29 @@ void WINAPI ExitProcess_hook(UINT uExitCode) {
     Sleep(INFINITE);
 }
 
-void WINAPI PostQuitMessage_hook(int nExitCode) {
-    fprintf(stderr, "MVP_PostQuitMessage(%d): BLOCKED\n", nExitCode); fflush(stderr);
-    /* Do nothing — don't post WM_QUIT, keep the game alive */
-}
-
 static void install_exit_hook(void) {
-    HMODULE exe_module = GetModuleHandleA(NULL);
-    if (!exe_module) return;
-    BYTE *base = (BYTE*)exe_module;
-    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER*)base;
-    IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
-    DWORD import_rva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
-    if (!import_rva) return;
-    IMAGE_IMPORT_DESCRIPTOR *imports = (IMAGE_IMPORT_DESCRIPTOR*)(base + import_rva);
+    /* Inline hook: overwrite first 5 bytes of ExitProcess in kernel32
+       with a JMP to our hook. This catches ALL calls to ExitProcess
+       regardless of which module makes the call (game exe, MSVCRT, etc.). */
+    HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
+    if (!kernel32) return;
+    FARPROC target = GetProcAddress(kernel32, "ExitProcess");
+    if (!target) return;
+    
+    /* x86 JMP rel32: E9 xx xx xx xx (5 bytes) */
+    BYTE *code = (BYTE*)target;
     DWORD old_protect;
-    int hooked = 0;
-    for (; imports->Name; imports++) {
-        IMAGE_THUNK_DATA *thunk = (IMAGE_THUNK_DATA*)(base + imports->FirstThunk);
-        IMAGE_THUNK_DATA *orig_thunk = (IMAGE_THUNK_DATA*)
-            (base + (imports->OriginalFirstThunk ? imports->OriginalFirstThunk : imports->FirstThunk));
-        for (; orig_thunk->u1.AddressOfData; thunk++, orig_thunk++) {
-            if (orig_thunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) continue;
-            IMAGE_IMPORT_BY_NAME *import = (IMAGE_IMPORT_BY_NAME*)(base + orig_thunk->u1.AddressOfData);
-            if (lstrcmpiA(import->Name, "ExitProcess") == 0) {
-                VirtualProtect(&thunk->u1.Function, sizeof(void*), PAGE_READWRITE, &old_protect);
-                thunk->u1.Function = (ULONG_PTR)ExitProcess_hook;
-                VirtualProtect(&thunk->u1.Function, sizeof(void*), old_protect, &old_protect);
-                hooked++;
-            } else if (lstrcmpiA(import->Name, "PostQuitMessage") == 0) {
-                VirtualProtect(&thunk->u1.Function, sizeof(void*), PAGE_READWRITE, &old_protect);
-                thunk->u1.Function = (ULONG_PTR)PostQuitMessage_hook;
-                VirtualProtect(&thunk->u1.Function, sizeof(void*), old_protect, &old_protect);
-                hooked++;
-            }
-        }
-    }
-    fprintf(stderr, "MVP: %d exit hooks installed\n", hooked); fflush(stderr);
+    if (!VirtualProtect(code, 5, PAGE_EXECUTE_READWRITE, &old_protect)) return;
+    
+    /* Calculate relative offset: hook - (target + 5) */
+    LONG_PTR offset = (LONG_PTR)ExitProcess_hook - (LONG_PTR)(code + 5);
+    code[0] = 0xE9;  /* JMP rel32 */
+    *(LONG_PTR*)(code + 1) = offset;
+    
+    VirtualProtect(code, 5, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), code, 5);
+    
+    fprintf(stderr, "MVP: ExitProcess inline hook installed at %p -> %p\n",
+            target, ExitProcess_hook);
+    fflush(stderr);
 }
