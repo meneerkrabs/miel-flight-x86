@@ -772,6 +772,10 @@ def has_loader_failure(*results: dict) -> bool:
 
 def wine_z_path(path: Path) -> str:
     path = path.resolve()
+    # On Windows with native backend, use native paths (no Z:/C:/E: conversion)
+    import sys, os
+    if sys.platform == "win32" and os.environ.get("MIEL_NATIVE_BACKEND_ID") == "native":
+        return str(path)
     # For wine backend, use C:\game\ for game/proxy files
     # (copied there by bootstrap_prefix for reliable DLL loading)
     import os
