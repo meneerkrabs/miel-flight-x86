@@ -166,6 +166,7 @@ jobs:
             --real-dinput "${input_paths[real_dinput]}" \
             --smoke-executable "${input_paths[smoke_executable]}" \
             --suite-root "$SUITE_ROOT" \
+            --wine-prefix "$RUN_ROOT/wine-prefix" \
             --output-root "$OUTPUT_ROOT" \
             --observe-ms 3600000 \
             --max-records 1000000 \
