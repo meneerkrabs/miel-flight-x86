@@ -103,6 +103,12 @@ jobs:
           tar xzf "$GAME_TAR"
           cd "$REPOSITORY_ROOT"
           
+          # Mount ISO as virtual CD-ROM (game checks for CD presence)
+          echo "=== Mounting ISO as CD-ROM ==="
+          powershell.exe -Command "Mount-DiskImage -ImagePath '${PRIVATE_ISO}' -PassThru | Get-Volume | Select-Object -ExpandProperty DriveLetter" > /tmp/cd-drive.txt 2>&1 || true
+          CD_DRIVE=$(cat /tmp/cd-drive.txt | tr -d '[:space:]')
+          echo "CD drive: ${CD_DRIVE:-NOT_MOUNTED}"
+          
           # Setup directories
           GAME_ROOT="$RUN_ROOT/game"
           PROXY_ROOT="$RUN_ROOT/proxy"
