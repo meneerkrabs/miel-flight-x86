@@ -163,16 +163,15 @@ jobs:
           
           # Note: GH_TOKEN and ISO_GPG_PASSPHRASE needed for ISO download above
           # Background input keeper: send periodic spacebar to keep game alive
-          # Set Windows 98 compatibility mode for the game (disables ASLR, DEP, etc.)
-          echo "=== Setting compatibility mode ==="
-          powershell.exe -Command "
-            \$exe = 'MulleMeck.exe';
-            \$key = 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers';
-            if (!(Test-Path \$key)) { New-Item -Path \$key -Force }
-            \$gamePath = Join-Path (Get-Location) 'game' \$exe;
-            Set-ItemProperty -Path \$key -Name \$gamePath -Value '~ WIN98' -Force;
-            Write-Host 'Set WIN98 compatibility for:' \$gamePath;
-          " || true
+          # Install DirectX runtime from game CD (DX7 components needed for old game)
+          echo "=== Installing DirectX runtime ==="
+          if [ -d "E:/directx" ] || [ -f "E:/dxsetup.exe" ]; then
+            E:/dxsetup.exe /silent 2>/dev/null || true
+            echo "DirectX setup completed"
+          else
+            echo "DirectX setup not found on CD, trying choco"
+            choco install directx -y --no-progress 2>/dev/null || true
+          fi
           
           echo "=== Starting background input keeper ==="
           powershell.exe -NoProfile -WindowStyle Hidden -Command "while($true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
