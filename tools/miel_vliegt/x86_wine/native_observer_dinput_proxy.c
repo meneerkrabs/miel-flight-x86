@@ -60,8 +60,13 @@ static BOOL initialize_proxy(void)
         GetProcAddress(real_dinput, "DirectInputCreateA");
     failure_reason = "real_dinput_export";
     if (!real_direct_input_create) goto failed;
-    failure_reason = "cc_not_loaded";
-    if (!GetModuleHandleA("Cc.dll")) goto failed;
+    /* Cc.dll may not be loaded yet on first call. Don't signal failure -
+       just return FALSE. The bootstrap thread and DirectInputCreateA will
+       retry when Cc.dll becomes available. */
+    if (!GetModuleHandleA("Cc.dll")) {
+        InterlockedExchange(&initialization_state, 0);
+        return FALSE;
+    }
     length = GetEnvironmentVariableA(
         "MIEL_OBSERVER_DLL", observer_path, sizeof(observer_path));
     failure_reason = "observer_environment";
