@@ -1136,12 +1136,17 @@ def configure_gdi_renderer(
     settings = (
         ("renderer", r"HKCU\Software\Wine\Direct3D", "renderer", "gdi"),
         ("decorated", r"HKCU\Software\Wine\X11 Driver", "Decorated", "N"),
-        # Hangover's Wine does not auto-select a display driver, so the i386
-        # game hit nodrv_CreateWindow and busy-looped without ever reaching its
-        # manager loop. Pin the x11 graphics driver so winex11.drv loads against
-        # the Xvfb display and the projector can create its render window.
         ("graphics", r"HKCU\Software\Wine\Drivers", "Graphics", "x11"),
     )
+    # For wine backend: also set AppInit_DLLs to load observer hook directly
+    # This bypasses the DINPUT proxy which Wine can't load reliably
+    if backend and backend.get("id") == "wine":
+        settings = settings + (
+            ("appinit_dlls", r"HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows",
+             "AppInit_DLLs", "native-observer-hook.dll"),
+            ("load_appinit", r"HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows",
+             "LoadAppInit_DLLs", "1"),
+        )
     runs = {}
     add_results = []
     query_results = []
