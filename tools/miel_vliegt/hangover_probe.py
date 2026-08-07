@@ -1873,15 +1873,32 @@ def run_scene_navigation(
             encoding="utf-8", errors="replace",
         )
     )
-    # DEBUG: show full launcher command on failure
+    # DEBUG: check receipt file contents
     if start_patch_launch and start_patch_launch.get("exit_code") != 0:
         import sys as _sys
-        print("=== LAUNCHER CMD ===", file=_sys.stderr)
         _cmd = start_patch_launch.get("command", [])
+        # Find --receipt path in command
+        _receipt_path = None
         for _i, _arg in enumerate(_cmd):
-            print(f"  [{_i}] {_arg}", file=_sys.stderr)
-        print(f"  exit={start_patch_launch.get('exit_code')} duration={start_patch_launch.get('phase_timestamps',{}).get('duration_ns',0)/1e9:.3f}s", file=_sys.stderr)
-        print("=== END CMD ===", file=_sys.stderr)
+            if _arg == "--receipt" and _i + 1 < len(_cmd):
+                _receipt_path = _cmd[_i + 1]
+                break
+        # Convert Z:\ to /
+        if _receipt_path:
+            _linux_path = _receipt_path.replace("Z:\\", "/").replace("\\", "/")
+            print(f"=== RECEIPT PATH: {_linux_path} ===", file=_sys.stderr)
+            try:
+                _content = Path(_linux_path).read_text(encoding="utf-8")
+                print(f"RECEIPT CONTENT: {_content[:2000]}", file=_sys.stderr)
+            except Exception as _e:
+                print(f"RECEIPT READ FAILED: {_e}", file=_sys.stderr)
+        # Also check patch-receipt
+        for _i, _arg in enumerate(_cmd):
+            if _arg == "--patch-receipt" and _i + 1 < len(_cmd):
+                _pr = _cmd[_i + 1].replace("Z:\\", "/").replace("\\", "/")
+                print(f"PATCH RECEIPT EXISTS: {Path(_pr).exists()}", file=_sys.stderr)
+                break
+        print(f"exit={start_patch_launch.get('exit_code')} duration={start_patch_launch.get('phase_timestamps',{}).get('duration_ns',0)/1e9:.3f}s", file=_sys.stderr)
 
     start_patch_confirmed = bool(
         observer_launcher_receipt
