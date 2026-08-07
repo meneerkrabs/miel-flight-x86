@@ -152,7 +152,17 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
 void WINAPI ExitProcess_hook(UINT uExitCode) {
-    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED\n", uExitCode); fflush(stderr);
+    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED — running message pump\n", uExitCode);
+    fflush(stderr);
+    /* Instead of exiting, run a message pump to keep the game window alive.
+       This allows the observer hook's threads to continue working. */
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    /* If we get here, WM_QUIT was received — still don't call real ExitProcess */
+    fprintf(stderr, "MVP: message pump ended, sleeping forever\n"); fflush(stderr);
     Sleep(INFINITE);
 }
 
