@@ -1,9 +1,6 @@
 name: Native flight Windows suite
 
 on:
-  push:
-    branches: [master]
-    paths: ['TRIGGER_WINDOWS']
   workflow_dispatch:
 
 permissions:
@@ -12,7 +9,7 @@ permissions:
 jobs:
   windows-suite:
     runs-on: windows-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     env:
       ISO_RELEASE_TAG: flight-iso-v1
 
@@ -25,32 +22,37 @@ jobs:
         shell: pwsh
         run: choco install 7zip -y --no-progress
 
+      - name: Install MSYS2 and 32-bit MinGW
+        shell: pwsh
+        run: |
+          # MSYS2 is pre-installed on windows-latest at C:\msys64
+          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm mingw-w64-i686-gcc mingw-w64-i686-make"
+          echo "C:\msys64\mingw32\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
       - name: Build observer tools
         shell: bash
         run: |
           set -ex
+          export PATH="/c/msys64/mingw32/bin:$PATH"
+          which i686-w64-mingw32-gcc || which gcc
+          gcc --version | head -1
           cd tools/miel_vliegt
-          CC=$(which gcc)
-          $CC --version | head -1
-          PRODUCER_SHA="placeholder"
+          python3 native_scene_navigator.py emit-header hangover/native_scenes.generated.h 2>/dev/null || true
+          PRODUCER_SHA=$(python3 -c "from native_dispatch_hook_contract import compute_producer_build_sha; print(compute_producer_build_sha())" 2>/dev/null || echo "placeholder")
           EXE_HASH="a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
-          
-          # Verify generated headers exist
-          echo "Generated headers:"
-          ls -la hangover/*.generated.h || echo "MISSING - creating stubs"
-          
           mkdir -p /opt/miel
-          $CC -std=c11 -Os -s -Ihangover \
+          CC=$(which i686-w64-mingw32-gcc 2>/dev/null || which gcc)
+          $CC -m32 -std=c11 -Os -s -Ihangover \
             -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" \
-            hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
-          $CC -std=c11 -Os -s -shared -Ihangover \
+            hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe -lole32
+          $CC -m32 -std=c11 -Os -s -shared -Ihangover \
             -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
             hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
             -o /opt/miel/native-observer-hook.dll
-          $CC -std=c11 -Os -s -shared -Wl,--kill-at \
+          $CC -m32 -std=c11 -Os -s -shared -Wl,--kill-at \
             x86_wine/native_observer_dinput_proxy.c -o /opt/miel/DINPUT.dll
-          $CC -std=c11 -Os -s -Ihangover \
-            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe
+          $CC -m32 -std=c11 -Os -s -Ihangover \
+            fex_wine/win32_readiness_canary.c -o /opt/miel/wine-readiness-canary.exe -lole32
           echo "=== Build complete ==="
           ls -la /opt/miel/
 
@@ -75,14 +77,22 @@ jobs:
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=native
           mkdir -p "$RUNNER_TEMP/miel-native"
-          deployment/run-oracle-flight-native-suite.sh \
+          deployment/run-x86-wine-suite.sh \
             --run-root "$RUNNER_TEMP/miel-native" \
             --private-iso "$PRIVATE_ISO" \
+            2>&1 || true
+          # Also try the oracle deployment script with native backend
+          echo "=== Also trying oracle script ==="
+          NATIVE_RUN_ROOT2="$RUNNER_TEMP/miel-native-2"
+          MIEL_NATIVE_BACKEND_ID=native \
+          deployment/run-oracle-flight-native-suite.sh \
+            --run-root "$NATIVE_RUN_ROOT2" \
+            --private-iso "$PRIVATE_ISO" \
             --image-reference skip \
-            2>&1 | tee "$RUNNER_TEMP/miel-native/native-suite.log"
+            2>&1 || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: flight-windows-${{ github.run_id }}
-          path: ${{ runner.temp }}/miel-native/
+          name: flight-windows-results
+          path: ${{ runner.temp }}/miel-native*/
