@@ -93,6 +93,7 @@ jobs:
         run: |
           set -ex
           export REPOSITORY_ROOT="$(pwd)"
+          export MIEL_NATIVE_BACKEND_ID=native
           RUN_ROOT="$RUNNER_TEMP/miel-native"
           mkdir -p "$RUN_ROOT/game"
           cd "$RUN_ROOT/game"
