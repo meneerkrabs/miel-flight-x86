@@ -363,6 +363,7 @@ def native_runtime_environment(prefix: Path, backend: dict) -> list[str]:
             "WINEARCH=win32",
             f"WINEDEBUG={wine_debug}",
             "DISPLAY=:99",
+            f"WINEDLLOVERRIDES={FEX_OPTIONAL_INSTALLER_DLL_OVERRIDE}",
         ])
     return environment
 
