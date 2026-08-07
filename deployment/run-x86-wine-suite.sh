@@ -1,34 +1,25 @@
 #!/usr/bin/env bash
-# Dedicated x86 Wine suite runner — no Docker, no FEX, no complex paths.
-# This script handles ONLY the wine backend on ubuntu-latest.
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_IDENTITY="${REPOSITORY_ROOT}/content/miel_vliegt/source_identity.json"
 INITIAL_USER_FIXTURE="${REPOSITORY_ROOT}/tools/miel_vliegt/fixtures/native_dispatch_driver/initial-user0.dat.gz.b64"
-SUITE_LAUNCHER="${REPOSITORY_ROOT}/deployment/run-flight-native-suite.sh"
 OBSERVE_MS=3600000
 MAX_RECORDS=1000000
 
 RUN_ROOT=""
 PRIVATE_ISO=""
 
-usage() {
-  cat <<EOF
-usage: $0 --run-root <dir> --private-iso <iso>
-EOF
-}
-
 while (($#)); do
   case "$1" in
     --run-root) RUN_ROOT="${2:?}"; shift 2 ;;
     --private-iso) PRIVATE_ISO="${2:?}"; shift 2 ;;
-    --image-reference) shift 2 ;; # ignored
+    --image-reference) shift 2 ;;
     *) shift ;;
   esac
 done
 
-[[ -n "${RUN_ROOT}" && -n "${PRIVATE_ISO}" ]] || { usage >&2; exit 64; }
+[[ -n "${RUN_ROOT}" && -n "${PRIVATE_ISO}" ]] || { echo "usage: $0 --run-root <dir> --private-iso <iso>" >&2; exit 64; }
 [[ "${RUN_ROOT}" == /* && "${PRIVATE_ISO}" == /* ]] || { echo "paths must be absolute" >&2; exit 64; }
 [[ ! -e "${RUN_ROOT}" ]] || { echo "run root exists: ${RUN_ROOT}" >&2; exit 73; }
 
@@ -40,117 +31,107 @@ mkdir -m 0700 "${RUN_ROOT}"
 exec > >(tee -a "${RUN_ROOT}/orchestration.log") 2>&1
 
 echo "=== x86 Wine suite starting ==="
-echo "REPOSITORY_ROOT=${REPOSITORY_ROOT}"
-echo "RUN_ROOT=${RUN_ROOT}"
 
 # Verify ISO hash
 expected_iso_sha="$(python3 -c "import json; print(json.load(open('${SOURCE_IDENTITY}'))['iso']['sha256'])")"
 actual_iso_sha="$(sha256sum "${PRIVATE_ISO}" | cut -d' ' -f1)"
-[[ "${actual_iso_sha}" == "${expected_iso_sha}" ]] || {
-  echo "ISO hash mismatch: expected ${expected_iso_sha}, got ${actual_iso_sha}" >&2
-  exit 65
-}
-echo "ISO hash verified: ${actual_iso_sha}"
+[[ "${actual_iso_sha}" == "${expected_iso_sha}" ]] || { echo "ISO hash mismatch" >&2; exit 65; }
+echo "ISO hash verified"
 
 # Extract game files
 INSTALLER_ROOT="${RUN_ROOT}/private-installer"
 EXTRACTED_SYSTEM_ROOT="${RUN_ROOT}/private-system"
 mkdir -m 0700 "${INSTALLER_ROOT}" "${EXTRACTED_SYSTEM_ROOT}"
 7z x -y "-o${INSTALLER_ROOT}" "${PRIVATE_ISO}" >/dev/null
-echo "ISO extracted to ${INSTALLER_ROOT}"
-echo "Contents:" && ls "${INSTALLER_ROOT}" | head -20
-
-# unshield must run from the output directory
 (
   cd "${EXTRACTED_SYSTEM_ROOT}"
   unshield -g "System Files" x "${INSTALLER_ROOT}/data1.cab" || true
 )
-echo "System files extracted:" && ls "${EXTRACTED_SYSTEM_ROOT}" | head -20
-
 PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/System_Files"
-# Try alternate capitalization
-if [[ ! -d "${PRIVATE_GAME_ROOT}" ]]; then
-  PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/System_files"
-fi
-if [[ ! -d "${PRIVATE_GAME_ROOT}" ]]; then
-  PRIVATE_GAME_ROOT="${EXTRACTED_SYSTEM_ROOT}/system_files"
-fi
-[[ -d "${PRIVATE_GAME_ROOT}" ]] || {
-  echo "game root not found in ${EXTRACTED_SYSTEM_ROOT}" >&2
-  echo "Directory listing:" >&2
-  find "${EXTRACTED_SYSTEM_ROOT}" -maxdepth 2 -type d >&2 || true
-  exit 66
-}
-echo "Game root: ${PRIVATE_GAME_ROOT}"
+[[ -d "${PRIVATE_GAME_ROOT}" ]] || { echo "game root not found" >&2; exit 66; }
 
-# Check if the game imports dinput.dll
-echo "=== Game DLL imports ==="
-GAME_EXE="${PRIVATE_GAME_ROOT}/MulleMeck.exe"
-if command -v i686-w64-mingw32-objdump >/dev/null 2>&1; then
-  i686-w64-mingw32-objdump -p "${GAME_EXE}" 2>/dev/null | grep "DLL Name:" || echo "objdump failed"
-elif command -v objdump >/dev/null 2>&1; then
-  objdump -p "${GAME_EXE}" 2>/dev/null | grep "DLL Name:" || echo "objdump failed"
+# Setup directories
+GAME_ROOT="${RUN_ROOT}/game"
+PROXY_ROOT="${RUN_ROOT}/proxy"
+FIXTURE_ROOT="${RUN_ROOT}/fixture"
+WINE_PREFIX="${RUN_ROOT}/wine-prefix"
+SUITE_ROOT="${RUN_ROOT}/calibrated-suite"
+OUTPUT_ROOT="${RUN_ROOT}/output"
+CLEAN_STATE_ROOT="${RUN_ROOT}/game-clean"
+mkdir -m 0700 "${GAME_ROOT}" "${PROXY_ROOT}" "${FIXTURE_ROOT}"
+
+cp -a "${PRIVATE_GAME_ROOT}/." "${GAME_ROOT}/"
+7z e -y "-o${GAME_ROOT}" "${PRIVATE_ISO}" data.up map.up sounds.up Miel.ini
+
+# Resolve observer tools
+if [[ -f /opt/miel/native-observer-hook.dll ]]; then
+  TOOLS_SRC="/opt/miel"
 else
-  # Use Python to parse PE imports
-  python3 - <<'PEEOF'
-import struct
-with open("${GAME_EXE}", "rb") as f:
-    data = f.read()
-# Find PE header
-pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
-# Check PE signature
-if data[pe_offset:pe_offset+4] != b"PE\x00\x00":
-    print("Not a valid PE file")
-else:
-    # COFF header
-    num_sections = struct.unpack_from("<H", data, pe_offset+6)[0]
-    opt_header_size = struct.unpack_from("<H", data, pe_offset+20)[0]
-    opt_start = pe_offset + 24
-    # Data directories start at offset 96 (PE32) or 112 (PE32+)
-    magic = struct.unpack_from("<H", data, opt_start)[0]
-    if magic == 0x10b:  # PE32
-        dd_offset = opt_start + 96
-    else:
-        dd_offset = opt_start + 112
-    # Import table is data directory index 1
-    import_rva = struct.unpack_from("<I", data, dd_offset + 8)[0]
-    import_size = struct.unpack_from("<I", data, dd_offset + 12)[0]
-    # Section table
-    section_offset = opt_start + opt_header_size
-    sections = []
-    for i in range(num_sections):
-        s_off = section_offset + i * 40
-        name = data[s_off:s_off+8].rstrip(b"\x00").decode("ascii", errors="replace")
-        v_addr = struct.unpack_from("<I", data, s_off+12)[0]
-        v_size = struct.unpack_from("<I", data, s_off+8)[0]
-        raw_offset = struct.unpack_from("<I", data, s_off+20)[0]
-        sections.append((name, v_addr, v_size, raw_offset))
-    def rva_to_offset(rva):
-        for name, va, vs, ro in sections:
-            if va <= rva < va + vs:
-                return ro + (rva - va)
-        return None
-    if import_rva:
-        offset = rva_to_offset(import_rva)
-        if offset:
-            print("Imported DLLs:")
-            while True:
-                ilt_rva = struct.unpack_from("<I", data, offset+12)[0]
-                name_rva = struct.unpack_from("<I", data, offset+12)[0]
-                name_off = rva_to_offset(name_rva)
-                if name_off:
-                    end = data.index(b"\x00", name_off)
-                    dll_name = data[name_off:end].decode("ascii", errors="replace")
-                    print(f"  {dll_name}")
-                if data[offset:offset+20] == b"\x00" * 20:
-                    break
-                offset += 20
-    else:
-        print("No import table found")
-PEEOF
+  TOOLS_SRC="${REPOSITORY_ROOT}/tools/miel_vliegt/hangover"
 fi
-echo "=== End imports ==="
+echo "Observer tools from: ${TOOLS_SRC}"
 
+# Copy exe + proxy DLLs to proxy directory
+install -m 0600 "${GAME_ROOT}/MulleMeck.exe" "${PROXY_ROOT}/MulleMeck.exe"
+install -m 0600 "${TOOLS_SRC}/DINPUT.dll" "${PROXY_ROOT}/DINPUT.dll"
+install -m 0600 "${TOOLS_SRC}/native-observer-hook.dll" "${PROXY_ROOT}/native-observer-hook.dll"
+install -m 0600 "${TOOLS_SRC}/dinput-real.dll" "${PROXY_ROOT}/dinput-real.dll"
+
+# Restore user fixture
+python3 - "${INITIAL_USER_FIXTURE}" "${FIXTURE_ROOT}/user0.dat" <<'PYFIX'
+import base64, gzip, sys
+from pathlib import Path
+source, target = Path(sys.argv[1]), Path(sys.argv[2])
+encoded = "".join(source.read_text(encoding="ascii").split())
+target.write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
+PYFIX
+mkdir -p "${GAME_ROOT}/Data/User"
+install -m 0600 "${FIXTURE_ROOT}/user0.dat" "${GAME_ROOT}/Data/User/user0.dat"
+
+# Clean state snapshot
+mkdir -m 0700 "${CLEAN_STATE_ROOT}"
+cp -a "${GAME_ROOT}/." "${CLEAN_STATE_ROOT}/"
+
+# Input identities
+declare -A input_paths=(
+  [source_executable]="${GAME_ROOT}/MulleMeck.exe"
+  [disposable_target]="${PROXY_ROOT}/MulleMeck.exe"
+  [user_profile]="${FIXTURE_ROOT}/user0.dat"
+  [observer_dll]="${PROXY_ROOT}/native-observer-hook.dll"
+  [observer_launcher]="${TOOLS_SRC}/native-observer-launcher.exe"
+  [proxy_dinput]="${PROXY_ROOT}/DINPUT.dll"
+  [real_dinput]="${PROXY_ROOT}/dinput-real.dll"
+  [smoke_executable]="${TOOLS_SRC}/wine-readiness-canary.exe"
+  [data_archive]="${GAME_ROOT}/data.up"
+  [map_archive]="${GAME_ROOT}/map.up"
+  [sounds_archive]="${GAME_ROOT}/sounds.up"
+  [miel_ini]="${GAME_ROOT}/Miel.ini"
+)
+
+# Compute SHA256
+declare -A input_sha256=()
+for label in "${!input_paths[@]}"; do
+  input_sha256["${label}"]="$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)"
+done
+
+identities_tsv="${RUN_ROOT}/input-identities.tsv"
+: >"${identities_tsv}"
+for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
+  printf '%s\t%s\t%s\n' "${label}" "${input_sha256[${label}]}" "${input_paths[${label}]}" >>"${identities_tsv}"
+done
+
+sha256_args=()
+for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
+  sha256_args+=("--${label//_/-}-sha256" "${input_sha256[${label}]}")
+done
+
+# Start Xvfb
+echo "=== Starting Xvfb ==="
+Xvfb :99 -screen 0 646x512x16 -nolisten tcp &
+sleep 2
+export DISPLAY=:99
+
+# Receipt function
 write_receipt() {
   local status="$1" suite_exit="$2"
   python3 - "${RUN_ROOT}/runner-receipt.json" "${status}" "${suite_exit}" \
@@ -177,35 +158,10 @@ Path(output_path + ".tmp").replace(output_path)
 PY
 }
 
-
-# Compute SHA256 for all inputs
-declare -A input_sha256=()
-for label in "${!input_paths[@]}"; do
-  input_sha256["${label}"]="$(sha256sum "${input_paths[${label}]}" | cut -d' ' -f1)"
-done
-
-identities_tsv="${RUN_ROOT}/input-identities.tsv"
-: >"${identities_tsv}"
-for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-  printf '%s\t%s\t%s\n' "${label}" "${input_sha256[${label}]}" "${input_paths[${label}]}" >>"${identities_tsv}"
-done
-
-# Build SHA256 arguments for the suite
-sha256_args=()
-for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-  sha256_args+=("--${label//_/-}-sha256" "${input_sha256[${label}]}")
-done
-
-# Debug: show SHA256 args
-echo "=== SHA256 args count: ${#sha256_args[@]} ==="
-for arg in "${sha256_args[@]}"; do
-  echo "  arg: ${arg}"
-done
-
 write_receipt RUNNING 0
 
-# Run the suite — call Python directly
-echo "=== Running suite (direct Python) ==="
+# Run suite
+echo "=== Running suite ==="
 set +e
 cd "${REPOSITORY_ROOT}"
 python3 tools/miel_vliegt/native_semantic_suite.py \
