@@ -785,7 +785,7 @@ def wine_z_path(path: Path) -> str:
                 run_root = Path(*parts[:i+1])
                 if str(path).startswith(str(run_root)):
                     rel = path.relative_to(run_root)
-                    return "E:" + str(rel).replace("/", "\\")
+                    return "E:\\" + str(rel).replace("/", "\\")
                 break
     return "Z:" + str(path).replace("/", "\\")
 
