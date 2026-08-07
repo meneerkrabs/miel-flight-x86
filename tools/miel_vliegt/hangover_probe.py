@@ -771,22 +771,19 @@ def has_loader_failure(*results: dict) -> bool:
 
 def wine_z_path(path: Path) -> str:
     path = path.resolve()
-    # For wine backend, try to use E: drive (mapped to run root's parent)
-    # instead of Z: which doesn't support DLL loading
+    # For wine backend, use C:\game\ for game/proxy files
+    # (copied there by bootstrap_prefix for reliable DLL loading)
     import os
     backend_id = os.environ.get("MIEL_NATIVE_BACKEND_ID", "fex")
     if backend_id == "wine":
-        # Check if path is under a wine-prefix parent (the run root)
-        # The E: drive maps to run_root = prefix.parent
-        # We need to find the run root from the path
         parts = path.parts
         for i, part in enumerate(parts):
-            if part == "miel-native":
-                run_root = Path(*parts[:i+1])
-                if str(path).startswith(str(run_root)):
-                    rel = path.relative_to(run_root)
-                    return "E:\\" + str(rel).replace("/", "\\")
-                break
+            if part in ("game", "proxy") and i > 0 and parts[i-1] == "miel-native":
+                # This is a game or proxy file - map to C:\game\
+                filename = path.name
+                return "C:\\game\\" + filename
+        # For output/receipt files, use Z: (Wine can read files from Z:)
+        # Actually, use Z: for everything else
     return "Z:" + str(path).replace("/", "\\")
 
 
@@ -2610,24 +2607,39 @@ def bootstrap_prefix(
         else:
             print(f"SMOKE skipped: {smoke.get('skipped', 'N/A') if isinstance(smoke, dict) else 'N/A'}", file=sys.stderr)
     
-    # Wine backend: copy observer DLLs to prefix system32 for reliable loading
-    # Wine's DLL loader cannot load from Z: drive paths, so copy to C: drive
-    if backend.get("id") == "wine" and smoke_executable.parent.is_dir():
-        system32 = prefix / "drive_c" / "windows" / "system32"
-        system32.mkdir(parents=True, exist_ok=True)
-        for tool_file in ["DINPUT.dll", "native-observer-hook.dll", "dinput-real.dll"]:
-            src = smoke_executable.parent / tool_file
-            if src.exists():
-                shutil.copy2(src, system32 / tool_file)
-                print(f"Copied {tool_file} to Wine system32", file=__import__('sys').stderr)
-        # Also create E: drive mapping to the run root for game files
-        dosdevices = prefix / "dosdevices"
-        dosdevices.mkdir(exist_ok=True)
+    # Wine backend: copy game+proxy+tools to C: drive for reliable DLL loading
+    # Wine's DLL loader cannot load DLLs from Z: (Unix root) or E: (symlink) drives.
+    # Copy everything to the Wine C: drive (drive_c) which Wine handles natively.
+    if backend.get("id") == "wine":
         run_root = prefix.parent
-        e_drive = dosdevices / "e:"
-        if not e_drive.exists():
-            e_drive.symlink_to(run_root, target_is_directory=True)
-            print(f"Created E: drive mapping to {run_root}", file=__import__('sys').stderr)
+        c_game = prefix / "drive_c" / "game"
+        c_game.mkdir(parents=True, exist_ok=True)
+        # Copy game files
+        game_src = run_root / "game"
+        if game_src.is_dir():
+            for item in game_src.iterdir():
+                dst = c_game / item.name
+                if item.is_file():
+                    shutil.copy2(item, dst)
+                elif item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
+        # Copy proxy files (exe + DINPUT.dll + observer)
+        proxy_src = run_root / "proxy"
+        if proxy_src.is_dir():
+            for item in proxy_src.iterdir():
+                dst = c_game / item.name
+                if item.is_file():
+                    shutil.copy2(item, dst)
+                elif item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
+        # Also copy tools (observer DLLs)
+        tools_src = smoke_executable.parent
+        if tools_src.is_dir():
+            for tool_file in ["DINPUT.dll", "native-observer-hook.dll", "dinput-real.dll"]:
+                src = tools_src / tool_file
+                if src.exists():
+                    shutil.copy2(src, c_game / tool_file)
+        print(f"Copied game+proxy+tools to C:\\game\\ ({len(list(c_game.iterdir()))} items)", file=__import__('sys').stderr)
     
     return {
         "checks": checks,
