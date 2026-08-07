@@ -83,6 +83,74 @@ fi
 }
 echo "Game root: ${PRIVATE_GAME_ROOT}"
 
+# Check if the game imports dinput.dll
+echo "=== Game DLL imports ==="
+GAME_EXE="${PRIVATE_GAME_ROOT}/MulleMeck.exe"
+if command -v i686-w64-mingw32-objdump >/dev/null 2>&1; then
+  i686-w64-mingw32-objdump -p "${GAME_EXE}" 2>/dev/null | grep "DLL Name:" || echo "objdump failed"
+elif command -v objdump >/dev/null 2>&1; then
+  objdump -p "${GAME_EXE}" 2>/dev/null | grep "DLL Name:" || echo "objdump failed"
+else
+  # Use Python to parse PE imports
+  python3 - <<'PEEOF'
+import struct
+with open("${GAME_EXE}", "rb") as f:
+    data = f.read()
+# Find PE header
+pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
+# Check PE signature
+if data[pe_offset:pe_offset+4] != b"PE\x00\x00":
+    print("Not a valid PE file")
+else:
+    # COFF header
+    num_sections = struct.unpack_from("<H", data, pe_offset+6)[0]
+    opt_header_size = struct.unpack_from("<H", data, pe_offset+20)[0]
+    opt_start = pe_offset + 24
+    # Data directories start at offset 96 (PE32) or 112 (PE32+)
+    magic = struct.unpack_from("<H", data, opt_start)[0]
+    if magic == 0x10b:  # PE32
+        dd_offset = opt_start + 96
+    else:
+        dd_offset = opt_start + 112
+    # Import table is data directory index 1
+    import_rva = struct.unpack_from("<I", data, dd_offset + 8)[0]
+    import_size = struct.unpack_from("<I", data, dd_offset + 12)[0]
+    # Section table
+    section_offset = opt_start + opt_header_size
+    sections = []
+    for i in range(num_sections):
+        s_off = section_offset + i * 40
+        name = data[s_off:s_off+8].rstrip(b"\x00").decode("ascii", errors="replace")
+        v_addr = struct.unpack_from("<I", data, s_off+12)[0]
+        v_size = struct.unpack_from("<I", data, s_off+8)[0]
+        raw_offset = struct.unpack_from("<I", data, s_off+20)[0]
+        sections.append((name, v_addr, v_size, raw_offset))
+    def rva_to_offset(rva):
+        for name, va, vs, ro in sections:
+            if va <= rva < va + vs:
+                return ro + (rva - va)
+        return None
+    if import_rva:
+        offset = rva_to_offset(import_rva)
+        if offset:
+            print("Imported DLLs:")
+            while True:
+                ilt_rva = struct.unpack_from("<I", data, offset+12)[0]
+                name_rva = struct.unpack_from("<I", data, offset+12)[0]
+                name_off = rva_to_offset(name_rva)
+                if name_off:
+                    end = data.index(b"\x00", name_off)
+                    dll_name = data[name_off:end].decode("ascii", errors="replace")
+                    print(f"  {dll_name}")
+                if data[offset:offset+20] == b"\x00" * 20:
+                    break
+                offset += 20
+    else:
+        print("No import table found")
+PEEOF
+fi
+echo "=== End imports ==="
+
 GAME_ROOT="${RUN_ROOT}/game"
 PROXY_ROOT="${RUN_ROOT}/proxy"
 TOOLS_ROOT="${RUN_ROOT}/tools"
