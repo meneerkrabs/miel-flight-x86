@@ -422,7 +422,15 @@ static BOOL set_child_environment(
     memset(snapshots, 0, sizeof(EnvironmentSnapshot) * 3u);
     values[0] = "1";
     values[1] = options->real_dinput;
-    values[2] = options->observer;
+    /* Wine: strip path so LoadLibrary searches the exe directory.
+       Wine's LoadLibrary doesn't reliably load DLLs from Z:\ paths. */
+    {
+        const char *obs = options->observer;
+        const char *bs = strrchr(obs, '\\');
+        const char *fs = strrchr(obs, '/');
+        const char *last = (bs > fs) ? bs : fs;
+        values[2] = last ? last + 1 : obs;
+    }
     for (index = 0; index < 3u; ++index) {
         if (!capture_environment(names[index], &snapshots[index])) {
             restore_child_environment(snapshots);
