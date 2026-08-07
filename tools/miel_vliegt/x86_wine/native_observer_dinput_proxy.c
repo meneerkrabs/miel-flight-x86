@@ -148,55 +148,49 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     return TRUE;
 }
 
-/* === ExitProcess interception: prevent the game from exiting === */
+/* === Exit prevention: hook PostQuitMessage + ExitProcess === */
 static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
 void WINAPI ExitProcess_hook(UINT uExitCode) {
-    fprintf(stderr, "MVP_ExitProcess: game tried to exit with code %u — BLOCKING\n", uExitCode);
-    fflush(stderr);
-    /* Instead of exiting, suspend this thread forever.
-       The game's other threads continue running. */
+    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED\n", uExitCode); fflush(stderr);
     Sleep(INFINITE);
 }
 
+void WINAPI PostQuitMessage_hook(int nExitCode) {
+    fprintf(stderr, "MVP_PostQuitMessage(%d): BLOCKED\n", nExitCode); fflush(stderr);
+    /* Do nothing — don't post WM_QUIT, keep the game alive */
+}
+
 static void install_exit_hook(void) {
-    HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
-    if (!kernel32) return;
-    real_ExitProcess = (void*)GetProcAddress(kernel32, "ExitProcess");
-    if (!real_ExitProcess) return;
-    
-    /* Patch the IAT entry for ExitProcess in MulleMeck.exe */
-    HANDLE hProcess = GetCurrentProcess();
     HMODULE exe_module = GetModuleHandleA(NULL);
     if (!exe_module) return;
-    
-    /* Walk the import table to find ExitProcess */
     BYTE *base = (BYTE*)exe_module;
     IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER*)base;
     IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
-    IMAGE_IMPORT_DESCRIPTOR *imports = (IMAGE_IMPORT_DESCRIPTOR*)
-        (base + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-    
+    DWORD import_rva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!import_rva) return;
+    IMAGE_IMPORT_DESCRIPTOR *imports = (IMAGE_IMPORT_DESCRIPTOR*)(base + import_rva);
     DWORD old_protect;
+    int hooked = 0;
     for (; imports->Name; imports++) {
-        IMAGE_THUNK_DATA *thunk = (IMAGE_THUNK_DATA*)
-            (base + imports->FirstThunk);
+        IMAGE_THUNK_DATA *thunk = (IMAGE_THUNK_DATA*)(base + imports->FirstThunk);
         IMAGE_THUNK_DATA *orig_thunk = (IMAGE_THUNK_DATA*)
             (base + (imports->OriginalFirstThunk ? imports->OriginalFirstThunk : imports->FirstThunk));
         for (; orig_thunk->u1.AddressOfData; thunk++, orig_thunk++) {
             if (orig_thunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) continue;
-            IMAGE_IMPORT_BY_NAME *import = (IMAGE_IMPORT_BY_NAME*)
-                (base + orig_thunk->u1.AddressOfData);
+            IMAGE_IMPORT_BY_NAME *import = (IMAGE_IMPORT_BY_NAME*)(base + orig_thunk->u1.AddressOfData);
             if (lstrcmpiA(import->Name, "ExitProcess") == 0) {
                 VirtualProtect(&thunk->u1.Function, sizeof(void*), PAGE_READWRITE, &old_protect);
                 thunk->u1.Function = (ULONG_PTR)ExitProcess_hook;
                 VirtualProtect(&thunk->u1.Function, sizeof(void*), old_protect, &old_protect);
-                fprintf(stderr, "MVP: ExitProcess IAT hook installed\n");
-                fflush(stderr);
-                return;
+                hooked++;
+            } else if (lstrcmpiA(import->Name, "PostQuitMessage") == 0) {
+                VirtualProtect(&thunk->u1.Function, sizeof(void*), PAGE_READWRITE, &old_protect);
+                thunk->u1.Function = (ULONG_PTR)PostQuitMessage_hook;
+                VirtualProtect(&thunk->u1.Function, sizeof(void*), old_protect, &old_protect);
+                hooked++;
             }
         }
     }
-    fprintf(stderr, "MVP: ExitProcess not found in IAT\n");
-    fflush(stderr);
+    fprintf(stderr, "MVP: %d exit hooks installed\n", hooked); fflush(stderr);
 }
