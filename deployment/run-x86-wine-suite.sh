@@ -151,40 +151,24 @@ PEEOF
 fi
 echo "=== End imports ==="
 
-# Check DINPUT proxy DLL format
+# Check DINPUT proxy DLL
 echo "=== DINPUT proxy check ==="
-file /opt/miel/DINPUT.dll 2>/dev/null || echo "file cmd not available"
-python3 - <<'DLCHECK'
-import struct, sys
-dll_path = /opt/miel/DINPUT.dll
-try:
-    with open(dll_path, "rb") as f:
-        data = f.read(1024)
-    if data[:2] != b"MZ":
-        print("ERROR: Not a valid PE/DOS file")
-        sys.exit(1)
-    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
-    if pe_off + 4 > len(data):
-        print("ERROR: PE offset beyond header")
-        sys.exit(1)
-    if data[pe_off:pe_off+4] != b"PE\x00\x00":
-        print("ERROR: Invalid PE signature")
-        sys.exit(1)
-    magic = struct.unpack_from("<H", data, pe_off+24)[0]
-    print(f"PE format: {'PE32 (32-bit)' if magic == 0x10b else 'PE32+ (64-bit)' if magic == 0x20b else f'Unknown (0x{magic:04x})'}")
-    machine = struct.unpack_from("<H", data, pe_off+4)[0]
-    print(f"Machine: 0x{machine:04x} ({'i386' if machine == 0x14c else 'unknown'})")
-    print(f"File size: {len(open(dll_path, 'rb').read())} bytes")
-    print("OK: Valid 32-bit PE DLL")
-except Exception as e:
-    print(f"ERROR: {e}")
-DLCHECK
+file /opt/miel/DINPUT.dll
+i686-w64-mingw32-objdump -p /opt/miel/DINPUT.dll 2>/dev/null | grep -A 20 "Export" || echo "No objdump"
 echo "=== End DINPUT check ==="
 
-# Try loading DINPUT.dll via rundll32 to see if Wine can load it
-echo "=== Wine DINPUT load test ==="
-WINEPREFIX="${RUN_ROOT}/test-prefix" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
-WINEPREFIX="${RUN_ROOT}/test-prefix" WINEARCH=win32 WINEDEBUG=+loaddll wine /opt/miel/wine-readiness-canary.exe --rpcss-timeout-ms 5000 2>&1 | grep -i "dinput\|DINPUT\|proxy\|MVP" | head -10 || echo "No dinput in output"
+# Try loading DINPUT.dll via Wine with verbose DLL loading
+echo "=== Wine DLL load test ==="
+TESTPREFIX="${RUN_ROOT}/test-prefix"
+WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDEBUG=-all wineboot --init 2>/dev/null || true
+# Copy game and proxy to C: drive (not Z:)
+mkdir -p "${TESTPREFIX}/drive_c/game"
+cp /opt/miel/DINPUT.dll "${TESTPREFIX}/drive_c/game/"
+cp /opt/miel/wine-readiness-canary.exe "${TESTPREFIX}/drive_c/game/"
+cp /opt/miel/dinput-real.dll "${TESTPREFIX}/drive_c/game/"
+echo "=== Running from C: drive with +loaddll ==="
+cd "${TESTPREFIX}/drive_c/game"
+WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll wine C:\\game\\wine-readiness-canary.exe --rpcss-timeout-ms 5000 2>&1 | grep -i "dinput\|DINPUT\|proxy\|MVP\|load" | head -15 || echo "No relevant output"
 echo "=== End load test ==="
 
 GAME_ROOT="${RUN_ROOT}/game"
