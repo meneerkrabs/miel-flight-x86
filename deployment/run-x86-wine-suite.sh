@@ -151,6 +151,32 @@ PEEOF
 fi
 echo "=== End imports ==="
 
+write_receipt() {
+  local status="$1" suite_exit="$2"
+  python3 - "${RUN_ROOT}/runner-receipt.json" "${status}" "${suite_exit}" \
+    "${identities_tsv}" "${OUTPUT_ROOT}" "${OBSERVE_MS}" "${MAX_RECORDS}" \
+    "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" <<'PY'
+import json, sys
+from pathlib import Path
+(output_path, status, suite_exit, identities_path, suite_output,
+ observe_ms, max_records, commit) = sys.argv[1:]
+inputs = {}
+for line in Path(identities_path).read_text(encoding="utf-8").splitlines():
+    label, sha256, path = line.split("\t")
+    inputs[label] = {"path": path, "sha256": sha256}
+receipt = {
+    "schema": 1, "protocol": "miel-vliegt-x86-wine-suite-runner",
+    "status": status, "suite_exit_code": int(suite_exit),
+    "repository_commit": commit, "observe_ms": int(observe_ms),
+    "max_records": int(max_records), "backend": "wine",
+    "inputs": inputs, "suite_output_root": suite_output,
+}
+Path(output_path + ".tmp").write_text(
+    json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+Path(output_path + ".tmp").replace(output_path)
+PY
+}
+
 write_receipt RUNNING 0
 
 # Debug: show SHA256 args
