@@ -178,6 +178,15 @@ jobs:
             fi
           fi
           
+          # Copy ALL game files to proxy directory (game runs from there and needs its DLLs)
+          echo "=== Copying game files to proxy dir ==="
+          cp -a "$GAME_ROOT/." "$PROXY_ROOT/"
+          # Re-install our proxy DLLs over the game's originals
+          install -m 0600 "$TOOLS_SRC/DINPUT.dll" "$PROXY_ROOT/DINPUT.dll"
+          install -m 0600 "$TOOLS_SRC/native-observer-hook.dll" "$PROXY_ROOT/native-observer-hook.dll"
+          install -m 0600 "$PROXY_ROOT/dinput-real.dll" "$PROXY_ROOT/dinput-real.dll" 2>/dev/null || true
+          echo "Game files in proxy dir: $(ls "$PROXY_ROOT/" | wc -l) items"
+          
           # Write config.ini to proxy directory (game reads from cwd)
           printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
