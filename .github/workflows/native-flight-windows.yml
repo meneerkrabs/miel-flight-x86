@@ -162,12 +162,36 @@ jobs:
           done
           
           # Note: GH_TOKEN and ISO_GPG_PASSPHRASE needed for ISO download above
-          # Diagnostic: run game directly to check if it stays running
-          echo "=== Diagnostic: direct game run ==="
-          cd "$GAME_ROOT"
-          timeout 30 MulleMeck.exe 2>&1 | tail -20 || true
-          echo "=== Direct game exit: $? ==="
-          cd "$REPOSITORY_ROOT"
+          # Background input keeper: send periodic keystrokes to keep game alive
+          # The game exits with code 0 if no input is received (old DX7 behavior)
+          echo "=== Starting background input keeper ==="
+          cat > /tmp/keepalive.ps1 << 'PSEOF'
+          Add-Type -TypeDefinition '
+          using System;
+          using System.Runtime.InteropServices;
+          public class Win32 {
+            [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern IntPtr FindWindowA(string lpClassName, string lpWindowName);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+          }
+          '
+          $job = Start-Job -ScriptBlock {
+            param($Win32Type)
+            while ($true) {
+              # Try to find and focus the game window
+              $hwnd = [Win32]::FindWindowA($null, "Miel Monteur")
+              if ($hwnd -ne [IntPtr]::Zero) {
+                [Win32]::ShowWindow($hwnd, 9)  # SW_RESTORE
+                [Win32]::SetForegroundWindow($hwnd)
+              }
+              # Send a harmless space key
+              [Win32]::keybd_event(0x20, 0, 0, [UIntPtr]::Zero)
+              [Win32]::keybd_event(0x20, 0, 2, [UIntPtr]::Zero)  # KEYUP
+              Start-Sleep -Milliseconds 300
+            }
+          } -ArgumentList $null
+          echo "Background input keeper started (Job ID: $job.Id)"
           
           echo "=== Running suite (native Windows) ==="
           python3 tools/miel_vliegt/native_semantic_suite.py \
@@ -196,6 +220,11 @@ jobs:
             --observe-ms 3600000 \
             --max-records 1000000 \
             "${sha256_args[@]}" || true
+
+          # Stop background input keeper
+          Get-Job | Stop-Job -Force 2>/dev/null || true
+          Get-Job | Remove-Job -Force 2>/dev/null || true
+          echo "=== Background input keeper stopped ==="
 
       - uses: actions/upload-artifact@v4
         if: always()
