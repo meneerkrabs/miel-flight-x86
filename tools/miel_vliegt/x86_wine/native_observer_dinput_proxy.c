@@ -156,7 +156,30 @@ void WINAPI ExitProcess_hook(UINT uExitCode) {
     Sleep(INFINITE);
 }
 
+/* VEH: log all exceptions to understand why the game exits */
+LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
+    if (ep && ep->ExceptionRecord) {
+        DWORD code = ep->ExceptionRecord->ExceptionCode;
+        /* Filter out common non-fatal exceptions */
+        if (code != 0xE06D7363 &&  /* C++ exception */
+            code != 0x406D1388 &&  /* SetThreadName */
+            code != STATUS_BREAKPOINT &&
+            code != STATUS_SINGLE_STEP) {
+            fprintf(stderr, "MVP_EXC: code=0x%08X addr=%p\n",
+                    code, ep->ExceptionRecord->ExceptionAddress);
+            fflush(stderr);
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 static void install_exit_hook(void) {
+    /* Install VEH first to catch crashes */
+    AddVectoredExceptionHandler(0, crash_logger);
+    fprintf(stderr, "MVP: VEH crash logger installed\n"); fflush(stderr);
+    
+    /* Original inline hook code follows */
+    {
     /* Inline hook: overwrite first 5 bytes of ExitProcess in kernel32
        with a JMP to our hook. This catches ALL calls to ExitProcess
        regardless of which module makes the call (game exe, MSVCRT, etc.). */
@@ -181,4 +204,5 @@ static void install_exit_hook(void) {
     fprintf(stderr, "MVP: ExitProcess inline hook installed at %p -> %p\n",
             target, ExitProcess_hook);
     fflush(stderr);
+    }
 }
