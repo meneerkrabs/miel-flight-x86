@@ -8,7 +8,10 @@ import os
 import shutil
 import stat
 import time
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Mapping
