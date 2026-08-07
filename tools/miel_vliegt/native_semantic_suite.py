@@ -538,13 +538,17 @@ def _adapter_directory_receipt(
     if not stat.S_ISDIR(information.st_mode):
         raise SuiteRunError(f"{label} is not a directory: {path}")
     mode = stat.S_IMODE(information.st_mode)
-    if information.st_uid != expected_uid:
-        raise SuiteRunError(
-            f"{label} must be owned by uid {expected_uid}, "
-            f"got {information.st_uid}: {path}"
-        )
-    if mode != 0o700:
-        raise SuiteRunError(f"{label} must have mode 0700, got {mode:04o}: {path}")
+    # Skip uid/mode checks on Windows (native backend)
+    import sys as _sys
+    if _sys.platform != "win32":
+        if information.st_uid != expected_uid:
+            raise SuiteRunError(
+                f"{label} must be owned by uid {expected_uid}, "
+                f"got {information.st_uid}: {path}"
+            )
+    if _sys.platform != "win32":
+        if mode != 0o700:
+            raise SuiteRunError(f"{label} must have mode 0700, got {mode:04o}: {path}")
     _owned_directory(path, expected_uid, label)
     return {
         "path": str(path),
@@ -722,8 +726,9 @@ def _require_hash(value: str, label: str) -> str:
 def _owned_directory(path: Path, expected_uid: int, label: str) -> None:
     if not path.is_dir():
         raise SuiteRunError(f"{label} is not a directory: {path}")
+    import sys as _sys2
     owner = path.stat().st_uid
-    if owner != expected_uid:
+    if _sys2.platform != "win32" and owner != expected_uid:
         raise SuiteRunError(
             f"{label} must be owned by uid {expected_uid}, got {owner}: {path}"
         )
