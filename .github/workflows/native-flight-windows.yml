@@ -77,19 +77,9 @@ jobs:
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=native
           mkdir -p "$RUNNER_TEMP/miel-native"
-          deployment/run-x86-wine-suite.sh \
+          deployment/run-windows-suite.sh \
             --run-root "$RUNNER_TEMP/miel-native" \
-            --private-iso "$PRIVATE_ISO" \
-            2>&1 || true
-          # Also try the oracle deployment script with native backend
-          echo "=== Also trying oracle script ==="
-          NATIVE_RUN_ROOT2="$RUNNER_TEMP/miel-native-2"
-          MIEL_NATIVE_BACKEND_ID=native \
-          deployment/run-oracle-flight-native-suite.sh \
-            --run-root "$NATIVE_RUN_ROOT2" \
-            --private-iso "$PRIVATE_ISO" \
-            --image-reference skip \
-            2>&1 || true
+            --private-iso "$PRIVATE_ISO"
 
       - uses: actions/upload-artifact@v4
         if: always()
