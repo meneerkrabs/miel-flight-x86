@@ -298,6 +298,12 @@ static DWORD wait_for_proxy_bootstrap(const PROCESS_INFORMATION *process,
                                       const ObserverEvents *events)
 {
     DWORD started = GetTickCount(), last_wake = started, result = WAIT_TIMEOUT;
+    /* Clear any stale signaled state from a previous process with same PID */
+    ResetEvent(events->failure);
+    ResetEvent(events->ready);
+    ResetEvent(events->pending);
+    ResetEvent(events->activation);
+    ResetEvent(events->complete);
     do {
         if (WaitForSingleObject(events->failure, 0u) == WAIT_OBJECT_0) {
             result = WAIT_OBJECT_0 + 1u;
