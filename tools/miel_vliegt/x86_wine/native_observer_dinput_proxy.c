@@ -110,8 +110,13 @@ static DWORD WINAPI bootstrap_after_loader(LPVOID unused)
 __declspec(dllexport) HRESULT WINAPI DirectInputCreateA(
     HINSTANCE instance, DWORD version, void **direct_input, void *outer)
 {
-    if (!initialize_proxy()) return (HRESULT)0x80004005L;
-    return real_direct_input_create(instance, version, direct_input, outer);
+    /* Try to initialize the observer proxy. If it fails (e.g. Cc.dll not
+       loaded yet), still forward to the real DirectInputCreateA so the game
+       doesn't crash. The bootstrap thread will retry observer initialization. */
+    initialize_proxy();
+    if (real_direct_input_create)
+        return real_direct_input_create(instance, version, direct_input, outer);
+    return (HRESULT)0x80004005L;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
