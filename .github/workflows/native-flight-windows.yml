@@ -107,7 +107,7 @@ jobs:
           SUITE_ROOT="$RUN_ROOT/suite"
           OUTPUT_ROOT="$RUN_ROOT/output"
           CLEAN_STATE_ROOT="$RUN_ROOT/game-clean"
-          mkdir -p "$PROXY_ROOT" "$FIXTURE_ROOT" "$SUITE_ROOT" "$OUTPUT_ROOT" "$CLEAN_STATE_ROOT"
+          mkdir -p "$PROXY_ROOT" "$FIXTURE_ROOT" "$CLEAN_STATE_ROOT"
           
           TOOLS_SRC="/opt/miel"
           install -m 0600 "$GAME_ROOT/MulleMeck.exe" "$PROXY_ROOT/MulleMeck.exe"
