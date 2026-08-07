@@ -163,6 +163,17 @@ jobs:
           
           # Note: GH_TOKEN and ISO_GPG_PASSPHRASE needed for ISO download above
           # Background input keeper: send periodic spacebar to keep game alive
+          # Set Windows 98 compatibility mode for the game (disables ASLR, DEP, etc.)
+          echo "=== Setting compatibility mode ==="
+          powershell.exe -Command "
+            \$exe = 'MulleMeck.exe';
+            \$key = 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers';
+            if (!(Test-Path \$key)) { New-Item -Path \$key -Force }
+            \$gamePath = Join-Path (Get-Location) 'game' \$exe;
+            Set-ItemProperty -Path \$key -Name \$gamePath -Value '~ WIN98' -Force;
+            Write-Host 'Set WIN98 compatibility for:' \$gamePath;
+          " || true
+          
           echo "=== Starting background input keeper ==="
           powershell.exe -NoProfile -WindowStyle Hidden -Command "while($true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
           KEEPER_PID=$!
