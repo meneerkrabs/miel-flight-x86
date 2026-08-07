@@ -162,6 +162,13 @@ jobs:
           done
           
           # Note: GH_TOKEN and ISO_GPG_PASSPHRASE needed for ISO download above
+          # Diagnostic: run game directly to check if it stays running
+          echo "=== Diagnostic: direct game run ==="
+          cd "$GAME_ROOT"
+          timeout 30 MulleMeck.exe 2>&1 | tail -20 || true
+          echo "=== Direct game exit: $? ==="
+          cd "$REPOSITORY_ROOT"
+          
           echo "=== Running suite (native Windows) ==="
           python3 tools/miel_vliegt/native_semantic_suite.py \
             --prefix-mode cold-audit \
