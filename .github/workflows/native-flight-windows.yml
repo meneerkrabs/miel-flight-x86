@@ -174,7 +174,7 @@ jobs:
           fi
           
           # Write config.ini to proxy directory (game reads from cwd)
-          printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
+          printf 'cleanup false\nsetupwindow false\ngtdriver gtDirect3D\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
           
           echo "=== Starting background input keeper ==="
