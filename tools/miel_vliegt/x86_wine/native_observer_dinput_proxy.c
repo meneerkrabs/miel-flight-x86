@@ -22,6 +22,7 @@ static void proxy_diagnostic(const char *reason)
 static void signal_observer_failure(void)
 {
     char event_name[96];
+    fprintf(stderr, "MVP_signal_failure: signaling observer failure\n"); fflush(stderr);
     HANDLE failure_event;
     int length = snprintf(
         event_name,
@@ -38,6 +39,7 @@ static void signal_observer_failure(void)
 static BOOL initialize_proxy(void)
 {
     char dinput_path[MAX_PATH * 2];
+    fprintf(stderr, "MVP_init: called\n"); fflush(stderr);
     char observer_path[MAX_PATH * 2];
     HMODULE observer_module;
     MielObserverInitializeFunction observer_initialize;
@@ -129,6 +131,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     HANDLE worker;
     (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
+        fprintf(stderr, "MVP_DllMain: DINPUT proxy loaded\n"); fflush(stderr);
         DisableThreadLibraryCalls(instance);
         /* The thread begins after DLL attachment leaves loader lock, waits
            only for Cc.dll, and installs the observer before the fleeting
