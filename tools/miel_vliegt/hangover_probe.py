@@ -771,6 +771,22 @@ def has_loader_failure(*results: dict) -> bool:
 
 def wine_z_path(path: Path) -> str:
     path = path.resolve()
+    # For wine backend, try to use E: drive (mapped to run root's parent)
+    # instead of Z: which doesn't support DLL loading
+    import os
+    backend_id = os.environ.get("MIEL_NATIVE_BACKEND_ID", "fex")
+    if backend_id == "wine":
+        # Check if path is under a wine-prefix parent (the run root)
+        # The E: drive maps to run_root = prefix.parent
+        # We need to find the run root from the path
+        parts = path.parts
+        for i, part in enumerate(parts):
+            if part == "miel-native":
+                run_root = Path(*parts[:i+1])
+                if str(path).startswith(str(run_root)):
+                    rel = path.relative_to(run_root)
+                    return "E:" + str(rel).replace("/", "\\")
+                break
     return "Z:" + str(path).replace("/", "\\")
 
 
@@ -2595,6 +2611,7 @@ def bootstrap_prefix(
             print(f"SMOKE skipped: {smoke.get('skipped', 'N/A') if isinstance(smoke, dict) else 'N/A'}", file=sys.stderr)
     
     # Wine backend: copy observer DLLs to prefix system32 for reliable loading
+    # Wine's DLL loader cannot load from Z: drive paths, so copy to C: drive
     if backend.get("id") == "wine" and smoke_executable.parent.is_dir():
         system32 = prefix / "drive_c" / "windows" / "system32"
         system32.mkdir(parents=True, exist_ok=True)
@@ -2603,6 +2620,14 @@ def bootstrap_prefix(
             if src.exists():
                 shutil.copy2(src, system32 / tool_file)
                 print(f"Copied {tool_file} to Wine system32", file=__import__('sys').stderr)
+        # Also create E: drive mapping to the run root for game files
+        dosdevices = prefix / "dosdevices"
+        dosdevices.mkdir(exist_ok=True)
+        run_root = prefix.parent
+        e_drive = dosdevices / "e:"
+        if not e_drive.exists():
+            e_drive.symlink_to(run_root, target_is_directory=True)
+            print(f"Created E: drive mapping to {run_root}", file=__import__('sys').stderr)
     
     return {
         "checks": checks,
