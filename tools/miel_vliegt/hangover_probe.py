@@ -2457,6 +2457,7 @@ def bootstrap_prefix(
             "runs": {},
             "layout": {},
             "renderer": {"written": True, "verified": True},
+            "usable": True,
         }
     shutil.rmtree(prefix, ignore_errors=True)
     environment = native_runtime_environment(prefix, backend)
