@@ -177,13 +177,14 @@ Path(output_path + ".tmp").replace(output_path)
 PY
 }
 
-write_receipt RUNNING 0
 
 # Debug: show SHA256 args
 echo "=== SHA256 args count: ${#sha256_args[@]} ==="
 for arg in "${sha256_args[@]}"; do
   echo "  arg: ${arg}"
 done
+
+write_receipt RUNNING 0
 
 # Run the suite — call Python directly
 echo "=== Running suite (direct Python) ==="
