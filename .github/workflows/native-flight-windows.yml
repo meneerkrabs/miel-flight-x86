@@ -140,7 +140,7 @@ jobs:
           )
           sha256_args=()
           for label in $(printf '%s\n' "${!input_paths[@]}" | sort); do
-            sha="$(sha256sum "${input_paths[$label]}" | cut -d' ' -f1)"
+            sha="$(sha256sum "${input_paths[$label]}" | cut -d' ' -f1 | tr -d \\)"
             sha256_args+=("--${label//_/-}-sha256" "$sha")
           done
           
