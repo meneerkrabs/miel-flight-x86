@@ -163,14 +163,19 @@ jobs:
           
           # Note: GH_TOKEN and ISO_GPG_PASSPHRASE needed for ISO download above
           # Background input keeper: send periodic spacebar to keep game alive
-          # Install DirectX runtime from game CD (DX7 components needed for old game)
-          echo "=== Installing DirectX runtime ==="
-          if [ -d "E:/directx" ] || [ -f "E:/dxsetup.exe" ]; then
-            E:/dxsetup.exe /silent 2>/dev/null || true
-            echo "DirectX setup completed"
+          # Install DirectX 9.0c End-User Runtime (provides DX7/DX8/DX9 compat layers)
+          echo "=== Installing DirectX 9.0c Runtime ==="
+          # Download from Microsoft
+          curl -sL "https://download.microsoft.com/download/1/7/1/1718CCC4-6315-4D8E-9543-8E28FFF4A427/dxsetup.exe" -o /tmp/redist.exe 2>/dev/null || true
+          if [ -f /tmp/redist.exe ] && [ -s /tmp/redist.exe ]; then
+            /tmp/redist.exe /silent 2>/dev/null || true
+            echo "DirectX 9.0c runtime installed"
           else
-            echo "DirectX setup not found on CD, trying choco"
-            choco install directx -y --no-progress 2>/dev/null || true
+            echo "Download failed, trying CD version"
+            if [ -f "E:/dxsetup.exe" ]; then
+              cmd.exe /c "E:\\dxsetup.exe /silent" 2>/dev/null || true
+              echo "CD DirectX setup completed"
+            fi
           fi
           
           # Write config.ini to proxy directory (game reads from cwd)
