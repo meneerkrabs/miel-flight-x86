@@ -363,6 +363,7 @@ def native_runtime_environment(prefix: Path, backend: dict) -> list[str]:
             "WINEARCH=win32",
             f"WINEDEBUG={wine_debug}",
             "DISPLAY=:99",
+            "WINEDLLOVERRIDES=dinput=native,builtin",
         ])
     return environment
 
