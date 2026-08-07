@@ -173,7 +173,7 @@ sleep 2
 # Run game with DLL loading trace
 echo "=== Running game with +loaddll ==="
 cd "${TESTPREFIX}/drive_c/game"
-WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll,+module timeout 10 wine C:\game\MulleMeck.exe 2>&1 | grep -i "dinput\|DirectInput\|proxy\|MVP\|build_module.*DINPUT" | head -15
+WINEPREFIX="${TESTPREFIX}" WINEARCH=win32 WINEDLLOVERRIDES=dinput=n,b WINEDEBUG=+loaddll,+module timeout 10 wine C:\game\MulleMeck.exe 2>&1 | grep -i "dinput\|DirectInput\|proxy\|MVP\|build_module.*DINPUT" | head -20 || true
 echo "=== DLL load test done ==="
 
 write_receipt RUNNING 0
