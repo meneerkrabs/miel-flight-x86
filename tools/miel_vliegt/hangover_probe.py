@@ -1925,6 +1925,13 @@ def run_scene_navigation(
                 print(f"PATCH RECEIPT EXISTS: {Path(_pr).exists()}", file=_sys.stderr)
                 break
         print(f"exit={start_patch_launch.get('exit_code')} duration={start_patch_launch.get('phase_timestamps',{}).get('duration_ns',0)/1e9:.3f}s", file=_sys.stderr)
+        # Read observer log if available
+        import glob as _glb
+        for _logpath in _glb.glob(str(output_dir / '**' / '*.log'), recursive=True)[:3]:
+            try:
+                _logtext = Path(_logpath).read_text(encoding="utf-8", errors="replace")[:2000]
+                print(f"OBS_LOG ({_logpath}):\n{_logtext}", file=_sys.stderr)
+            except Exception: pass
 
     start_patch_confirmed = bool(
         observer_launcher_receipt
