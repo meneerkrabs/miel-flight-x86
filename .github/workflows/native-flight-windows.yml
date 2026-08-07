@@ -26,11 +26,11 @@ jobs:
         shell: pwsh
         run: |
           # MSYS2 is pre-installed on windows-latest at C:\msys64
-          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm mingw-w64-i686-gcc mingw-w64-i686-make
-          # Install unshield for InstallShield CAB extraction
-          pip install unshield-cab || true
-          # Try to find or build unshield
-          which unshield 2>/dev/null || (cd /tmp && wget -q https://github.com/frangarcj/unshield/releases/download/v1.0/unshield.exe -O /usr/bin/unshield && chmod +x /usr/bin/unshield) || true"
+          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm mingw-w64-i686-gcc mingw-w64-i686-make autoconf automake libtool make pkg-config zlib-devel
+          # Build unshield from source (MSYS2 doesn't package it)
+          cd /tmp && git clone https://github.com/twogood/unshield.git && cd unshield
+          autoreconf -fi && ./configure --prefix=/usr && make -j4 && make install
+          which unshield && unshield --version"
           echo "C:\msys64\mingw32\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build observer tools
