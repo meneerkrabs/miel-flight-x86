@@ -116,7 +116,7 @@ jobs:
           install -m 0600 "$TOOLS_SRC/native-observer-hook.dll" "$PROXY_ROOT/native-observer-hook.dll"
           
           # Copy system32 dinput as real
-          cp "C:/windows/system32/dinput.dll" "$PROXY_ROOT/dinput-real.dll" || cp "C:/Windows/SysWOW64/dinput.dll" "$PROXY_ROOT/dinput-real.dll" || true
+          cp "C:/Windows/SysWOW64/dinput.dll" "$PROXY_ROOT/dinput-real.dll" 2>/dev/null || cp "C:/windows/system32/dinput.dll" "$PROXY_ROOT/dinput-real.dll" 2>/dev/null || true
           
           # Restore user fixture
           python3 -c "import base64,gzip,sys; from pathlib import Path; s,t=Path(sys.argv[1]),Path(sys.argv[2]); t.write_bytes(gzip.decompress(base64.b64decode(''.join(s.read_text().split()))))" "$REPOSITORY_ROOT/tools/miel_vliegt/fixtures/native_dispatch_driver/initial-user0.dat.gz.b64" "$FIXTURE_ROOT/user0.dat"
