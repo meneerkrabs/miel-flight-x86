@@ -48,7 +48,15 @@ niet runtime. Sterkste bewijs-as.
 | 10 | 2026-08-09 | wine 31283140548 | GLM lokaliseerde: `session_controller_thread` (native_observer_hook.c:4880) = non-tick-gated bg-thread (90000×Sleep10ms). `send_login_submit_input` (:3645) = bare SendInput Enter 0x1c, geen prereqs. Approach A gekozen. | 3846e62: controller-thread injecteert Enter (few-shot @2/5/9/15/25/40s) tot login_activation_event gesignaleerd | manager_ticks>0? activation=TRUE? scene bereikt? |
 | 10 result | 2026-08-09 | — | Injectie vuurde (buiten guard) maar `login_activation_observed:false`, nog `proxy-bootstrap-timeout`, observer-log 3 regels. `login_autosubmit_sent` niet zichtbaar (emit_scheduler_watchdog diagnostics-gated, env niet gezet). Enter ontgrendelt niks → wsl app construeert nooit = geen login-UI om Enter te ontvangen; stall zit vóór login-input. | — | tijdreeks-diagnostiek |
 | 11 | 2026-08-09 | wine 31283723693 | (pending) | 0b06b22: controller re-emit bootstrap-snapshot @10/30/60/120s (always-on) | construeert app? tikt manager? ooit? |
-| 12 | (pending) | — | — | — | — |
+| 11 result | 2026-08-09 | — | **BESLISSEND:** 5 snapshots (0/10/30/60/120s). seq0 `application:false` → daarna `application:TRUE` (app CONSTRUEERT wél kort na bootstrap). MAAR `manager_ticks:0` bij ALLE, `current_name:unresolved`, `user_id:-999`. = **niet pre-app-stall; case B: app up, `Manager::Tick` vuurt nooit** — main-loop pompt geen ticks. Login pending, activation tick-gated → circulair tenzij login message-gedreven. Enter-injectie (iter-10) bereikte t venster niet / login vereist meer. | — | GLM: wat drijft Manager::Tick + waarom niet als app up? |
+| 12 | 2026-08-09 | GLM analyse (geen dispatch) | (pending) | — | tick-pump mechanisme + login→tick transitie |
+
+## STAND na iter-11 (crisp)
+1. **Root cause libgcc GEFIXT** (observer laadt, was de 100+-iter-blocker). ✓
+2. App construeert nu (application:true). ✓
+3. **Open:** `Manager::Tick` vuurt nooit (manager_ticks blijft 0 over 120s) ondanks app up + message-queue (WM_NULL-post slaagde). Login pending, nooit activation.
+4. Enter-injectie via SendInput mist (venster niet foreground headless). Volgende gok: PostMessage WM_KEYDOWN/UP VK_RETURN naar exacte window-handle (EnumWindows find_projector_window :2906), evt. profiel-selectie eerst.
+5. Diepe RE-front — pace richting 3u-ritme.
 
 ## Volgende-stap-opties (input-injectie unblock)
 Game pompt messages maar app-singleton construeert niet → wacht wsl op login-input.
