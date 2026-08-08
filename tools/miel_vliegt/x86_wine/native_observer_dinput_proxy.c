@@ -383,6 +383,35 @@ LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
                       (unsigned)code, addr, where, info1);
             proxy_log_file(b);
             fprintf(stderr, "%s\n", b); fflush(stderr);
+            /* Access-violation crash site is a member fn called on a NULL
+               this. Which manager? Scan the stack for return addresses in the
+               game image so the caller chain is identifiable without a
+               debugger. Only the main game exe's .text (0x401000..0x460000)
+               is reported; adjacent bytes 0xE8 (call rel32) before the target
+               confirm a real return address. */
+            if (code == 0xC0000005 && ep->ContextRecord) {
+                DWORD *sp = (DWORD *)ep->ContextRecord->Esp;
+                HMODULE exe = GetModuleHandleA(NULL);
+                int found = 0;
+                for (int i = 0; i < 256 && found < 8; i++) {
+                    DWORD v;
+                    /* Guard against walking off the stack. */
+                    if (IsBadReadPtr(&sp[i], sizeof(DWORD))) break;
+                    v = sp[i];
+                    if (v < 0x401000 || v >= 0x460000) continue;
+                    if (IsBadReadPtr((void *)(v - 5), 5)) continue;
+                    if (*(BYTE *)(v - 5) != 0xE8) continue;  /* call rel32 */
+                    char frame[MAX_PATH + 48];
+                    char w2[MAX_PATH + 32];
+                    describe_address((void *)v, w2, sizeof(w2));
+                    wsprintfA(frame, "MVP_STACK[%d] ret=0x%08X (%s)",
+                              found, (unsigned)v, w2);
+                    proxy_log_file(frame);
+                    fprintf(stderr, "%s\n", frame); fflush(stderr);
+                    found++;
+                }
+                (void)exe;
+            }
         }
     }
     return EXCEPTION_CONTINUE_SEARCH;
