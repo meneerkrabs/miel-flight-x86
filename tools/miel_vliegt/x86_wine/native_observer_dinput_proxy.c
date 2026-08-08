@@ -1,6 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
-typedef LONG NTSTATUS;
 #include <windows.h>
+typedef LONG NTSTATUS;
 #include <stdio.h>
 
 typedef HRESULT (WINAPI *DirectInputCreateAFunction)(
