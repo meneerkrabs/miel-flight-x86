@@ -13,6 +13,19 @@ static HMODULE real_dinput;
 static DirectInputCreateAFunction real_direct_input_create;
 static volatile LONG initialization_state;
 
+static void proxy_log_file(const char *msg)
+{
+    /* Write debug output to a file that survives in artifacts */
+    HANDLE h = CreateFileA("proxy-debug.log", FILE_APPEND_DATA, FILE_SHARE_READ,
+                           NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(h, msg, lstrlenA(msg), &written, NULL);
+        WriteFile(h, "\r\n", 2, &written, NULL);
+        CloseHandle(h);
+    }
+}
+
 /* === GetVersionEx hook: lie about OS version for old games === */
 typedef BOOL (WINAPI *GetVersionExA_t)(LPOSVERSIONINFOA);
 static GetVersionExA_t real_GetVersionExA = NULL;
@@ -46,19 +59,6 @@ static void install_version_hook(void) {
     VirtualProtect(target, 5, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), target, 5);
     proxy_log_file("GetVersionExA hook installed (XP SP3)");
-}
-
-static void proxy_log_file(const char *msg)
-{
-    /* Write debug output to a file that survives in artifacts */
-    HANDLE h = CreateFileA("proxy-debug.log", FILE_APPEND_DATA, FILE_SHARE_READ,
-                           NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
-        DWORD written;
-        WriteFile(h, msg, lstrlenA(msg), &written, NULL);
-        WriteFile(h, "\r\n", 2, &written, NULL);
-        CloseHandle(h);
-    }
 }
 
 static void proxy_diagnostic(const char *reason)
