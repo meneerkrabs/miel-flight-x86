@@ -1614,6 +1614,11 @@ def run_scene_navigation(
     if not environment or environment[0] != "env":
         for _k, _v in (observer_environment or {}).items():
             os.environ[_k] = _v
+    # observer_log_path is defined later in this function, but we need
+    # MIEL_OBSERVER_LOG in os.environ BEFORE the observer launcher runs.
+    # Set it to a path in the output directory.
+    if not environment or environment[0] != "env":
+        os.environ["MIEL_OBSERVER_LOG"] = str(output.parent / "native-observer-native.log")
     from tools.miel_vliegt.native_scene_navigator import (
         load_manifest,
         patch_executable,
