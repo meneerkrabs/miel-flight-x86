@@ -359,6 +359,73 @@ jobs:
                -o -name "*.json" \) \
             -exec sh -c 'cp "$1" "$0/$(echo "$1" | tr "/\\\\" "__")"' \
             "$DEST" {} \; 2>/dev/null || true
+
+          # Project the compact manager-tick-vs-render diagnostic out of each
+          # big result receipt into small summary files, so the takeoff-climb
+          # crash (early_phase_watchdog, phase_timestamps, record_count,
+          # session_state) is diagnosable from the small flight-logs artifact
+          # without the 100s-MB results artifact.
+          python3 - "$DEST" "$RUNNER_TEMP/miel-native/output" <<'PY'
+          import json, pathlib, sys
+          dest, out_root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          written = 0
+          for path in sorted(out_root.rglob("*.json")) if out_root.exists() else []:
+              try:
+                  data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+              except (json.JSONDecodeError, OSError):
+                  continue
+              if not isinstance(data, dict):
+                  continue
+              nav = data.get("navigation") or {}
+              trace = data.get("observer_trace") or {}
+              obs_log = data.get("observer_log") or {}
+              summary = {
+                  "source": str(path.relative_to(out_root)),
+                  "id": data.get("id") or data.get("scenario"),
+                  "status": data.get("status"),
+                  "observer_trace": {
+                      "record_count": (
+                          trace.get("record_count") or obs_log.get("record_count")
+                      ),
+                  },
+                  "navigation": {
+                      "early_phase_watchdog": (
+                          nav.get("early_phase_watchdog")
+                          or data.get("early_phase_watchdog")
+                      ),
+                      "phase_timestamps": (
+                          nav.get("phase_timestamps") or data.get("phase_timestamps")
+                      ),
+                  },
+                  "session_state": data.get("session_state"),
+              }
+              tail = data.get("observer_tail")
+              if isinstance(tail, list) and summary["session_state"] is None:
+                  for line in reversed(tail):
+                      if isinstance(line, str) and "session_state" in line:
+                          try:
+                              parsed = json.loads(line)
+                              if isinstance(parsed, dict) and "session_state" in parsed:
+                                  summary["session_state"] = parsed["session_state"]
+                                  break
+                          except (json.JSONDecodeError, ValueError):
+                              pass
+              if any(v is not None for v in (
+                  summary["observer_trace"]["record_count"],
+                  summary["navigation"]["early_phase_watchdog"],
+                  summary["navigation"]["phase_timestamps"],
+                  summary["session_state"],
+              )):
+                  rel = str(path.relative_to(out_root).with_suffix(""))
+                  safe = rel.replace("/", "_").replace("\\", "_")
+                  (dest / f"receipt-summary-{safe}.json").write_text(
+                      json.dumps(summary, indent=2, default=str) + "\n",
+                      encoding="utf-8",
+                  )
+                  written += 1
+          print(f"Wrote {written} receipt-summary files to {dest}")
+          PY
+
           ls -la "$DEST" | head -40
 
       - uses: actions/upload-artifact@v4
