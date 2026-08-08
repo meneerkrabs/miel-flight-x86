@@ -187,6 +187,29 @@ jobs:
           install -m 0600 "$PROXY_ROOT/dinput-real.dll" "$PROXY_ROOT/dinput-real.dll" 2>/dev/null || true
           echo "Game files in proxy dir: $(ls "$PROXY_ROOT/" | wc -l) items"
           
+          # Install cnc-ddraw: DirectDraw wrapper for old DX1-7 games on Win10/11
+          echo "=== Installing cnc-ddraw DirectDraw wrapper ==="
+          curl -sL "https://github.com/FunkyFr3sh/cnc-ddraw/releases/download/v7.1.0.0/cnc-ddraw.zip" -o /tmp/cnc-ddraw.zip 2>/dev/null
+          if [ -f /tmp/cnc-ddraw.zip ] && [ -s /tmp/cnc-ddraw.zip ]; then
+            mkdir -p /tmp/cnc-ddraw-extract
+            cd /tmp/cnc-ddraw-extract && 7z x /tmp/cnc-ddraw.zip >/dev/null 2>&1 || true
+            # Copy ddraw.dll to game and proxy directories
+            cp /tmp/cnc-ddraw-extract/ddraw.dll "$PROXY_ROOT/ddraw.dll" 2>/dev/null || true
+            cp /tmp/cnc-ddraw-extract/ddraw.dll "$GAME_ROOT/ddraw.dll" 2>/dev/null || true
+            # Copy config
+            cp /tmp/cnc-ddraw-extract/ddraw.ini "$PROXY_ROOT/ddraw.ini" 2>/dev/null || true
+            # Configure cnc-ddraw for software rendering + windowed mode
+            printf '[ddraw]\nfullscreen=false\nwindowed=true\nmaintas=false\nboxing=false\nmaxfps=60\nvsync=false\nhardwareaccel=false\nrenderer=auto\n' > "$PROXY_ROOT/ddraw.ini"
+            cp "$PROXY_ROOT/ddraw.ini" "$GAME_ROOT/ddraw.ini" 2>/dev/null || true
+            echo "cnc-ddraw installed (v7.1.0.0)"
+            ls -la "$PROXY_ROOT/ddraw.dll" 2>/dev/null || echo "ddraw.dll NOT found"
+          else
+            echo "cnc-ddraw download failed, trying alternative DX wrappers"
+            # Try Wine's ddraw from MSYS2
+            cp "C:/Windows/SysWOW64/ddraw.dll" "$PROXY_ROOT/ddraw.dll" 2>/dev/null || true
+          fi
+          cd "$REPOSITORY_ROOT"
+          
           # Write config.ini to proxy directory (game reads from cwd)
           printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
