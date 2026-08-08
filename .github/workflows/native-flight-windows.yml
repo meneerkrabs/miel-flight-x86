@@ -259,6 +259,10 @@ jobs:
             --max-records 1000000 \
             "${sha256_args[@]}" || true
 
+          # Preserve staging directory logs for debugging
+          find "$OUTPUT_ROOT" -name "*.log" -exec cp {} "$OUTPUT_ROOT/" 2>/dev/null || true
+          find "$OUTPUT_ROOT/.cold-capture-staging" -type f -name "*.log" -exec cp {} "$OUTPUT_ROOT/preserved-{}.log" 2>/dev/null || true
+
           # Stop background input keeper
           kill $KEEPER_PID 2>/dev/null || true
           echo "=== Background input keeper stopped ==="
