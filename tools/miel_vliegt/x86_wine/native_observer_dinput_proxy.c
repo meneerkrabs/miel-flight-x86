@@ -354,7 +354,12 @@ void WINAPI RtlExitUserProcess_hook(NTSTATUS ExitStatus) {
     Sleep(INFINITE);
 }
 
-/* VEH: log all exceptions to understand why the game exits */
+/* VEH: log all exceptions to understand why the game exits.
+   Run 2 proved the exit is a self NtTerminateProcess(0xC0000005) — an
+   access violation, not a clean quit. Write the faulting address and its
+   module+offset to proxy-debug.log (the small artifact that downloads
+   reliably) so the crash site is identifiable without pulling the full
+   multi-hundred-MB artifact or a debugger. */
 LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
     if (ep && ep->ExceptionRecord) {
         DWORD code = ep->ExceptionRecord->ExceptionCode;
@@ -363,9 +368,21 @@ LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
             code != 0x406D1388 &&  /* SetThreadName */
             code != STATUS_BREAKPOINT &&
             code != STATUS_SINGLE_STEP) {
-            fprintf(stderr, "MVP_EXC: code=0x%08X addr=%p\n",
-                    code, ep->ExceptionRecord->ExceptionAddress);
-            fflush(stderr);
+            void *addr = ep->ExceptionRecord->ExceptionAddress;
+            char where[MAX_PATH + 32];
+            describe_address(addr, where, sizeof(where));
+            char b[MAX_PATH + 128];
+            /* For an access violation, ExceptionInformation[1] is the
+               faulting data address (what it tried to read/write). */
+            unsigned info1 = 0;
+            if (code == 0xC0000005 &&
+                ep->ExceptionRecord->NumberParameters >= 2) {
+                info1 = (unsigned)ep->ExceptionRecord->ExceptionInformation[1];
+            }
+            wsprintfA(b, "MVP_EXC code=0x%08X addr=%p (%s) fault_data=0x%08X",
+                      (unsigned)code, addr, where, info1);
+            proxy_log_file(b);
+            fprintf(stderr, "%s\n", b); fflush(stderr);
         }
     }
     return EXCEPTION_CONTINUE_SEARCH;
