@@ -44,7 +44,15 @@ niet runtime. Sterkste bewijs-as.
 | **7 (FIX)** | 2026-08-08 | wine 31280292225 + win 31280292964 | (pending) | — | observer laadt nu? suite voorbij proxy-bootstrap? bereikt scenes? |
 | 7 (FIX) | 2026-08-09 | wine 31280292225 + win 31280292964(success) | **FIX WERKT.** iter-6 bevestigde `err=126`. iter-7: `DIAG observer_initialized`, GEEN failure. Checks nu TRUE: loader_init, observer_loaded/initialized, login_pending, message_loop_wake, observer_hook_loaded. **Nieuwe front:** `detail=proxy-bootstrap-timeout` (600s), `login_activation_observed=FALSE`. Observer-snapshot: application/manager=false, current_name=unresolved, manager_ticks:0, user_id:-999 → game gaat niet van login-pending→activation. | — | GLM: hoe wordt login-activation getriggerd + waarom niet headless? |
 | 8 | 2026-08-09 | GLM blwxo7c6z (sterke convergentie) | **Diagnose:** application=false + manager_ticks=0 = **upstream game-stall**, main-loop start nooit → `Manager::Tick` (slot 0x0044cc14) vuurt nooit → `correlate_mode_activation` (:4531/4548, enige activation-setter, tick-gated) draait nooit → login-pending→current commit onmogelijk. Launcher's GUI-drive post alleen semantisch-lege `WM_NULL` (L:165). Game geparkeerd: (a) GetMessage/modal login-window, (b) DirectInput coop-acquire wacht op foreground-focus, of (c) WaitForSingleObject op nooit-gesignaleerd event. | GLM schrijft launcher input-drive patch (SetForegroundWindow+SetFocus+Enter-scancode 0x1c) | apply → dispatch |
-| 9 | (pending) | — | — | — | — |
+| 9 | 2026-08-09 | GLM bq9xqhva2 (patch niet-converged) | GLM dumpte hook-input-functies i.p.v. launcher-diff. **Sleutel-inzicht:** `message_loop_wake_posted=TRUE` → launcher's WM_NULL-post slaagde → game **pompt messages** (heeft queue) → input-injectie levensvatbaar. Hook heeft al `send_login_submit_input` (SendInput Enter scancode 0x1c, native_observer_hook.c:3645) + `send_barn_escape_input` (SetForegroundWindow+SetFocus+SendInput) MAAR tick-gated. | GEEN dispatch (geen converged patch, 600s/run niet verspillen) | ontwerp: untimed input-injectie (hook-thread na login-pending, niet tick-gated) óf launcher-SendInput |
+| 10 | (pending) | — | — | — | — |
+
+## Volgende-stap-opties (input-injectie unblock)
+Game pompt messages maar app-singleton construeert niet → wacht wsl op login-input.
+- **A (hook-side, voorkeur):** observer's eigen thread roept na login_pending (zonder tick) `send_login_submit_input` aan (SendInput Enter 0x1c bestaat al) — draait in game-proces, bereikt eigen input-queue direct. Vereist plaatsing in de observer-thread-loop, niet de tick-gated pad.
+- **B (launcher-side):** EnumWindows→projector-window (pid), SetForegroundWindow+SetFocus, SendInput Enter, herhaald tijdens pre-activation-wait.
+- **Diagnostiek-alt:** log of GetMessage/PeekMessage draait + welke module de main-thread-IP heeft, om te bevestigen dat injectie kan landen vóór blind te proberen.
+Elke run = 600s timeout bij falen → hypothese-gedreven, niet spammen.
 
 ## ROOT CAUSE (iter 1→6)
 De "takeoff-climb crash" was **nooit een crash**. Keten: observer-hook-DLL
