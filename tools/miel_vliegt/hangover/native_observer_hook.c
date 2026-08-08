@@ -5061,6 +5061,36 @@ static BOOL exact_mygghanget_departure_transition(DWORD manager_address,
     return TRUE;
 }
 
+/*
+ * Flight-preroll arm precondition: the application's core subsystems must be
+ * constructed before the replay is allowed to drive the mode_fly update.
+ * These are the exact offsets emit_bootstrap_diagnostic() reports as the
+ * "miel-vliegt-native-bootstrap" fields (controls/dispatcher/audio/archive/
+ * video/presentation/manager). When the arm fires before audio/archive are
+ * up, the mode_fly voice-load resolves a NULL resource and faults at
+ * MulleMeck.exe+0x9FDE (fault_data 0x278) — see runnerattempt.md. Requiring
+ * them here converts that crash into a bounded "flight_readiness_limit"
+ * fail-closed gate (SESSION_GATE_LIMIT), because record_tick()'s replay
+ * advance only runs after SESSION_ARMED, which only exact_session_ready
+ * grants.
+ */
+static BOOL application_subsystems_initialized(DWORD application)
+{
+    DWORD controls = 0u, dispatcher = 0u, audio = 0u, archive = 0u;
+    DWORD video = 0u, presentation = 0u, manager = 0u;
+    return application != 0u &&
+        read_pointer(application, 0x190u, &controls) &&
+        read_pointer(application, 0x194u, &dispatcher) &&
+        read_pointer(application, 0x198u, &audio) &&
+        read_pointer(application, 0x19cu, &archive) &&
+        read_pointer(application, 0x1a0u, &video) &&
+        read_pointer(application, 0x1a4u, &presentation) &&
+        read_pointer(application, 0x1acu, &manager) &&
+        controls != 0u && dispatcher != 0u && audio != 0u &&
+        archive != 0u && video != 0u && presentation != 0u &&
+        manager != 0u;
+}
+
 static BOOL exact_session_ready(DWORD manager_address)
 {
     DWORD current = 0u, pending = 0u, application = 0u;
@@ -5074,6 +5104,7 @@ static BOOL exact_session_ready(DWORD manager_address)
         !read_pointer(manager_address, 0x18cu, &current) ||
         !read_pointer(manager_address, 0x190u, &pending) ||
         !canonical_session_root(manager_address, &application) ||
+        !application_subsystems_initialized(application) ||
         !read_pointer(manager_address, 0x154u, &physics) ||
         !read_pointer(manager_address, 0x174u, &registered_render_list) ||
         current != (DWORD)(ULONG_PTR)resolved || pending != 0u ||
