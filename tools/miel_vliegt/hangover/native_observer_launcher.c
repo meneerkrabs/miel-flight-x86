@@ -565,6 +565,34 @@ int main(int argc, char **argv)
                       "child-environment-binding-failed");
         return 4;
     }
+    /* Debug: print observer env vars */
+    {
+        const char *scenario = getenv("MIEL_OBSERVER_SCENARIO");
+        const char *log_path = getenv("MIEL_OBSERVER_LOG");
+        const char *frame = getenv("MIEL_OBSERVER_FRAME");
+        fprintf(stderr, "MVP_ENV: SCENARIO=%s LOG=%s FRAME=%s\n",
+                scenario ? scenario : "(null)",
+                log_path ? log_path : "(null)",
+                frame ? frame : "(null)");
+        fflush(stderr);
+        /* Check if scenario file exists */
+        if (scenario) {
+            FILE *f2 = fopen(scenario, "rb");
+            if (f2) {
+                fseek(f2, 0, SEEK_END);
+                long sz = ftell(f2);
+                fseek(f2, 0, SEEK_SET);
+                char buf[64] = {0};
+                fread(buf, 1, 32, f2);
+                fclose(f2);
+                fprintf(stderr, "MVP_REPLAY: size=%ld first32=%s\n", sz, buf);
+            } else {
+                fprintf(stderr, "MVP_REPLAY: CANNOT OPEN %s\n", scenario);
+            }
+            fflush(stderr);
+        }
+    }
+    
     /* On native Windows, use CREATE_SUSPENDED to give the DINPUT proxy's
        bootstrap thread time to detect Cc.dll and initialize the observer
        before the game's main loop runs and potentially exits.
