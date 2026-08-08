@@ -13,6 +13,19 @@ static HMODULE real_dinput;
 static DirectInputCreateAFunction real_direct_input_create;
 static volatile LONG initialization_state;
 
+static void proxy_log_file(const char *msg)
+{
+    /* Write debug output to a file that survives in artifacts */
+    HANDLE h = CreateFileA("proxy-debug.log", FILE_APPEND_DATA, FILE_SHARE_READ,
+                           NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(h, msg, lstrlenA(msg), &written, NULL);
+        WriteFile(h, "\r\n", 2, &written, NULL);
+        CloseHandle(h);
+    }
+}
+
 static void proxy_diagnostic(const char *reason)
 {
     char line[160];
@@ -133,12 +146,16 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
         fprintf(stderr, "MVP_DllMain: DINPUT proxy loaded\n"); fflush(stderr);
+    proxy_log_file("DllMain: DINPUT proxy loaded");
     /* Dump observer env vars for debugging */
     {
         const char *sc = getenv("MIEL_OBSERVER_SCENARIO");
         const char *sh = getenv("MIEL_OBSERVER_SCENARIO_SHA256");
         const char *lg = getenv("MIEL_OBSERVER_LOG");
-        fprintf(stderr, "MVP_ENV: SCENARIO=%s SHA=%s LOG=%s\n",
+        proxy_log_file("ENV_DUMP_START");
+    { char _eb[1024]; wsprintfA(_eb, "ENV SCENARIO=%s SHA=%s LOG=%s", sc ? sc : "(null)", sh ? sh : "(null)", lg ? lg : "(null)"); proxy_log_file(_eb); }
+    proxy_log_file("ENV_DUMP_END");
+    fprintf(stderr, "MVP_ENV: SCENARIO=%s SHA=%s LOG=%s\n",
                 sc ? sc : "(null)", sh ? sh : "(null)", lg ? lg : "(null)");
         fflush(stderr);
         if (sc) {
