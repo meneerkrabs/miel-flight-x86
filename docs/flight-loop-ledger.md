@@ -32,4 +32,5 @@ niet runtime. Sterkste bewijs-as.
 ## Iteraties
 | iter | dispatch | run-ids | verdict | patch | next |
 |---|---|---|---|---|---|
-| 1 | 2026-08-08 | win 31275656178 / wine 31275657222 | (pending) | watchdog-summary (ad145e5) live | lees receipts na completion |
+| 1 | 2026-08-08 | win 31275656178 / wine 31275657222 | **BLOCKER gevonden:** `NameError: scenario_id` @ hangover_probe.py:1954 crasht ELKE scenario vóór receipt → 0 receipts, geen watchdog-data (win + wine beide). Wine-upload ook EACCES op wine-prefix/z:/boot/efi. | a547e28: `scenario_id`→`scene`; wine-artifact → output/ only | redispatch |
+| 2 | 2026-08-08 | win 31276828676 / wine 31276829754 | (pending) | — | lees receipts na completion; kernvraag record_count==0 op beide backends? |
