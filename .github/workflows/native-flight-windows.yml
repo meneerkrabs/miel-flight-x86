@@ -113,6 +113,11 @@ jobs:
           export INPUT_KEEPER="${{ inputs.input_keeper }}"
           export DDRAW_RENDERER="${{ inputs.ddraw_renderer }}"
           export STRIP_AT_LANGUAGE="${{ inputs.strip_at_language }}"
+          # Scheduler watchdog: emit manager_renders vs manager_ticks every
+          # ~10s so we can tell "rendering but not ticking" (mode/score issue)
+          # from "no frame activity at all" (init/dialog/detour corruption) —
+          # the decisive split for why the manager tick never fires.
+          export MIEL_OBSERVER_BOOTSTRAP_DIAGNOSTICS=1
           export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           export ISO_GPG_PASSPHRASE="${{ secrets.ISO_GPG_PASSPHRASE }}"
           RUN_ROOT="$RUNNER_TEMP/miel-native"
