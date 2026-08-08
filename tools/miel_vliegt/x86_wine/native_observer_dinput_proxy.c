@@ -2,6 +2,8 @@
 #include <windows.h>
 typedef LONG NTSTATUS;
 #include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 typedef HRESULT (WINAPI *DirectInputCreateAFunction)(
     HINSTANCE, DWORD, void **, void *);
@@ -218,15 +220,124 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     return TRUE;
 }
 
+/* Resolve a code address to "module.dll+0xoffset" so the exit-caller is
+   identifiable in the artifact without a debugger on the runner. */
+static void describe_address(void *addr, char *out, size_t out_size) {
+    HMODULE mod = NULL;
+    if (GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            (LPCSTR)addr, &mod) && mod) {
+        char path[MAX_PATH];
+        DWORD n = GetModuleFileNameA(mod, path, sizeof(path));
+        const char *base = path;
+        if (n) {
+            for (DWORD i = 0; i < n; i++)
+                if (path[i] == '\\' || path[i] == '/') base = path + i + 1;
+        } else {
+            base = "?";
+        }
+        wsprintfA(out, "%s+0x%X", base,
+                  (unsigned)((BYTE *)addr - (BYTE *)mod));
+    } else {
+        wsprintfA(out, "0x%p (no module)", addr);
+    }
+    (void)out_size;
+}
+
 /* === Exit prevention: hook PostQuitMessage + ExitProcess === */
 static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
 void WINAPI ExitProcess_hook(UINT uExitCode) {
-    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED\n", uExitCode);
-    fflush(stderr);
+    char who[MAX_PATH + 32];
+    describe_address(__builtin_return_address(0), who, sizeof(who));
+    { char b[MAX_PATH + 96];
+      wsprintfA(b, "MVP_ExitProcess(%u) caller=%s BLOCKED", uExitCode, who);
+      proxy_log_file(b);
+      fprintf(stderr, "%s\n", b); fflush(stderr); }
     /* Don't exit — keep the process alive for the observer. */
     /* Sleep on this thread, let the game's other threads continue. */
     Sleep(INFINITE);
+}
+
+/* Saved original prologue bytes so a non-self call can pass through the real
+   function without re-entering the hook (inline JMP patches have no
+   trampoline). Low-frequency calls, so unhook/call/rehook under a lock is
+   fine. */
+static CRITICAL_SECTION passthrough_lock;
+static BOOL passthrough_lock_ready = FALSE;
+static BYTE saved_TerminateProcess[5];
+static BYTE saved_NtTerminateProcess[5];
+
+static void restore_bytes(void *target, const BYTE *saved) {
+    DWORD op;
+    if (VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &op)) {
+        memcpy(target, saved, 5);
+        VirtualProtect(target, 5, op, &op);
+        FlushInstructionCache(GetCurrentProcess(), target, 5);
+    }
+}
+static void rehook(void *target, void *hook) {
+    DWORD op;
+    if (VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &op)) {
+        ((BYTE *)target)[0] = 0xE9;
+        *(LONG_PTR *)((BYTE *)target + 1) =
+            (LONG_PTR)hook - (LONG_PTR)((BYTE *)target + 5);
+        VirtualProtect(target, 5, op, &op);
+        FlushInstructionCache(GetCurrentProcess(), target, 5);
+    }
+}
+
+/* TerminateProcess self-call bypasses the ExitProcess/RtlExitUserProcess
+   hooks entirely, which is exactly how the game left with exit 0. Log the
+   caller and the exit code; only intercept self-termination so the launcher
+   can still terminate other processes during teardown. */
+static BOOL (WINAPI *real_TerminateProcess)(HANDLE, UINT) = NULL;
+BOOL WINAPI TerminateProcess_hook(HANDLE hProcess, UINT uExitCode) {
+    BOOL is_self = (hProcess == GetCurrentProcess()) ||
+                   (GetProcessId(hProcess) == GetCurrentProcessId());
+    char who[MAX_PATH + 32];
+    describe_address(__builtin_return_address(0), who, sizeof(who));
+    { char b[MAX_PATH + 96];
+      wsprintfA(b, "MVP_TerminateProcess(self=%d, code=%u) caller=%s%s",
+                is_self, uExitCode, who, is_self ? " BLOCKED" : "");
+      proxy_log_file(b);
+      fprintf(stderr, "%s\n", b); fflush(stderr); }
+    if (is_self) Sleep(INFINITE);
+    /* Non-self: pass through the real function without re-entering. */
+    BOOL result;
+    if (passthrough_lock_ready) EnterCriticalSection(&passthrough_lock);
+    restore_bytes((void *)real_TerminateProcess, saved_TerminateProcess);
+    result = real_TerminateProcess(hProcess, uExitCode);
+    rehook((void *)real_TerminateProcess, (void *)TerminateProcess_hook);
+    if (passthrough_lock_ready) LeaveCriticalSection(&passthrough_lock);
+    return result;
+}
+
+/* NtTerminateProcess(NULL/self, status) is the lowest self-exit primitive;
+   ExitProcess and TerminateProcess both funnel here. Hooking it catches an
+   exit that reaches ntdll directly. */
+typedef NTSTATUS (WINAPI *NtTerminateProcess_t)(HANDLE, NTSTATUS);
+static NtTerminateProcess_t real_NtTerminateProcess = NULL;
+NTSTATUS WINAPI NtTerminateProcess_hook(HANDLE hProcess, NTSTATUS status) {
+    BOOL is_self = (hProcess == NULL) ||
+                   (hProcess == GetCurrentProcess()) ||
+                   (GetProcessId(hProcess) == GetCurrentProcessId());
+    char who[MAX_PATH + 32];
+    describe_address(__builtin_return_address(0), who, sizeof(who));
+    { char b[MAX_PATH + 96];
+      wsprintfA(b, "MVP_NtTerminateProcess(self=%d, status=0x%08X) caller=%s%s",
+                is_self, (unsigned)status, who, is_self ? " BLOCKED" : "");
+      proxy_log_file(b);
+      fprintf(stderr, "%s\n", b); fflush(stderr); }
+    if (is_self) Sleep(INFINITE);
+    NTSTATUS result;
+    if (passthrough_lock_ready) EnterCriticalSection(&passthrough_lock);
+    restore_bytes((void *)real_NtTerminateProcess, saved_NtTerminateProcess);
+    result = real_NtTerminateProcess(hProcess, status);
+    rehook((void *)real_NtTerminateProcess, (void *)NtTerminateProcess_hook);
+    if (passthrough_lock_ready) LeaveCriticalSection(&passthrough_lock);
+    return result;
 }
 
 /* Also hook RtlExitUserProcess in ntdll — catches _exit() and exit() */
@@ -254,11 +365,54 @@ LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/* Overwrite the first 5 bytes of `target` with a JMP rel32 to `hook`.
+   Returns TRUE on success. Keeps the exit-hook installer readable now that
+   several ntdll/kernel32 entry points get patched the same way. */
+static BOOL patch_jmp(void *target, void *hook, const char *label) {
+    if (!target) return FALSE;
+    BYTE *code = (BYTE *)target;
+    DWORD old_protect;
+    if (!VirtualProtect(code, 5, PAGE_EXECUTE_READWRITE, &old_protect))
+        return FALSE;
+    code[0] = 0xE9;
+    *(LONG_PTR *)(code + 1) = (LONG_PTR)hook - (LONG_PTR)(code + 5);
+    VirtualProtect(code, 5, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), code, 5);
+    { char b[128]; wsprintfA(b, "MVP: %s hook installed at %p", label, target);
+      proxy_log_file(b); fprintf(stderr, "%s\n", b); fflush(stderr); }
+    return TRUE;
+}
+
 static void install_exit_hook(void) {
     /* Install VEH first to catch crashes */
     AddVectoredExceptionHandler(0, crash_logger);
     fprintf(stderr, "MVP: VEH crash logger installed\n"); fflush(stderr);
-    
+
+    if (!passthrough_lock_ready) {
+        InitializeCriticalSection(&passthrough_lock);
+        passthrough_lock_ready = TRUE;
+    }
+    HMODULE k32 = GetModuleHandleA("kernel32.dll");
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    if (k32) {
+        real_TerminateProcess =
+            (BOOL (WINAPI *)(HANDLE, UINT))GetProcAddress(k32, "TerminateProcess");
+        if (real_TerminateProcess) {
+            memcpy(saved_TerminateProcess, (void *)real_TerminateProcess, 5);
+            patch_jmp((void *)real_TerminateProcess, (void *)TerminateProcess_hook,
+                      "TerminateProcess");
+        }
+    }
+    if (nt) {
+        real_NtTerminateProcess =
+            (NtTerminateProcess_t)GetProcAddress(nt, "NtTerminateProcess");
+        if (real_NtTerminateProcess) {
+            memcpy(saved_NtTerminateProcess, (void *)real_NtTerminateProcess, 5);
+            patch_jmp((void *)real_NtTerminateProcess, (void *)NtTerminateProcess_hook,
+                      "NtTerminateProcess");
+        }
+    }
+
     /* Original inline hook code follows */
     {
     /* Inline hook: overwrite first 5 bytes of ExitProcess in kernel32

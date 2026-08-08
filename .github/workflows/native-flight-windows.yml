@@ -2,6 +2,16 @@ name: Native flight Windows suite
 
 on:
   workflow_dispatch:
+    inputs:
+      input_keeper:
+        description: 'Background SendKeys input keeper (space every 300ms)'
+        type: boolean
+        default: false
+      ddraw_renderer:
+        description: 'cnc-ddraw renderer (gdi = pure software, no D3D9/WARP)'
+        type: choice
+        default: gdi
+        options: [gdi, auto, opengl, direct3d9]
 
 permissions:
   contents: read
@@ -96,6 +106,8 @@ jobs:
           set -ex
           export REPOSITORY_ROOT="$(pwd)"
           export MIEL_NATIVE_BACKEND_ID=native
+          export INPUT_KEEPER="${{ inputs.input_keeper }}"
+          export DDRAW_RENDERER="${{ inputs.ddraw_renderer }}"
           export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           export ISO_GPG_PASSPHRASE="${{ secrets.ISO_GPG_PASSPHRASE }}"
           RUN_ROOT="$RUNNER_TEMP/miel-native"
@@ -199,7 +211,7 @@ jobs:
             # Copy config
             cp /tmp/cnc-ddraw-extract/ddraw.ini "$PROXY_ROOT/ddraw.ini" 2>/dev/null || true
             # Configure cnc-ddraw for software rendering + windowed mode
-            printf '[ddraw]\nfullscreen=false\nwindowed=true\nmaintas=false\nboxing=false\nmaxfps=60\nvsync=false\nhardwareaccel=false\nrenderer=auto\n' > "$PROXY_ROOT/ddraw.ini"
+            printf '[ddraw]\nfullscreen=false\nwindowed=true\nmaintas=false\nboxing=false\nmaxfps=60\nvsync=false\nhardwareaccel=false\nrenderer=%s\n' "${DDRAW_RENDERER:-gdi}" > "$PROXY_ROOT/ddraw.ini"
             cp "$PROXY_ROOT/ddraw.ini" "$GAME_ROOT/ddraw.ini" 2>/dev/null || true
             echo "cnc-ddraw installed (v7.1.0.0)"
             ls -la "$PROXY_ROOT/ddraw.dll" 2>/dev/null || echo "ddraw.dll NOT found"
@@ -256,10 +268,14 @@ jobs:
             Write-Host 'DirectX registry keys added'
           " 2>/dev/null || true
 
-          echo "=== Starting background input keeper ==="
-          powershell.exe -NoProfile -WindowStyle Hidden -Command "while($true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
-          KEEPER_PID=$!
-          echo "Input keeper PID: $KEEPER_PID"
+          if [ "${INPUT_KEEPER:-false}" = "true" ]; then
+            echo "=== Starting background input keeper ==="
+            powershell.exe -NoProfile -WindowStyle Hidden -Command "while(\$true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
+            KEEPER_PID=$!
+            echo "Input keeper PID: $KEEPER_PID"
+          else
+            echo "=== Input keeper DISABLED (isolating self-exit cause) ==="
+          fi
           
           echo "=== Running suite (native Windows) ==="
           python3 tools/miel_vliegt/native_semantic_suite.py \
@@ -293,9 +309,19 @@ jobs:
           find "$OUTPUT_ROOT" -name "*.log" -exec cp {} "$OUTPUT_ROOT/" 2>/dev/null || true
           find "$OUTPUT_ROOT/.cold-capture-staging" -type f -name "*.log" -exec cp {} "$OUTPUT_ROOT/preserved-{}.log" 2>/dev/null || true
 
-          # Stop background input keeper
-          kill $KEEPER_PID 2>/dev/null || true
-          echo "=== Background input keeper stopped ==="
+          # Collect the DINPUT proxy debug log (self-exit caller breadcrumbs)
+          # from wherever the game ran, into the uploaded output root.
+          find "$RUN_ROOT" -name "proxy-debug.log" -exec sh -c \
+            'cp "$1" "$0/proxy-debug-$(echo "$1" | tr "/\\\\" "__").log"' \
+            "$OUTPUT_ROOT" {} \; 2>/dev/null || true
+          echo "=== proxy-debug.log copies ==="
+          ls -la "$OUTPUT_ROOT"/proxy-debug-*.log 2>/dev/null || echo "none found"
+
+          # Stop background input keeper (only started when enabled)
+          if [ -n "${KEEPER_PID:-}" ]; then
+            kill $KEEPER_PID 2>/dev/null || true
+            echo "=== Background input keeper stopped ==="
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
