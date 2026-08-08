@@ -132,6 +132,21 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
         fprintf(stderr, "MVP_DllMain: DINPUT proxy loaded\n"); fflush(stderr);
+    /* Dump observer env vars for debugging */
+    {
+        const char *sc = getenv("MIEL_OBSERVER_SCENARIO");
+        const char *sh = getenv("MIEL_OBSERVER_SCENARIO_SHA256");
+        const char *lg = getenv("MIEL_OBSERVER_LOG");
+        fprintf(stderr, "MVP_ENV: SCENARIO=%s SHA=%s LOG=%s\n",
+                sc ? sc : "(null)", sh ? sh : "(null)", lg ? lg : "(null)");
+        fflush(stderr);
+        if (sc) {
+            FILE *tf = fopen(sc, "rb");
+            if (tf) { fseek(tf, 0, SEEK_END); fprintf(stderr, "MVP_FILE: %s size=%ld OK\n", sc, ftell(tf)); fclose(tf); }
+            else { fprintf(stderr, "MVP_FILE: %s CANNOT OPEN errno=%d\n", sc, errno); }
+            fflush(stderr);
+        }
+    }
         DisableThreadLibraryCalls(instance);
         /* The thread begins after DLL attachment leaves loader lock, waits
            only for Cc.dll, and installs the observer before the fleeting
