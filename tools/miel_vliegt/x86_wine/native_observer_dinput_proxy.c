@@ -411,6 +411,22 @@ LONG WINAPI crash_logger(PEXCEPTION_POINTERS ep) {
                     found++;
                 }
                 (void)exe;
+
+                /* The flight voice path is built by MulleMeck.exe+0x1B1D0 via
+                   sprintf into the fixed .data buffer 0x0045F0F4, and no other
+                   build runs between that and this crash. So the buffer still
+                   holds the exact resource path whose load returned NULL —
+                   read it directly, no game-code patch needed. Dump once. */
+                static LONG dumped = 0;
+                if (InterlockedExchange(&dumped, 1) == 0) {
+                    const char *buf = (const char *)0x0045F0F4u;
+                    if (!IsBadReadPtr(buf, 1)) {
+                        char nb[300];
+                        wsprintfA(nb, "MVP_VOICEPATH \"%.255s\"", buf);
+                        proxy_log_file(nb);
+                        fprintf(stderr, "%s\n", nb); fflush(stderr);
+                    }
+                }
             }
         }
     }
