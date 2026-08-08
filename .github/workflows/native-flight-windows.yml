@@ -241,6 +241,21 @@ jobs:
           fi
           cd "$REPOSITORY_ROOT"
           
+          # Add DirectX registry keys (Wine creates these, old games check them)
+          echo "=== DirectX registry setup ==="
+          powershell.exe -NoProfile -Command "
+            # DirectX version key
+            New-Item -Path 'HKLM:\SOFTWARE\Microsoft\DirectX' -Force | Out-Null
+            Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\DirectX' -Name 'Version' -Value '4.07.00.0700' -Type String
+            Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\DirectX' -Name 'InstalledVersion' -Value '4.07.00.0700' -Type String
+            # DirectX 7 Media Foundation
+            New-Item -Path 'HKLM:\SOFTWARE\Microsoft\DirectX\DirectX7' -Force | Out-Null
+            Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\DirectX\DirectX7' -Name 'Installed' -Value 1 -Type DWord
+            # Media Foundation
+            New-Item -Path 'HKLM:\SOFTWARE\Microsoft\DirectX\Media Foundation' -Force | Out-Null
+            Write-Host 'DirectX registry keys added'
+          " 2>/dev/null || true
+
           echo "=== Starting background input keeper ==="
           powershell.exe -NoProfile -WindowStyle Hidden -Command "while($true){[System.Windows.Forms.SendKeys]::SendWait(' ');Start-Sleep -Milliseconds 300}" &
           KEEPER_PID=$!
