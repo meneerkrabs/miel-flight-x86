@@ -1618,7 +1618,7 @@ def run_scene_navigation(
     # MIEL_OBSERVER_LOG in os.environ BEFORE the observer launcher runs.
     # Set it to a path in the output directory.
     if not environment or environment[0] != "env":
-        os.environ["MIEL_OBSERVER_LOG"] = str(output.parent / "native-observer-native.log")
+        os.environ["MIEL_OBSERVER_LOG"] = "observer-native-permanent.log"  # Relative to game CWD
     from tools.miel_vliegt.native_scene_navigator import (
         load_manifest,
         patch_executable,
