@@ -70,12 +70,20 @@ static void proxy_diagnostic(const char *reason)
     char line[160];
     int length = snprintf(line, sizeof(line), "MVP %s\n", reason);
     if (length > 0 && (size_t)length < sizeof(line)) OutputDebugStringA(line);
+    /* Mirror to the proxy log file: OutputDebugStringA is invisible without a
+       debugger (it only surfaces as a benign 0x40010006 DBG_PRINTEXCEPTION_C
+       in the VEH logger), so the actual reason string — cc_ready_timeout,
+       observer_environment, observer_load, observer_initialize,
+       observer_initialized — was never recoverable from the artifact. */
+    { char f[176]; int n = snprintf(f, sizeof(f), "DIAG %s", reason);
+      if (n > 0 && (size_t)n < sizeof(f)) proxy_log_file(f); }
 }
 
 static void signal_observer_failure(void)
 {
     char event_name[96];
     fprintf(stderr, "MVP_signal_failure: signaling observer failure\n"); fflush(stderr);
+    proxy_log_file("SIGNAL observer failure");
     HANDLE failure_event;
     int length = snprintf(
         event_name,
