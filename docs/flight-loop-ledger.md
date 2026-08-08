@@ -40,4 +40,14 @@ niet runtime. Sterkste bewijs-as.
 | 4b | 2026-08-08 | (proxy-source gelezen) | Observer-DLL laadt nooit (geen eigen log). Proxy `native_observer_dinput_proxy.c`: `initialize_proxy` `failed:`→`signal_observer_failure` (`Local\MielObserverFailure-<PID>` = launcher-Failure). BOOTSTRAP_TIMEOUT=600s (niet 1s). `failure_reason` ∈ {real_dinput_*, observer_environment, observer_load, observer_initialize}. **`proxy_diagnostic` schrijft alleen via OutputDebugStringA** = onzichtbaar (= de 4× `MVP_EXC 0x40010006`), reden-string verloren. Wine-suite bouwt DINPUT.dll uit source in CI (workflow:50) → source-edit werkt. | fec568a: proxy_diagnostic + signal_failure spiegelen naar proxy-debug.log (`DIAG <reason>`) | lees DIAG-regel = exacte failing step |
 | 5 | 2026-08-08 | wine 31279620443 | **ROOT CAUSE:** proxy-debug.log toont `DIAG cc_ready_initialize` → `DIAG observer_load` → `SIGNAL observer failure`. `failure_reason=observer_load` (line 137) = **`LoadLibraryA(observer_path)` gaf NULL** — de observer-hook-DLL laadt niet (Cc.dll wél ready, env-path wél gelezen). = missende dep-DLL óf DllMain returnt FALSE onder Wine. | 1f52d63: log GetLastError+path bij observer_load-fail | lees err-code (126=MOD_NOT_FOUND / 2 / 193) |
 | 6 | 2026-08-08 | wine 31280198375 + GLM b83ttjclk | (pending) | — | err-code + GLM observer-DllMain/imports → fix |
-| 7 | (pending) | — | — | — | — |
+| 6 | 2026-08-08 | wine 31280198375 (GetLastError) | objdump lokaal: **observer-DLL importeert `libgcc_s_sjlj-1.dll`** (GCC SJLJ EH-runtime), proxy niet. Onder Wine niet in DLL-search-path → `LoadLibraryA` faalt **ERROR_MOD_NOT_FOUND (126)**. = de ROOT CAUSE van de hele "crash". `-static-libgcc` verwijdert de import (lokaal geverifieerd, 0 libgcc). | **c27b578: `-static-libgcc` op observer-build in BEIDE workflows** | — |
+| **7 (FIX)** | 2026-08-08 | wine 31280292225 + win 31280292964 | (pending) | — | observer laadt nu? suite voorbij proxy-bootstrap? bereikt scenes? |
+| 8 | (pending) | — | — | — | — |
+
+## ROOT CAUSE (iter 1→6)
+De "takeoff-climb crash" was **nooit een crash**. Keten: observer-hook-DLL
+importeert `libgcc_s_sjlj-1.dll` → onder Wine niet vindbaar → `LoadLibraryA`
+NULL (err 126) → proxy `signal_observer_failure` → launcher `ok=false`→exit 5
+→ élk scenario aborteert in proxy-bootstrap vóór scene-logica → takeoff-climb
+nooit bereikt. FEX/JIT/manager-tick/0xC0000005 waren allemaal rode haringen.
+Fix = `-static-libgcc`. Verifieer met iter-7.
