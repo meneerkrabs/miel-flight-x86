@@ -323,6 +323,30 @@ jobs:
             echo "=== Background input keeper stopped ==="
           fi
 
+      # Small logs-only artifact: the full results artifact is hundreds of MB
+      # (three game-file copies) and is slow/fragile to download. The crash
+      # breadcrumbs live in a handful of small logs — collect just those.
+      - name: Collect logs only
+        if: always()
+        shell: bash
+        run: |
+          DEST="$RUNNER_TEMP/flight-logs"
+          mkdir -p "$DEST"
+          find "$RUNNER_TEMP/miel-native" \
+            \( -name "proxy-debug*.log" -o -name "gtSoftware*.log" \
+               -o -name "*observer*.log" -o -name "stderr*.log" \
+               -o -name "*.json" \) \
+            -exec sh -c 'cp "$1" "$0/$(echo "$1" | tr "/\\\\" "__")"' \
+            "$DEST" {} \; 2>/dev/null || true
+          ls -la "$DEST" | head -40
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flight-logs
+          retention-days: 3
+          path: ${{ runner.temp }}/flight-logs/
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
