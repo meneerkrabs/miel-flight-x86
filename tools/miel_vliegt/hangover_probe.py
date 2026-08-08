@@ -1605,6 +1605,11 @@ def run_scene_navigation(
     observe_ms = validate_observe_ms(observe_ms)
     environment = bind_native_proxy_dll_override(environment)
     observer_env_arguments = observer_environment_arguments(observer_environment)
+    # For native backend (no 'env' prefix command), set env vars in os.environ
+    # so subprocess.Popen inherits them
+    if not environment or environment[0] != "env":
+        for _k, _v in (observer_environment or {}).items():
+            os.environ[_k] = _v
     from tools.miel_vliegt.native_scene_navigator import (
         load_manifest,
         patch_executable,
