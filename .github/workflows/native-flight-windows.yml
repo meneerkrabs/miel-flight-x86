@@ -190,41 +190,6 @@ jobs:
           # Write config.ini to proxy directory (game reads from cwd)
           printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
-          
-          # Direct game diagnostic: run game WITHOUT launcher to test observer hook
-          # Check if dinput.dll is a Known DLL (would prevent proxy loading on native Windows)
-          echo "=== Known DLLs check ==="
-          powershell.exe -NoProfile -Command "(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs').PSObject.Properties | Where-Object { $_.Value -match 'dinput' -or $_.Name -match 'dinput' } | Format-Table" 2>/dev/null || echo "No dinput in KnownDLLs"
-          
-                    echo "=== Direct observer test ==="
-          mkdir -p "$RUN_ROOT/direct-test"
-          export MIEL_OBSERVER_LOG="$RUN_ROOT/direct-test/observer.log"
-          export MIEL_OBSERVER_SCENARIO="$RUN_ROOT/direct-test/controls.mvo"
-          export MIEL_OBSERVER_SCENARIO_SHA256="5931c72bd274795535f4ef58dc451a94ea98da7f079b201d18a8c1e9e3e3635d"
-          export MIEL_OBSERVER_INITIAL_USER_SHA256="7019275a9489a2d078f2cb38425f852dd2c019295e401ba4a58cbd67566555d6"
-          export MIEL_OBSERVER_FRAME="$RUN_ROOT/direct-test/frame"
-          export MIEL_OBSERVER_MAX_RECORDS="1000000"
-          export MIEL_OBSERVER_OBSERVATION_PROFILE="scenario-bounded"
-          export MIEL_OBSERVER_OBSERVATION_OMIT_MASK="0x1fff"
-          export MIEL_OBSERVER_CALIBRATE_INITIAL_STATE="1"
-          export MIEL_REAL_DINPUT="$PROXY_ROOT/dinput-real.dll"
-          export MIEL_OBSERVER_DLL="native-observer-hook.dll"
-          # Copy the replay file
-          cp "$RUN_ROOT/output/calibration-spec/replays/controls-press-hold-release.mvo" "$RUN_ROOT/direct-test/controls.mvo" 2>/dev/null || true
-          # Start game directly from proxy dir with DINPUT proxy
-          cd "$PROXY_ROOT"
-          echo "Starting game directly..."
-          timeout 30 ./MulleMeck.exe 2>"$RUN_ROOT/direct-test/stderr.log" &
-          GAME_PID=$!
-          sleep 15
-          if kill -0 $GAME_PID 2>/dev/null; then
-            echo "GAME STILL RUNNING after 15s — SUCCESS"
-          else
-            echo "GAME EXITED within 15s"
-          fi
-          kill $GAME_PID 2>/dev/null || true
-          wait $GAME_PID 2>/dev/null || true
-          echo "=== Observer log ==="
           cat "$RUN_ROOT/direct-test/observer.log" 2>/dev/null | tail -30 || echo "No observer log"
           echo "=== stderr ==="
           cat "$RUN_ROOT/direct-test/stderr.log" 2>/dev/null | tail -20 || echo "No stderr"
