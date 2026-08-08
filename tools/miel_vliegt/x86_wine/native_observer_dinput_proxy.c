@@ -136,7 +136,17 @@ static BOOL initialize_proxy(void)
     if (length == 0u || length >= sizeof(observer_path)) goto failed;
     observer_module = LoadLibraryA(observer_path);
     failure_reason = "observer_load";
-    if (!observer_module) goto failed;
+    if (!observer_module) {
+        /* LoadLibrary failed — capture WHY: GetLastError (126 =
+           ERROR_MOD_NOT_FOUND missing dependency, 2 = file not found,
+           193 = bad exe format) plus the path we tried, so the artifact
+           names the cause instead of a bare observer_load. */
+        char lb[MAX_PATH * 2 + 64];
+        int ln = snprintf(lb, sizeof(lb), "observer_load FAILED err=%lu path=%s",
+                          (unsigned long)GetLastError(), observer_path);
+        if (ln > 0 && (size_t)ln < sizeof(lb)) proxy_log_file(lb);
+        goto failed;
+    }
     observer_initialize = (MielObserverInitializeFunction)(ULONG_PTR)
         GetProcAddress(observer_module, "MielObserverInitialize");
     if (!observer_initialize) {
