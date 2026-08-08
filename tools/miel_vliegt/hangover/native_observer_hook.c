@@ -4889,6 +4889,25 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
     if (diagnostics_enabled) emit_scheduler_watchdog("controller_started");
     for (index = 0u; index < 90000u; ++index) {
         Sleep(10u);
+        /* Pre-activation login unblock. Headless the game parks at
+           login-pending: Manager::Tick never fires, so the tick-gated
+           auto-login (dispatch_native_capture_login_on_manager_tick ->
+           send_login_submit_input) can never run and the main loop never
+           begins ticking. This controller thread is NOT tick-gated, so
+           synthesize the same Enter submit a few times early, stopping as
+           soon as login-activation is observed. send_login_submit_input is a
+           bare SendInput (Enter scancode 0x1c) with no window/lock
+           prerequisites, safe from this thread. */
+        if ((index == 200u || index == 500u || index == 900u ||
+             index == 1500u || index == 2500u || index == 4000u) &&
+            login_activation_event &&
+            WaitForSingleObject(login_activation_event, 0u) != WAIT_OBJECT_0) {
+            BOOL sent = send_login_submit_input();
+            if (diagnostics_enabled) {
+                emit_scheduler_watchdog(
+                    sent ? "login_autosubmit_sent" : "login_autosubmit_failed");
+            }
+        }
         if (diagnostics_enabled && index % 1000u == 999u) {
             emit_scheduler_watchdog("watchdog");
         }
