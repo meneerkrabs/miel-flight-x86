@@ -1605,6 +1605,10 @@ def run_scene_navigation(
     observe_ms = validate_observe_ms(observe_ms)
     environment = bind_native_proxy_dll_override(environment)
     observer_env_arguments = observer_environment_arguments(observer_environment)
+    # For native backend (no 'env' command prefix), env vars are in os.environ
+    # Don't include KEY=VALUE strings in the command list
+    _env_prefix = environment and environment[0] == "env"
+    _cmd_env = observer_env_arguments if _env_prefix else []
     # For native backend (no 'env' prefix command), set env vars in os.environ
     # so subprocess.Popen inherits them
     if not environment or environment[0] != "env":
@@ -1643,7 +1647,7 @@ def run_scene_navigation(
         )
         headless_config = install_headless_config(executable.parent)
         debug_launch = run(
-            environment + observer_env_arguments + ([f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}"] if observer_dll else []) + [
+            environment + _cmd_env + ([f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}"] if observer_dll else []) + [
                 *native_wine_command(scene_debugger, backend=backend),
                 "--target", wine_z_path(executable),
                 "--cwd", wine_z_path(executable.parent),
@@ -1841,7 +1845,7 @@ def run_scene_navigation(
     observer_proxy = install_observer_proxy(launch_executable.parent, proxy_dll)
     start_patch_launch = {
         **run(
-            environment + observer_env_arguments + [
+            environment + _cmd_env + [
                 f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}",
                 *native_wine_command(observer_launcher, backend=backend),
                 "--source", wine_z_path(executable),
