@@ -1,0 +1,59 @@
+name: ISO inventory
+
+# Ubuntu-only, cheap: list the installer's unshield groups and the ISO tree
+# so we can see where the flight voice WAVs live before changing the extract
+# job. The crash is a missing data\sound\voices\ resource; this locates it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download + decrypt ISO
+        run: |
+          mkdir -p /tmp/isos
+          gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 \
+            --pattern "Mielvliegt.iso.gpg" --dir /tmp/isos
+          echo "$ISO_GPG_PASSPHRASE" | gpg --batch --yes --decrypt \
+            --passphrase-fd 0 --output /tmp/isos/Mielvliegt.iso /tmp/isos/Mielvliegt.iso.gpg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
+      - name: Inventory
+        run: |
+          sudo apt-get install -y p7zip-full unshield >/dev/null
+          mkdir -p /tmp/inv
+          7z x -y -o/tmp/inv/installer /tmp/isos/Mielvliegt.iso >/dev/null 2>&1 || true
+
+          echo "=== ISO tree (full) ==="
+          7z l /tmp/isos/Mielvliegt.iso 2>/dev/null | tee /tmp/inv/iso-tree.txt | tail -60
+
+          echo "=== ISO: voices / sound / wav / mode_fly ==="
+          grep -iE "voice|sound|\.wav|mode_fly|\\\\z[0-9]" /tmp/inv/iso-tree.txt \
+            | tee /tmp/inv/iso-sound.txt | head -80
+
+          echo "=== unshield groups + files in data1.cab ==="
+          CAB=$(find /tmp/inv/installer -iname "data1.cab" | head -1)
+          echo "cab: $CAB"
+          unshield -l "$CAB" 2>/dev/null | tee /tmp/inv/unshield-list.txt | head -40
+          echo "=== unshield groups (names) ==="
+          unshield -g list "$CAB" 2>/dev/null | tee /tmp/inv/unshield-groups.txt || true
+          echo "=== unshield entries: voice/sound/wav ==="
+          grep -iE "voice|sound|\.wav|mode_fly" /tmp/inv/unshield-list.txt \
+            | tee /tmp/inv/unshield-sound.txt | head -80
+
+          echo "=== counts ==="
+          echo "iso wav lines: $(grep -ic '\.wav' /tmp/inv/iso-tree.txt || true)"
+          echo "cab wav lines: $(grep -ic '\.wav' /tmp/inv/unshield-list.txt || true)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iso-inventory
+          retention-days: 3
+          path: /tmp/inv/*.txt
