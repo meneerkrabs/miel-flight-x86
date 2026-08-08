@@ -208,10 +208,16 @@ fi
 # (z:/boot/efi) make find/upload fail EACCES.
 COLLECTED_LOGS="${OUTPUT_ROOT}/collected-logs"
 mkdir -p "${COLLECTED_LOGS}"
+# OUTPUT_ROOT is included so the observer's own init log survives — it lands
+# at output.parent as native-observer-wine.log / observer-*-permanent.log
+# under output/.cold-capture-staging and output/failed-attempts, which the
+# game/proxy/drive_c subtrees do not cover. Prune collected-logs to avoid
+# re-copying our own output recursively.
 for _src in "${RUN_ROOT}/orchestration.log" "${GAME_ROOT}" "${PROXY_ROOT}" \
-            "${WINE_PREFIX}/drive_c"; do
+            "${WINE_PREFIX}/drive_c" "${OUTPUT_ROOT}"; do
   [[ -e "${_src}" ]] || continue
-  find "${_src}" -xdev -type f -name '*.log' 2>/dev/null | while read -r _log; do
+  find "${_src}" -xdev -path "${COLLECTED_LOGS}" -prune -o \
+       -type f -name '*.log' -print 2>/dev/null | while read -r _log; do
     _safe="$(printf '%s' "${_log#${RUN_ROOT}/}" | tr '/' '_')"
     cp -f "${_log}" "${COLLECTED_LOGS}/${_safe}" 2>/dev/null || true
   done
