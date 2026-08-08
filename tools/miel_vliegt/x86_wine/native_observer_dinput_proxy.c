@@ -44,6 +44,8 @@ BOOL WINAPI GetVersionExA_hook(LPOSVERSIONINFOA lpVersionInformation) {
     return result;
 }
 
+static void install_exit_hook(void);
+
 static void install_version_hook(void) {
     HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
     if (!kernel32) return;
@@ -217,6 +219,10 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     }
     { HMODULE _exe = GetModuleHandleA(NULL); HMODULE _cc = GetModuleHandleA("Cc.dll"); fprintf(stderr, "MVP_BASE: exe=%p cc=%p\n", _exe, _cc); fflush(stderr); }
     install_version_hook();
+    /* install_exit_hook was defined but never called — the ExitProcess hook
+       runnerattempt.md described was never live, and every self-exit ran
+       unobserved. Install the exit/terminate hooks + VEH here. */
+    install_exit_hook();
     return TRUE;
 }
 
