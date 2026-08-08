@@ -1317,9 +1317,16 @@ class _SealedPrefixLane:
                         / f"{slot.lower()}-{attempt}"
                     )
                     try:
-                        diagnostic_copyout = native_runner.atomic_copyout_tree(
-                            attempt_root, diagnostic_destination,
-                        )
+                        import sys as _sys3
+                        if _sys3.platform == "win32":
+                            # Simple copytree for Windows (atomic_copyout uses fcntl)
+                            import shutil as _shutil2
+                            _shutil2.copytree(attempt_root, diagnostic_destination, dirs_exist_ok=True)
+                            diagnostic_copyout = {"method": "copytree", "destination": str(diagnostic_destination)}
+                        else:
+                            diagnostic_copyout = native_runner.atomic_copyout_tree(
+                                attempt_root, diagnostic_destination,
+                            )
                     except BaseException as diagnostic_error:
                         integrity_ok = False
                         if hasattr(primary_error, "add_note"):
