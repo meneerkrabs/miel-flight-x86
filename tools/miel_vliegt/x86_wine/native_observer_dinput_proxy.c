@@ -462,10 +462,10 @@ static BOOL patch_jmp(void *target, void *hook, const char *label) {
 /* Pin the assembler names so the global-asm stub links on both the CI
    MSYS2 i686 toolchain (no leading underscore) and other i686 toolchains
    (leading underscore) — the explicit asm() name removes the ambiguity. */
-static void *factory_tramp_ptr asm("factory_tramp_ptr") = NULL;
+static void *factory_tramp_ptr __asm__("factory_tramp_ptr") = NULL;
 static BYTE factory_tramp[16];
 
-void __cdecl log_factory_c(void *owner, const char *name) asm("log_factory_c");
+void __cdecl log_factory_c(void *owner, const char *name) __asm__("log_factory_c");
 void __cdecl log_factory_c(void *owner, const char *name) {
     static LONG once = 0;
     if (InterlockedExchange(&once, 1) != 0) return;
@@ -484,7 +484,7 @@ void __cdecl log_factory_c(void *owner, const char *name) {
 
 /* mingw-w64 i686 emits C symbols without a leading underscore, so the asm
    must reference the bare names. */
-extern void factory_probe(void) asm("factory_probe");
+extern void factory_probe(void) __asm__("factory_probe");
 __asm__(
 ".text\n"
 ".globl factory_probe\n"
