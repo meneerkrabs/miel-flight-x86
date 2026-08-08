@@ -459,9 +459,13 @@ static BOOL patch_jmp(void *target, void *hook, const char *label) {
    log-and-continue JMP hook (no unhook/rehook, no return wrap), which is
    safe even on a hot path. */
 #define FACTORY_VA 0x00409910u
-static void *factory_tramp_ptr = NULL;
+/* Pin the assembler names so the global-asm stub links on both the CI
+   MSYS2 i686 toolchain (no leading underscore) and other i686 toolchains
+   (leading underscore) — the explicit asm() name removes the ambiguity. */
+static void *factory_tramp_ptr asm("factory_tramp_ptr") = NULL;
 static BYTE factory_tramp[16];
 
+void __cdecl log_factory_c(void *owner, const char *name) asm("log_factory_c");
 void __cdecl log_factory_c(void *owner, const char *name) {
     static LONG once = 0;
     if (InterlockedExchange(&once, 1) != 0) return;
@@ -478,22 +482,24 @@ void __cdecl log_factory_c(void *owner, const char *name) {
     fprintf(stderr, "%s\n", nb); fflush(stderr);
 }
 
-extern void factory_probe(void);
+/* mingw-w64 i686 emits C symbols without a leading underscore, so the asm
+   must reference the bare names. */
+extern void factory_probe(void) asm("factory_probe");
 __asm__(
 ".text\n"
-".globl _factory_probe\n"
-"_factory_probe:\n"
+".globl factory_probe\n"
+"factory_probe:\n"
 "  pushfl\n"
 "  pushal\n"
 "  movl 40(%esp), %eax\n"   /* arg1 name: pushfl4 + pushal32 + retaddr4 */
 "  movl %ecx, %edx\n"       /* ecx = this (owner), still live after pushal */
 "  pushl %eax\n"
 "  pushl %edx\n"
-"  call _log_factory_c\n"
+"  call log_factory_c\n"
 "  addl $8, %esp\n"
 "  popal\n"
 "  popfl\n"
-"  jmp *_factory_tramp_ptr\n"
+"  jmp *factory_tramp_ptr\n"
 );
 
 static void install_factory_probe(void) {
