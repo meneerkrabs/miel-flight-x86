@@ -45,6 +45,7 @@ BOOL WINAPI GetVersionExA_hook(LPOSVERSIONINFOA lpVersionInformation) {
 }
 
 static void install_exit_hook(void);
+static void install_flight_null_check_patch(void);
 
 static void install_version_hook(void) {
     HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
@@ -223,6 +224,10 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
        runnerattempt.md described was never live, and every self-exit ran
        unobserved. Install the exit/terminate hooks + VEH here. */
     install_exit_hook();
+    /* Fix the takeoff-climb crash at the source: inject the NULL check the
+       game is missing at 0x42C58F, so a NULL flight-voice result skips the
+       member call instead of dereferencing it. */
+    install_flight_null_check_patch();
     return TRUE;
 }
 
@@ -526,4 +531,70 @@ static void install_exit_hook(void) {
         }
     }
     }
+}
+
+/* Inject the missing NULL check the game omits at 0x42C58F.
+
+   Original 13 bytes at 0x42C58F:
+     8B C8                mov ecx, eax               ; ecx = factory result
+     89 86 44 49 00 00    mov [esi+0x4944], eax      ; store result
+     E8 24 DA FD FF       call 0x409FC0              ; member fn -> AV if NULL
+
+   0x42C59C onward already handles a NULL member result and converges with
+   the game's own graceful no-resource path at 0x42C5A9. So the crash is
+   simply the member call being made on a NULL. Replace the 13 bytes with a
+   jump to a stub that stores the result, tests it, and either runs the
+   member call (non-NULL) or jumps straight to 0x42C5A9 (NULL). Guarded by an
+   exact byte match and the no-ASLR exe base so it never patches a different
+   build. */
+static BYTE flight_patch_stub[32];
+static void install_flight_null_check_patch(void) {
+    static const BYTE expect[13] = {
+        0x8B, 0xC8, 0x89, 0x86, 0x44, 0x49, 0x00, 0x00,
+        0xE8, 0x24, 0xDA, 0xFD, 0xFF
+    };
+    if (GetModuleHandleA(NULL) != (HMODULE)0x00400000) {
+        proxy_log_file("MVP_PATCH: exe base not 0x400000, skipping");
+        return;
+    }
+    BYTE *site = (BYTE *)0x0042C58Fu;
+    if (IsBadReadPtr(site, 13) || memcmp(site, expect, 13) != 0) {
+        proxy_log_file("MVP_PATCH: 0x42C58F bytes differ, skipping");
+        return;
+    }
+    /* Build the stub. */
+    BYTE *s = flight_patch_stub;
+    int n = 0;
+    /* mov [esi+0x4944], eax */
+    s[n++] = 0x89; s[n++] = 0x86; s[n++] = 0x44; s[n++] = 0x49; s[n++] = 0x00; s[n++] = 0x00;
+    /* test eax, eax */
+    s[n++] = 0x85; s[n++] = 0xC0;
+    /* jz +12  (skip the mov/call/jmp, land on the final jmp) */
+    s[n++] = 0x74; s[n++] = 0x0C;
+    /* mov ecx, eax */
+    s[n++] = 0x89; s[n++] = 0xC1;
+    /* call 0x409FC0 */
+    s[n++] = 0xE8;
+    *(LONG *)(s + n) = (LONG)0x00409FC0 - (LONG)(s + n + 4); n += 4;
+    /* jmp 0x42C59C  (back to the original post-call flow) */
+    s[n++] = 0xE9;
+    *(LONG *)(s + n) = (LONG)0x0042C59C - (LONG)(s + n + 4); n += 4;
+    /* jz lands here: jmp 0x42C5A9  (graceful no-voice path) */
+    s[n++] = 0xE9;
+    *(LONG *)(s + n) = (LONG)0x0042C5A9 - (LONG)(s + n + 4); n += 4;
+
+    DWORD op;
+    if (!VirtualProtect(flight_patch_stub, sizeof(flight_patch_stub),
+                        PAGE_EXECUTE_READWRITE, &op)) return;
+    FlushInstructionCache(GetCurrentProcess(), flight_patch_stub, sizeof(flight_patch_stub));
+
+    /* Patch the site: jmp stub (5) + NOP padding to 13. */
+    if (!VirtualProtect(site, 13, PAGE_EXECUTE_READWRITE, &op)) return;
+    site[0] = 0xE9;
+    *(LONG *)(site + 1) = (LONG)flight_patch_stub - (LONG)(site + 5);
+    for (int i = 5; i < 13; i++) site[i] = 0x90;
+    VirtualProtect(site, 13, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), site, 13);
+    proxy_log_file("MVP_PATCH: flight NULL-check installed at 0x42C58F");
+    fprintf(stderr, "MVP_PATCH: flight NULL-check installed\n"); fflush(stderr);
 }
