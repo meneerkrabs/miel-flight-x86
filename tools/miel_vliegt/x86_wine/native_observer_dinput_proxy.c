@@ -462,7 +462,7 @@ static BOOL patch_jmp(void *target, void *hook, const char *label) {
 /* Pin the assembler names so the global-asm stub links on both the CI
    MSYS2 i686 toolchain (no leading underscore) and other i686 toolchains
    (leading underscore) — the explicit asm() name removes the ambiguity. */
-static void *factory_tramp_ptr __asm__("factory_tramp_ptr") = NULL;
+void *factory_tramp_ptr __asm__("factory_tramp_ptr") = NULL;
 static BYTE factory_tramp[16];
 
 void __cdecl log_factory_c(void *owner, const char *name) __asm__("log_factory_c");
