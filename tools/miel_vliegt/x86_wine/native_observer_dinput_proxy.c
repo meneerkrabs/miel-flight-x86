@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+typedef LONG NTSTATUS;
 #include <windows.h>
 #include <stdio.h>
 
@@ -176,8 +177,8 @@ void WINAPI ExitProcess_hook(UINT uExitCode) {
 }
 
 /* Also hook RtlExitUserProcess in ntdll — catches _exit() and exit() */
-static VOID (NTAPI *real_RtlExitUserProcess)(NTSTATUS ExitStatus) = NULL;
-void NTAPI RtlExitUserProcess_hook(NTSTATUS ExitStatus) {
+static VOID (WINAPI *real_RtlExitUserProcess)(NTSTATUS ExitStatus) = NULL;
+void WINAPI RtlExitUserProcess_hook(NTSTATUS ExitStatus) {
     fprintf(stderr, "MVP_RtlExitUserProcess(0x%08X): BLOCKED\n", (unsigned)ExitStatus);
     fflush(stderr);
     Sleep(INFINITE);
