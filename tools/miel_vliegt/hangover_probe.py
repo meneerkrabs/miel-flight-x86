@@ -1647,7 +1647,7 @@ def run_scene_navigation(
         )
         headless_config = install_headless_config(executable.parent)
         debug_launch = run(
-            environment + _cmd_env + ([f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}"] if observer_dll else []) + [
+            environment + _cmd_env + ([f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}"] if observer_dll and _env_prefix else []) + [
                 *native_wine_command(scene_debugger, backend=backend),
                 "--target", wine_z_path(executable),
                 "--cwd", wine_z_path(executable.parent),
@@ -1845,8 +1845,9 @@ def run_scene_navigation(
     observer_proxy = install_observer_proxy(launch_executable.parent, proxy_dll)
     start_patch_launch = {
         **run(
-            environment + _cmd_env + [
-                f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}",
+            environment + _cmd_env + (
+                [f"MIEL_OBSERVER_LOG={wine_z_path(observer_log_path)}"] if _env_prefix else []
+            ) + [
                 *native_wine_command(observer_launcher, backend=backend),
                 "--source", wine_z_path(executable),
                 "--target", wine_z_path(launch_executable),
