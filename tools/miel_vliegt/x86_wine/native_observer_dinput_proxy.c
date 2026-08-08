@@ -251,41 +251,6 @@ static void describe_address(void *addr, char *out, size_t out_size) {
     (void)out_size;
 }
 
-static void restore_bytes(void *target, const BYTE *saved);
-static void rehook(void *target, void *hook);
-static BOOL patch_jmp(void *target, void *hook, const char *label);
-
-/* === CreateFileA: name the resource that fails to load ===
-   The crash factory (MulleMeck.exe+0x9910) builds a "dir\file" path and
-   loads it; on failure it returns NULL and the caller derefs it. Log every
-   file open with its result so the last FILE_NOT_FOUND before the crash is
-   the missing resource. Saved prologue like the terminate hooks so the real
-   CreateFileA runs without re-entry. */
-static CRITICAL_SECTION createfile_lock;
-static BOOL createfile_lock_ready = FALSE;
-static BYTE saved_CreateFileA[5];
-static HANDLE (WINAPI *real_CreateFileA)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES,
-                                         DWORD, DWORD, HANDLE) = NULL;
-HANDLE WINAPI CreateFileA_hook(LPCSTR name, DWORD access, DWORD share,
-                               LPSECURITY_ATTRIBUTES sa, DWORD disp,
-                               DWORD flags, HANDLE tmpl) {
-    HANDLE h;
-    if (createfile_lock_ready) EnterCriticalSection(&createfile_lock);
-    restore_bytes((void *)real_CreateFileA, saved_CreateFileA);
-    h = real_CreateFileA(name, access, share, sa, disp, flags, tmpl);
-    DWORD err = GetLastError();
-    rehook((void *)real_CreateFileA, (void *)CreateFileA_hook);
-    if (createfile_lock_ready) LeaveCriticalSection(&createfile_lock);
-    /* Only log opens for read that failed — that is the missing-resource
-       signal; ignore the observer's own writes and successful opens. */
-    if (h == INVALID_HANDLE_VALUE && (access & GENERIC_READ) && name) {
-        char b[MAX_PATH + 64];
-        wsprintfA(b, "MVP_OPEN_FAIL err=%lu name=%.240s", err, name);
-        proxy_log_file(b);
-    }
-    return h;
-}
-
 /* === Exit prevention: hook PostQuitMessage + ExitProcess === */
 static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
@@ -488,18 +453,6 @@ static void install_exit_hook(void) {
             memcpy(saved_TerminateProcess, (void *)real_TerminateProcess, 5);
             patch_jmp((void *)real_TerminateProcess, (void *)TerminateProcess_hook,
                       "TerminateProcess");
-        }
-        if (!createfile_lock_ready) {
-            InitializeCriticalSection(&createfile_lock);
-            createfile_lock_ready = TRUE;
-        }
-        real_CreateFileA =
-            (HANDLE (WINAPI *)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES,
-                               DWORD, DWORD, HANDLE))GetProcAddress(k32, "CreateFileA");
-        if (real_CreateFileA) {
-            memcpy(saved_CreateFileA, (void *)real_CreateFileA, 5);
-            patch_jmp((void *)real_CreateFileA, (void *)CreateFileA_hook,
-                      "CreateFileA");
         }
     }
     if (nt) {
