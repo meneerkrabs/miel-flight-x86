@@ -200,4 +200,22 @@ else
   write_receipt FAILED "${suite_status}"
   echo "=== Suite FAILED (exit ${suite_status}) ==="
 fi
+
+# Preserve proxy/observer/orchestration stderr breadcrumbs into the uploaded
+# artifact. The proxy DLL (MVP_* lines) and game logs land in game/ proxy/ and
+# RUN_ROOT itself, never in output/. Scope the search to those subtrees and
+# wine-prefix/drive_c only — NOT the whole prefix, whose dosdevices symlinks
+# (z:/boot/efi) make find/upload fail EACCES.
+COLLECTED_LOGS="${OUTPUT_ROOT}/collected-logs"
+mkdir -p "${COLLECTED_LOGS}"
+for _src in "${RUN_ROOT}/orchestration.log" "${GAME_ROOT}" "${PROXY_ROOT}" \
+            "${WINE_PREFIX}/drive_c"; do
+  [[ -e "${_src}" ]] || continue
+  find "${_src}" -xdev -type f -name '*.log' 2>/dev/null | while read -r _log; do
+    _safe="$(printf '%s' "${_log#${RUN_ROOT}/}" | tr '/' '_')"
+    cp -f "${_log}" "${COLLECTED_LOGS}/${_safe}" 2>/dev/null || true
+  done
+done
+echo "=== Collected $(ls -1 "${COLLECTED_LOGS}" 2>/dev/null | wc -l) log(s) into output/collected-logs ==="
+
 exit "${suite_status}"
