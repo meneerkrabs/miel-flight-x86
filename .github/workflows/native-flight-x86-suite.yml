@@ -43,7 +43,11 @@ jobs:
           i686-w64-mingw32-gcc -std=c11 -Os -s -Ihangover \
             -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" \
             hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe
-          i686-w64-mingw32-gcc -std=c11 -Os -s -shared -Ihangover \
+          # -static-libgcc: the observer DLL otherwise imports
+          # libgcc_s_sjlj-1.dll (GCC SJLJ exception runtime), absent from the
+          # game's DLL search path under Wine, making LoadLibraryA of the
+          # observer fail ERROR_MOD_NOT_FOUND (126). Static link drops the dep.
+          i686-w64-mingw32-gcc -std=c11 -Os -s -shared -static-libgcc -Ihangover \
             -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
             hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
             -o /opt/miel/native-observer-hook.dll

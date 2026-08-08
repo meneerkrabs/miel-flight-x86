@@ -87,7 +87,13 @@ jobs:
           $CC -m32 -std=c11 -Os -s -Ihangover \
             -DMIEL_EXPECTED_EXE_SHA256=\"$EXE_HASH\" \
             hangover/native_observer_launcher.c -o /opt/miel/native-observer-launcher.exe -lole32
-          $CC -m32 -std=c11 -Os -s -shared -Ihangover \
+          # -static-libgcc: without it the observer DLL imports
+          # libgcc_s_sjlj-1.dll (GCC SJLJ exception runtime), which is absent
+          # from the game's DLL search path under Wine, so LoadLibraryA of the
+          # observer fails ERROR_MOD_NOT_FOUND (126) and the bootstrap signals
+          # observer failure. The small DINPUT proxy has no such dep. Static
+          # linking removes the runtime-DLL dependency.
+          $CC -m32 -std=c11 -Os -s -shared -static-libgcc -Ihangover \
             -DMVDS_PRODUCER_BUILD_SHA256=\"${PRODUCER_SHA}\" \
             hangover/native_observer_hook.c hangover/native_dispatch_semantic_hook.c \
             -o /opt/miel/native-observer-hook.dll
