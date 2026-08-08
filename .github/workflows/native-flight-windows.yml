@@ -213,14 +213,6 @@ jobs:
           # Write config.ini to proxy directory (game reads from cwd)
           printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
-          
-          # Install DirectDraw compatibility: copy ddraw.dll from SysWOW64
-          # and set DLL override to prefer native ddraw
-          # The game uses DirectDraw for back-buffer creation even in GDI mode
-          echo "=== DirectDraw compatibility ==="
-          # Copy system ddraw.dll to game dir (forces native load)
-          cp "C:/Windows/SysWOW64/ddraw.dll" "$PROXY_ROOT/ddraw.dll" 2>/dev/null || true
-          echo "DirectDraw DLL copied"
           cat "$RUN_ROOT/direct-test/observer.log" 2>/dev/null | tail -30 || echo "No observer log"
           echo "=== stderr ==="
           cat "$RUN_ROOT/direct-test/stderr.log" 2>/dev/null | tail -20 || echo "No stderr"
