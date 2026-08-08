@@ -49,7 +49,14 @@ niet runtime. Sterkste bewijs-as.
 | 10 result | 2026-08-09 | — | Injectie vuurde (buiten guard) maar `login_activation_observed:false`, nog `proxy-bootstrap-timeout`, observer-log 3 regels. `login_autosubmit_sent` niet zichtbaar (emit_scheduler_watchdog diagnostics-gated, env niet gezet). Enter ontgrendelt niks → wsl app construeert nooit = geen login-UI om Enter te ontvangen; stall zit vóór login-input. | — | tijdreeks-diagnostiek |
 | 11 | 2026-08-09 | wine 31283723693 | (pending) | 0b06b22: controller re-emit bootstrap-snapshot @10/30/60/120s (always-on) | construeert app? tikt manager? ooit? |
 | 11 result | 2026-08-09 | — | **BESLISSEND:** 5 snapshots (0/10/30/60/120s). seq0 `application:false` → daarna `application:TRUE` (app CONSTRUEERT wél kort na bootstrap). MAAR `manager_ticks:0` bij ALLE, `current_name:unresolved`, `user_id:-999`. = **niet pre-app-stall; case B: app up, `Manager::Tick` vuurt nooit** — main-loop pompt geen ticks. Login pending, activation tick-gated → circulair tenzij login message-gedreven. Enter-injectie (iter-10) bereikte t venster niet / login vereist meer. | — | GLM: wat drijft Manager::Tick + waarom niet als app up? |
-| 12 | 2026-08-09 | GLM analyse (geen dispatch) | (pending) | — | tick-pump mechanisme + login→tick transitie |
+| 12 | 2026-08-09 | GLM b97kuc35i + eigen lezing :6172-6290 | **Echte auto-login-sequentie ontrafeld:** `dispatch_native_capture_login_on_manager_tick`(:6239) doet (1) `dispatch_ci_session`(:6172) = schrijf profiel **"MVO_CI"** naar `current+0xd5`(naam)/`+0x1d8`(len=6)/`+0xd4`(editing=1), DAN (2) `send_login_submit_input` (Enter). **Iter-10 stuurde Enter ZONDER profiel-write → faalde.** Crux-deadlock: `login_dispatch_ready`(:6203) vereist login als CURRENT mode (`current==login && pending==0`); wij hebben pending==mode_login, current!=login. Pending→current-commit gebeurt via tick (`correlate_mode_activation`) → tick vereist main-loop → kip-ei headless. Mogelijk tikt de FLIGHT-manager pas ná login (login-screen = Director-movie met eigen loop). | — | volgende: repliceer ci_session+Enter vanuit controller-thread ZODRA login current is; of onderzoek wie pending→current commit |
+| 13 | (pending) | — | — | — | — |
+
+## CRUX na iter-12 (voor volgende iteratie / gebruiker)
+- Auto-login = **profiel-write "MVO_CI" (current+0xd4/d5/0x1d8) DAN Enter** — beide nodig, niet alleen Enter.
+- Blocker: login is PENDING, niet CURRENT; commit pending→current lijkt tick-gated → kip-ei.
+- Volgende hypotheses: (a) repliceer volledige ci_session+Enter vanuit non-tick controller-thread, maar eerst uitzoeken of/wanneer login `current` wordt (log current/pending mode-ptr periodiek vanuit controller); (b) als login-screen z'n eigen Director-loop heeft die WEL draait, is de manager-tick=0 verwacht en moet de unblock puur via de login-movie's input/UI; (c) mogelijk mist de pending→current commit een specifieke game-call die headless niet triggert.
+- **Diepe RE, kip-ei-kern.** Grote winst blijft libgcc-fix. Pace lang (3u-ritme).
 
 ## STAND na iter-11 (crisp)
 1. **Root cause libgcc GEFIXT** (observer laadt, was de 100+-iter-blocker). ✓
