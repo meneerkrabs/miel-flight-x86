@@ -12,6 +12,10 @@ on:
         type: choice
         default: gdi
         options: [gdi, auto, opengl, direct3d9]
+      strip_at_language:
+        description: 'Rewrite packages.ini without the unresolved @language line'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -108,6 +112,7 @@ jobs:
           export MIEL_NATIVE_BACKEND_ID=native
           export INPUT_KEEPER="${{ inputs.input_keeper }}"
           export DDRAW_RENDERER="${{ inputs.ddraw_renderer }}"
+          export STRIP_AT_LANGUAGE="${{ inputs.strip_at_language }}"
           export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           export ISO_GPG_PASSPHRASE="${{ secrets.ISO_GPG_PASSPHRASE }}"
           RUN_ROOT="$RUNNER_TEMP/miel-native"
@@ -225,6 +230,17 @@ jobs:
           # Write config.ini to proxy directory (game reads from cwd)
           printf 'cleanup false\nsetupwindow false\ngtdriver gtSoftware\nmousesensitivity 1.0000\ntimescale 1.0000\nmainlog false\nfullscreen false\nstreammap false\nuserid 0\nusername unknown\n' > "$PROXY_ROOT/config.ini"
           echo "Wrote config.ini to proxy dir (streammap=false)"
+
+          # Test the @language hypothesis: the shipped packages.ini ends with
+          # an unresolved "@language" placeholder. The voices live in
+          # sounds.up (already mounted), so strip the placeholder and see if
+          # the mode_fly voice load stops returning NULL.
+          if [ "${STRIP_AT_LANGUAGE:-false}" = "true" ]; then
+            printf 'map.up\ndata.up\nsounds.up\n' | tee \
+              "$PROXY_ROOT/packages.ini" "$GAME_ROOT/packages.ini" >/dev/null
+            echo "=== packages.ini rewritten without @language ==="
+            cat "$PROXY_ROOT/packages.ini"
+          fi
           cat "$RUN_ROOT/direct-test/observer.log" 2>/dev/null | tail -30 || echo "No observer log"
           echo "=== stderr ==="
           cat "$RUN_ROOT/direct-test/stderr.log" 2>/dev/null | tail -20 || echo "No stderr"
