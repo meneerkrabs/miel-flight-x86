@@ -4911,6 +4911,18 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
         if (diagnostics_enabled && index % 1000u == 999u) {
             emit_scheduler_watchdog("watchdog");
         }
+        /* Always-on (not diagnostics-gated) time-series of the bootstrap
+           state, so the artifact shows whether the game ever progresses:
+           does the application singleton construct, does manager_tick_count
+           ever leave 0, does login-activation ever come. Re-emit the full
+           bootstrap snapshot at 10s/30s/60s/120s. The 3-line-then-silence
+           observer log left it ambiguous whether the game is hard-stalled
+           pre-application or merely un-activated. */
+        if (index == 1000u || index == 3000u ||
+            index == 6000u || index == 12000u) {
+            emit_bootstrap_diagnostic();
+            flush_trace();
+        }
         if (session_state == SESSION_COMPLETE ||
             session_state == SESSION_FAILED) break;
     }
