@@ -483,16 +483,16 @@ __asm__(
 ".text\n"
 ".globl _factory_probe\n"
 "_factory_probe:\n"
-"  pushfd\n"
-"  pushad\n"
-"  movl 40(%esp), %eax\n"   /* arg1 name: pushfd4 + pushad32 + retaddr4 */
-"  movl %ecx, %edx\n"       /* ecx = this (owner), still live after pushad */
+"  pushfl\n"
+"  pushal\n"
+"  movl 40(%esp), %eax\n"   /* arg1 name: pushfl4 + pushal32 + retaddr4 */
+"  movl %ecx, %edx\n"       /* ecx = this (owner), still live after pushal */
 "  pushl %eax\n"
 "  pushl %edx\n"
 "  call _log_factory_c\n"
 "  addl $8, %esp\n"
-"  popad\n"
-"  popfd\n"
+"  popal\n"
+"  popfl\n"
 "  jmp *_factory_tramp_ptr\n"
 );
 
