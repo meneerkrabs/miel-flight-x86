@@ -168,17 +168,18 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
 void WINAPI ExitProcess_hook(UINT uExitCode) {
-    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED — running message pump\n", uExitCode);
+    fprintf(stderr, "MVP_ExitProcess(%u): BLOCKED\n", uExitCode);
     fflush(stderr);
-    /* Instead of exiting, run a message pump to keep the game window alive.
-       This allows the observer hook's threads to continue working. */
-    MSG msg;
-    while (GetMessageA(&msg, NULL, 0, 0) > 0) {
-        TranslateMessage(&msg);
-        DispatchMessageA(&msg);
-    }
-    /* If we get here, WM_QUIT was received — still don't call real ExitProcess */
-    fprintf(stderr, "MVP: message pump ended, sleeping forever\n"); fflush(stderr);
+    /* Don't exit — keep the process alive for the observer. */
+    /* Sleep on this thread, let the game's other threads continue. */
+    Sleep(INFINITE);
+}
+
+/* Also hook RtlExitUserProcess in ntdll — catches _exit() and exit() */
+static VOID (NTAPI *real_RtlExitUserProcess)(NTSTATUS ExitStatus) = NULL;
+void NTAPI RtlExitUserProcess_hook(NTSTATUS ExitStatus) {
+    fprintf(stderr, "MVP_RtlExitUserProcess(0x%08X): BLOCKED\n", (unsigned)ExitStatus);
+    fflush(stderr);
     Sleep(INFINITE);
 }
 
@@ -230,5 +231,23 @@ static void install_exit_hook(void) {
     fprintf(stderr, "MVP: ExitProcess inline hook installed at %p -> %p\n",
             target, ExitProcess_hook);
     fflush(stderr);
+    
+    /* Also hook RtlExitUserProcess in ntdll */
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (ntdll) {
+        FARPROC rtl_exit = GetProcAddress(ntdll, "RtlExitUserProcess");
+        if (rtl_exit) {
+            BYTE *rtl_code = (BYTE*)rtl_exit;
+            if (VirtualProtect(rtl_code, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+                LONG_PTR rtl_offset = (LONG_PTR)RtlExitUserProcess_hook - (LONG_PTR)(rtl_code + 5);
+                rtl_code[0] = 0xE9;
+                *(LONG_PTR*)(rtl_code + 1) = rtl_offset;
+                VirtualProtect(rtl_code, 5, old_protect, &old_protect);
+                FlushInstructionCache(GetCurrentProcess(), rtl_code, 5);
+                fprintf(stderr, "MVP: RtlExitUserProcess hook installed at %p\n", rtl_code);
+                fflush(stderr);
+            }
+        }
+    }
     }
 }
