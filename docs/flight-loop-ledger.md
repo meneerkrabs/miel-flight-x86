@@ -42,7 +42,8 @@ niet runtime. Sterkste bewijs-as.
 | 6 | 2026-08-08 | wine 31280198375 + GLM b83ttjclk | (pending) | — | err-code + GLM observer-DllMain/imports → fix |
 | 6 | 2026-08-08 | wine 31280198375 (GetLastError) | objdump lokaal: **observer-DLL importeert `libgcc_s_sjlj-1.dll`** (GCC SJLJ EH-runtime), proxy niet. Onder Wine niet in DLL-search-path → `LoadLibraryA` faalt **ERROR_MOD_NOT_FOUND (126)**. = de ROOT CAUSE van de hele "crash". `-static-libgcc` verwijdert de import (lokaal geverifieerd, 0 libgcc). | **c27b578: `-static-libgcc` op observer-build in BEIDE workflows** | — |
 | **7 (FIX)** | 2026-08-08 | wine 31280292225 + win 31280292964 | (pending) | — | observer laadt nu? suite voorbij proxy-bootstrap? bereikt scenes? |
-| 8 | (pending) | — | — | — | — |
+| 7 (FIX) | 2026-08-09 | wine 31280292225 + win 31280292964(success) | **FIX WERKT.** iter-6 bevestigde `err=126`. iter-7: `DIAG observer_initialized`, GEEN failure. Checks nu TRUE: loader_init, observer_loaded/initialized, login_pending, message_loop_wake, observer_hook_loaded. **Nieuwe front:** `detail=proxy-bootstrap-timeout` (600s), `login_activation_observed=FALSE`. Observer-snapshot: application/manager=false, current_name=unresolved, manager_ticks:0, user_id:-999 → game gaat niet van login-pending→activation. | — | GLM: hoe wordt login-activation getriggerd + waarom niet headless? |
+| 8 | 2026-08-09 | (GLM analyse, geen dispatch — runs nu 600s) | (pending) | — | hypothese vóór volgende dispatch |
 
 ## ROOT CAUSE (iter 1→6)
 De "takeoff-climb crash" was **nooit een crash**. Keten: observer-hook-DLL
