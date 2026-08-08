@@ -84,4 +84,7 @@ jobs:
         with:
           name: flight-x86-results
           retention-days: 1
-          path: ${{ runner.temp }}/miel-native/
+          # Only the output/ tree (scenario receipts + logs). The full
+          # miel-native/ dir also contains wine-prefix/dosdevices symlinks to
+          # system paths (z:/boot/efi) that make the upload scan fail EACCES.
+          path: ${{ runner.temp }}/miel-native/output/

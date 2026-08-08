@@ -1951,7 +1951,7 @@ def run_scene_navigation(
     # Copy observer log to permanent location before staging cleanup
     if observer_log_path and Path(observer_log_path).exists():
         import shutil as _shutil3
-        permanent_log = output.parent / f"observer-{scenario_id}-permanent.log"
+        permanent_log = output.parent / f"observer-{scene}-permanent.log"
         try:
             _shutil3.copy2(observer_log_path, permanent_log)
         except Exception: pass
