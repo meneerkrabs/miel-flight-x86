@@ -451,86 +451,10 @@ static BOOL patch_jmp(void *target, void *hook, const char *label) {
     return TRUE;
 }
 
-/* === Factory probe: log why 0x409910 returns NULL ===
-   The resource factory returned NULL loading the flight voice. Its two NULL
-   paths are owner->dir (at owner+0x14) being NULL, or operator new failing.
-   Log the owner, owner->dir and the requested name on the first call, then
-   jump through a trampoline so the original runs untouched — a plain
-   log-and-continue JMP hook (no unhook/rehook, no return wrap), which is
-   safe even on a hot path. */
-#define FACTORY_VA 0x00409910u
-/* Pin the assembler names so the global-asm stub links on both the CI
-   MSYS2 i686 toolchain (no leading underscore) and other i686 toolchains
-   (leading underscore) — the explicit asm() name removes the ambiguity. */
-void *factory_tramp_ptr __asm__("factory_tramp_ptr") = NULL;
-static BYTE factory_tramp[16];
-
-void __cdecl log_factory_c(void *owner, const char *name) __asm__("log_factory_c");
-void __cdecl log_factory_c(void *owner, const char *name) {
-    static LONG once = 0;
-    if (InterlockedExchange(&once, 1) != 0) return;
-    const char *dir = "(owner null)";
-    if (owner && !IsBadReadPtr((BYTE *)owner + 0x14, 4)) {
-        char **pdir = (char **)((BYTE *)owner + 0x14);
-        dir = (*pdir && !IsBadReadPtr(*pdir, 1)) ? *pdir : "(NULL dir)";
-    }
-    char nb[420];
-    wsprintfA(nb, "MVP_FACTORY owner=%p dir=\"%.160s\" name=\"%.160s\"",
-              owner, dir,
-              (name && !IsBadReadPtr(name, 1)) ? name : "(?)");
-    proxy_log_file(nb);
-    fprintf(stderr, "%s\n", nb); fflush(stderr);
-}
-
-/* mingw-w64 i686 emits C symbols without a leading underscore, so the asm
-   must reference the bare names. */
-extern void factory_probe(void) __asm__("factory_probe");
-__asm__(
-".text\n"
-".globl factory_probe\n"
-"factory_probe:\n"
-"  pushfl\n"
-"  pushal\n"
-"  movl 40(%esp), %eax\n"   /* arg1 name: pushfl4 + pushal32 + retaddr4 */
-"  movl %ecx, %edx\n"       /* ecx = this (owner), still live after pushal */
-"  pushl %eax\n"
-"  pushl %edx\n"
-"  call log_factory_c\n"
-"  addl $8, %esp\n"
-"  popal\n"
-"  popfl\n"
-"  jmp *factory_tramp_ptr\n"
-);
-
-static void install_factory_probe(void) {
-    BYTE *fac = (BYTE *)FACTORY_VA;
-    if (IsBadReadPtr(fac, 7)) return;
-    DWORD op;
-    /* trampoline = original 7 bytes (push -1 ; push imm32, both absolute) +
-       jmp back to fac+7 */
-    if (!VirtualProtect(factory_tramp, sizeof(factory_tramp),
-                        PAGE_EXECUTE_READWRITE, &op)) return;
-    memcpy(factory_tramp, fac, 7);
-    factory_tramp[7] = 0xE9;
-    *(LONG *)(factory_tramp + 8) =
-        (LONG)(fac + 7) - (LONG)(factory_tramp + 7 + 5);
-    factory_tramp_ptr = factory_tramp;
-    FlushInstructionCache(GetCurrentProcess(), factory_tramp,
-                          sizeof(factory_tramp));
-    if (VirtualProtect(fac, 5, PAGE_EXECUTE_READWRITE, &op)) {
-        fac[0] = 0xE9;
-        *(LONG *)(fac + 1) = (LONG)factory_probe - (LONG)(fac + 5);
-        VirtualProtect(fac, 5, op, &op);
-        FlushInstructionCache(GetCurrentProcess(), fac, 5);
-        proxy_log_file("MVP: factory probe installed at 0x409910");
-    }
-}
-
 static void install_exit_hook(void) {
     /* Install VEH first to catch crashes */
     AddVectoredExceptionHandler(0, crash_logger);
     fprintf(stderr, "MVP: VEH crash logger installed\n"); fflush(stderr);
-    install_factory_probe();
 
     if (!passthrough_lock_ready) {
         InitializeCriticalSection(&passthrough_lock);
