@@ -53,7 +53,11 @@ niet runtime. Sterkste bewijs-as.
 | 13 | 2026-08-09 | wine 31285900011 | (pending) | 26e75bf: mode-probe (current/pending/login-ptr + is_login + manager_ticks) @10/30/60/120s vanuit controller | wordt login ooit current? of blijft pending? |
 | 13 result | 2026-08-09 | — | Probe = ALLE nul (current/pending/login=0) → `late_bootstrap_manager_address` global is 0/nooit gezet op dit pad → verkeerde manager-bron. | — | probe via app+0x1ac |
 | 14 | 2026-08-09 | wine 31286519649 | (pending) | 4eaa28c: probe manager via APPLICATION_GETTER()→+0x1ac (+ log app-ptr) | echte current/pending/login mode-state |
-| 15 | (pending) | — | — | — | — |
+| 14 result | 2026-08-09 | — | **BESLISSEND:** `application:9782080` (non-null constant) maar **`manager:0`** (app+0x1ac=NULL) bij ALLE 0-120s. App construeert, **manager-sub-object nooit**. → stall zit VÓÓR elke mode/login, bij **manager-constructie**. Geen manager → geen tick/MODE_RESOLVE/login. Headless bouwt de app z'n manager niet (init-pad onvoltooid, of resource-afh: display/DirectDraw/sound). | — | GLM: wat construeert app+0x1ac + waarom niet headless |
+| 15 | 2026-08-09 | GLM analyse (geen dispatch) | (pending) | — | manager-constructie-pad + headless-blokkade |
+
+## CRUX na iter-14 (herzien — dieper dan login)
+De stall is NIET login/mode maar **manager-constructie**: app (0x953200) is er, maar `app+0x1ac` (manager) blijft NULL over 120s. De observer's eigen bootstrap wacht juist op deze (`calibration_bootstrap_manager_ready`: app+0x1ac!=0) → daarom manager_ticks=0, current/pending/login allemaal 0. Alles downstream (login pending→current, tick, activation) is gevolg. **Kern-vraag:** waarom construeert MulleMeck's application z'n manager niet onder headless Wine? Kandidaten: (a) manager-creatie deferred naar msg-loop/WM_CREATE die headless niet vuurt; (b) manager-init hangt af van display/DirectDraw-surface/DirectSound die headless faalt → creatie aborteert. Mogelijke **headless-limiet** — noteren als t game-state vereist die we niet veilig kunnen forceren.
 
 ## CRUX na iter-12 (voor volgende iteratie / gebruiker)
 - Auto-login = **profiel-write "MVO_CI" (current+0xd4/d5/0x1d8) DAN Enter** — beide nodig, niet alleen Enter.
