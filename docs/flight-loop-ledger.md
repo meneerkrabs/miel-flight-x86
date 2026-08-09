@@ -68,7 +68,20 @@ niet runtime. Sterkste bewijs-as.
 | 21 | 2026-08-09 | GLM ddraw-hook analyse | (pending) | — | waar beslist gtSoftware fullscreen / hoe SetDisplayMode stubben |
 | 21 | 2026-08-09 | wine 31309481795 | GLM (b5r6l3vgj) dumpte game-adres-defines, geen ddraw-fix. Zelf: klassieke remedie `UseXVidMode=N` (wine sla real XVidMode/XRandR-mode-switch over → emuleer via virtual desktop). | ebe8df7: HKCU\Software\Wine\X11 Driver UseXVidMode=N | SetDisplayMode slaagt? manager!=0? |
 | 21 result | 2026-08-09 | — | `UseXVidMode=N` ook geen effect. Nog DDERR_UNSUPPORTED, manager:0. **Config-display-remedies UITGEPUT** (virtual desktop, depth 24, UseXVidMode, config.ini fullscreen=false). | — | consolidatie / handoff |
-| 22 | 2026-08-09 | GLM ddraw-IAT-hook locate | **Path C bevestigd:** alle regs (xvidmode/desktop/renderer) add+query exit 0 → config ECHT toegepast, geen stille faal. gtDirect3d-loop herhaalt actief → DDERR = de echte block (ntdll-waits = Sleep tussen retries, geen rode haring). Config-weg definitief op. Enige echte fix = SetDisplayMode→DD_OK stubben. | GLM lokaliseert DirectDrawCreate-IAT-hook-punt | vtable-stub SetDisplayMode idx 21 |
+| 22 | 2026-08-09 | GLM ddraw-IAT-hook locate | **Path C bevestigd:** alle regs (xvidmode/desktop/renderer) add+query exit 0 → config ECHT toegepast, geen stille faal. gtDirect3d-loop herhaalt actief → DDERR = de echte block (ntdll-waits = Sleep tussen retries, geen rode haring). Config-weg definitief op. GLM: GEEN ddraw-IAT in disasm-constanten (wel RAND_IAT/SRAND_IAT/CC_SHADOW_RENDER_IAT + write_import_slot-machinerie). | — | flight = gekarakteriseerde handoff |
+
+## FLIGHT HANDOFF (na iter-22) — gekarakteriseerde muur
+**Twee root causes gevonden (21 iters autonome loop):**
+1. **libgcc — GEFIXT** (`-static-libgcc`): observer-DLL importeerde `libgcc_s_sjlj-1.dll` (ontbreekt Wine) → observer laadde nooit (err 126). 100+-iter-blocker in vorige sessies. Nu: observer laadt, app construeert, login-pending bereikt (6 lifecycle-checks groen).
+2. **DirectDraw SetDisplayMode headless — OPEN:** game loopt op `SetDisplayMode(640x480,16/24/32)`→`DDERR_UNSUPPORTED` (Wine/Xvfb kan display-mode niet wisselen) → manager (`app+0x1ac`) construeert nooit → geen tick/login/scene.
+
+**Config-remedies UITGEPUT (bevestigd toegepast, geen effect):** wine virtual desktop, Xvfb depth 16/24, `UseXVidMode=N`, `config.ini fullscreen=false`.
+
+**Enige resterende fix = SetDisplayMode→DD_OK stubben in-process** — GEEN kant-en-klaar ddraw-IAT in de disasm. Vergt óf (a) runtime PE-import-table-parsing van MulleMeck.exe om de `ddraw.dll!DirectDrawCreate`-thunk te vinden + IAT-hook, óf (b) inline-hook `ddraw.dll!DirectDrawCreate`-export (zoals de bestaande ExitProcess-inline-hook via patch_jmp) + de teruggegeven IDirectDraw-vtable[SetDisplayMode idx 21] naar een DD_OK-stub patchen (+ QueryInterface naar IDirectDraw2/7 afvangen). ~60 regels C, herbruikt patch_jmp, MAAR onzeker (wine-ddraw kan ná SetDisplayMode-succes elders falen). = **bewuste investering, gebruiker beslist.**
+
+**Alternatieven:** echte display-mode-capable X (niet Xvfb); of accepteren dat native headless-capture hier een harde grens heeft.
+
+**Loop GEPARKEERD op lange interval** — geen blinde runs meer; wacht op gebruikersbeslissing over de ddraw-vtable-stub-investering. Parity-Phase-A-loop is nu de actieve productieve front.
 
 ## HANDOFF-STAND na iter-21 (voor gebruiker — config-weg uitgeput)
 **Twee root causes gevonden deze sessie (autonome loop, 21 iters):**
