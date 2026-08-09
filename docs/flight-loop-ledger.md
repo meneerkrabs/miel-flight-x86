@@ -83,6 +83,10 @@ niet runtime. Sterkste bewijs-as.
 
 **Loop GEPARKEERD op lange interval** — geen blinde runs meer; wacht op gebruikersbeslissing over de ddraw-vtable-stub-investering. Parity-Phase-A-loop is nu de actieve productieve front.
 
+## iter-23: stub-bouw geblokkeerd op arg-count
+User keurde de ddraw-vtable-stub goed. GLM vond: game roept ddraw **indirect via `gtSoftware.dll`** (gt_software_vtable 0x1000A188), niet uit MulleMeck.exe → ddraw.dll!DirectDrawCreate-export-hook vangt t. MAAR de **SetDisplayMode arg-count** (voor veilige stdcall `ret N`) is NIET vast te stellen: `gtSoftware.dll` zit in de private-ISO (runtime-geëxtraheerd), niet in de repo → GLM kan niet disassembleren. Verkeerde N = stack-corruptie/crash.
+**Volgende concrete stap (diagnostiek):** inline-hook `ddraw.dll!DirectDrawCreate` (via bestaande patch_jmp), in de wrapper: log de teruggegeven interface + hook QueryInterface (vtable[0]) om de opgevraagde IID's te loggen → bepaalt IDirectDraw vs DD2 vs DD7 → arg-count. 1 CI-run. Dán de echte SetDisplayMode→DD_OK-stub met de bevestigde `ret N`.
+
 ## HANDOFF-STAND na iter-21 (voor gebruiker — config-weg uitgeput)
 **Twee root causes gevonden deze sessie (autonome loop, 21 iters):**
 1. **libgcc (GEFIXT, `-static-libgcc`):** observer-DLL importeerde `libgcc_s_sjlj-1.dll` (ontbreekt onder Wine) → observer laadde nooit (err 126). Was de 100+-iter-blocker in vorige sessies. Nu: observer laadt, app construeert.
