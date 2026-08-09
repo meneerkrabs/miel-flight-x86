@@ -131,6 +131,17 @@ Xvfb :99 -screen 0 646x512x16 -nolisten tcp &
 sleep 2
 export DISPLAY=:99
 
+# Force a Wine virtual (managed) desktop. Headless rootless Wine may not give
+# DirectDraw a real display surface, so the game constructs its Application
+# but never builds its Manager sub-object (application+0x1ac stays NULL, no
+# Manager::Tick, login never resolves). A managed desktop window gives the
+# display/DirectDraw init a real HWND to bind to. Experimental unblock.
+echo "=== Enabling Wine virtual desktop ==="
+WINEPREFIX="${WINE_PREFIX}" wine reg add "HKCU\\Software\\Wine\\Explorer" \
+  /v Desktop /d Default /f 2>/dev/null || true
+WINEPREFIX="${WINE_PREFIX}" wine reg add "HKCU\\Software\\Wine\\Explorer\\Desktops" \
+  /v Default /d 646x512 /f 2>/dev/null || true
+
 # Receipt function
 write_receipt() {
   local status="$1" suite_exit="$2"
