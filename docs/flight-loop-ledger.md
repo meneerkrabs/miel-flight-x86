@@ -68,6 +68,7 @@ niet runtime. Sterkste bewijs-as.
 | 21 | 2026-08-09 | GLM ddraw-hook analyse | (pending) | — | waar beslist gtSoftware fullscreen / hoe SetDisplayMode stubben |
 | 21 | 2026-08-09 | wine 31309481795 | GLM (b5r6l3vgj) dumpte game-adres-defines, geen ddraw-fix. Zelf: klassieke remedie `UseXVidMode=N` (wine sla real XVidMode/XRandR-mode-switch over → emuleer via virtual desktop). | ebe8df7: HKCU\Software\Wine\X11 Driver UseXVidMode=N | SetDisplayMode slaagt? manager!=0? |
 | 21 result | 2026-08-09 | — | `UseXVidMode=N` ook geen effect. Nog DDERR_UNSUPPORTED, manager:0. **Config-display-remedies UITGEPUT** (virtual desktop, depth 24, UseXVidMode, config.ini fullscreen=false). | — | consolidatie / handoff |
+| 22 | 2026-08-09 | GLM ddraw-IAT-hook locate | **Path C bevestigd:** alle regs (xvidmode/desktop/renderer) add+query exit 0 → config ECHT toegepast, geen stille faal. gtDirect3d-loop herhaalt actief → DDERR = de echte block (ntdll-waits = Sleep tussen retries, geen rode haring). Config-weg definitief op. Enige echte fix = SetDisplayMode→DD_OK stubben. | GLM lokaliseert DirectDrawCreate-IAT-hook-punt | vtable-stub SetDisplayMode idx 21 |
 
 ## HANDOFF-STAND na iter-21 (voor gebruiker — config-weg uitgeput)
 **Twee root causes gevonden deze sessie (autonome loop, 21 iters):**
