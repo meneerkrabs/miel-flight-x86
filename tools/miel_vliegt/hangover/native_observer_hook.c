@@ -4921,6 +4921,38 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
         if (index == 1000u || index == 3000u ||
             index == 6000u || index == 12000u) {
             emit_bootstrap_diagnostic();
+            /* Resolve the mode chicken-egg: does login ever become the CURRENT
+               mode, or does it stay only pending? current(0x18c)/pending(0x190)
+               vs MODE_RESOLVE("mode_login"). If current never becomes login,
+               the pending->current commit (not the tick) is the real blocker. */
+            {
+                DWORD mgr = (DWORD)InterlockedCompareExchange(
+                    &late_bootstrap_manager_address, 0, 0);
+                DWORD cur = 0u, pend = 0u, login = 0u;
+                char mline[288];
+                int ml;
+                if (mgr) {
+                    login = (DWORD)(ULONG_PTR)(
+                        (ModeResolveFunction)(ULONG_PTR)MODE_RESOLVE)(
+                            (void *)(ULONG_PTR)mgr, "mode_login");
+                    read_pointer(mgr, 0x18cu, &cur);
+                    read_pointer(mgr, 0x190u, &pend);
+                }
+                ml = snprintf(mline, sizeof(mline),
+                    "MVD {\"schema\":1,"
+                    "\"protocol\":\"miel-vliegt-native-mode-probe\","
+                    "\"manager\":%lu,\"current\":%lu,\"pending\":%lu,"
+                    "\"login\":%lu,\"current_is_login\":%s,"
+                    "\"pending_is_login\":%s,\"manager_ticks\":%ld}\r\n",
+                    (unsigned long)mgr, (unsigned long)cur,
+                    (unsigned long)pend, (unsigned long)login,
+                    (login && cur == login) ? "true" : "false",
+                    (login && pend == login) ? "true" : "false",
+                    (long)InterlockedCompareExchange(&manager_tick_count, 0, 0));
+                if (ml > 0 && (size_t)ml < sizeof(mline)) {
+                    append_record_checked(mline, (DWORD)ml);
+                }
+            }
             flush_trace();
         }
         if (session_state == SESSION_COMPLETE ||
