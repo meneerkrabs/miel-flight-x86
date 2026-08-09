@@ -64,7 +64,9 @@ niet runtime. Sterkste bewijs-as.
 | 19 | 2026-08-09 | wine 31289125037 | (pending) | — | SetDisplayMode slaagt? manager construeert? |
 | 19 result | 2026-08-09 | — | Virtual-desktop reg GESCHREVEN+geverifieerd (desktop_enable/size in prefix-bootstrap.json) MAAR SetDisplayMode nog DDERR_UNSUPPORTED, manager:0. Desktop alleen niet genoeg. Verdenking: depth-mismatch (Xvfb 16-bit vs game 32/24/16) of renderer=gdi weigert mode-change, of desktop pakt niet op CreateProcess-exe. | GLM lost ddraw-headless-config op (b4qptgjia) | juiste Xvfb-line + reg-values |
 | 20 | 2026-08-09 | wine 31308724995 | GLM (b4qptgjia/bmcvtveaq) convergeerde NIET op ddraw-config (3 pogingen). Zelf gevonden: `install_headless_config` schrijft `config.ini` (`fullscreen false`) naar executable.parent = **wél de game-cwd** (`--cwd`=executable.parent), dus config wordt gelezen maar stopt de SetDisplayMode-loop niet (gtSoftware doet mode-enum alsnog). | 1701be5: Xvfb 16→24-bit (+ virtual desktop al gezet) | SetDisplayMode(640x480x24) slaagt? manager!=0? |
-| 21 | (pending) | — | — | — | — |
+| 20 result | 2026-08-09 | — | Xvfb 24-bit: nog DDERR_UNSUPPORTED (2 failures ipv 4), manager:0. Display-config-aanpak (virtual desktop + depth) UITGEPUT. Game blijft SetDisplayMode aanroepen ondanks config.ini fullscreen=false. | GLM: Miel.ini fullscreen-override? / ddraw SetDisplayMode-hook | — |
+| 21 | 2026-08-09 | GLM ddraw-hook analyse | (pending) | — | waar beslist gtSoftware fullscreen / hoe SetDisplayMode stubben |
+| 22 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
 **Grote winst (blijft):** libgcc root-cause GEFIXT → observer laadt, **app construeert** (0x953200). Was 100+ iters muurvast in vorige sessies.
