@@ -58,7 +58,9 @@ niet runtime. Sterkste bewijs-as.
 | 16 | 2026-08-09 | wine 31287200239 | (pending) | — | mode-probe: manager!=0 met virtual desktop? |
 | 16 result | 2026-08-09 | — | **Virtual desktop REFUTEERT display-hypothese:** `manager:0` nog steeds, geen DirectDraw-error. Manager-constructie hangt NIET op managed desktop. Goedkope hypotheses uitgeput. | — | main-thread-EIP backtrace = definitief |
 | 17 | 2026-08-09 | wine 31287913862 | GLM design (deel): `stable_module_identity`(:9312) resolve-helper, geen thread-enum in observer. Zelf geschreven: Toolhelp32 thread-enum + suspend/get-Eip/resume/log per thread. | 7d75dd3: all-thread EIP+module capture @10/30/60/120s | main-thread (mullemeck.exe) EIP = exacte blokkerende call |
-| 18 | (pending) | — | — | — | — |
+| 17 result | 2026-08-09 | — | Suite faalde op `wine_prefix must not already exist` — mijn iter-15 virtual-desktop `wine reg add` creëerde de prefix vroegtijdig. Geen game-logs. iter-15's manager:0 was flaky (reg-add faalde stil, desktop nooit toegepast). | 468e7c3: revert virtual-desktop | — |
+| 18 | 2026-08-09 | wine 31288505457 | (pending) | — | thread-EIP: waar parkeert main-thread? |
+| 19 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
 **Grote winst (blijft):** libgcc root-cause GEFIXT → observer laadt, **app construeert** (0x953200). Was 100+ iters muurvast in vorige sessies.
