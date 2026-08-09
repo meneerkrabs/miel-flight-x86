@@ -63,7 +63,7 @@ niet runtime. Sterkste bewijs-as.
 | 18 result | 2026-08-09 | — | **DE BLOCKER GEVONDEN** (gtDirect3d-log): game loopt eeuwig op `SetDisplayMode(640x480,16/24/32)` → **DDERR_UNSUPPORTED** — rootless Wine kan display-mode niet wisselen → DirectDraw-init voltooit nooit → manager (app+0x1ac) nooit gebouwd. Thread-EIP: 2 game-threads stuck in ntdll-wait (Sleep tussen retries). Virtual-desktop-hypothese was JUIST. | 7aec0a4: virtual desktop via configure_gdi_renderer (ná wineboot, geen guard-trip) | manager!=0? tick? scene? |
 | 19 | 2026-08-09 | wine 31289125037 | (pending) | — | SetDisplayMode slaagt? manager construeert? |
 | 19 result | 2026-08-09 | — | Virtual-desktop reg GESCHREVEN+geverifieerd (desktop_enable/size in prefix-bootstrap.json) MAAR SetDisplayMode nog DDERR_UNSUPPORTED, manager:0. Desktop alleen niet genoeg. Verdenking: depth-mismatch (Xvfb 16-bit vs game 32/24/16) of renderer=gdi weigert mode-change, of desktop pakt niet op CreateProcess-exe. | GLM lost ddraw-headless-config op (b4qptgjia) | juiste Xvfb-line + reg-values |
-| 20 | 2026-08-09 | GLM b4qptgjia | (pending) | — | SetDisplayMode succes-config |
+| 20 | 2026-08-09 | wine 31308724995 | GLM (b4qptgjia/bmcvtveaq) convergeerde NIET op ddraw-config (3 pogingen). Zelf gevonden: `install_headless_config` schrijft `config.ini` (`fullscreen false`) naar executable.parent = **wél de game-cwd** (`--cwd`=executable.parent), dus config wordt gelezen maar stopt de SetDisplayMode-loop niet (gtSoftware doet mode-enum alsnog). | 1701be5: Xvfb 16→24-bit (+ virtual desktop al gezet) | SetDisplayMode(640x480x24) slaagt? manager!=0? |
 | 21 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
