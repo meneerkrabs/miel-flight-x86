@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <tlhelp32.h>
 #include "native_dispatch_semantic_hook.h"
 #include "native_dispatch_capture_targets.generated.h"
 #include "native_observation_profiles.generated.h"
@@ -1207,6 +1208,8 @@ static DWORD render_checkpoint_tick = INVALID_ID;
 
 static DWORD record_tick(DWORD manager_node, DWORD dt_f32_bits);
 static BOOL read_pointer(DWORD object_address, DWORD offset, DWORD *value);
+static BOOL stable_module_identity(DWORD address, char *output,
+                                   size_t capacity);
 static void fail_activation_rng(void);
 static void fail_activation_clock(const char *reason);
 static void fail_location_phase_rng(void);
@@ -4877,6 +4880,60 @@ static void emit_scheduler_watchdog(const char *stage)
     }
 }
 
+/* Capture where every other thread of this process is parked, to locate the
+   game MAIN thread's block between Application and Manager construction
+   (application+0x1ac stays NULL). Safe order per thread: suspend, read Eip,
+   resume IMMEDIATELY, and only THEN format+log (never log while a thread is
+   suspended, to avoid a loader/CRT-lock deadlock). The main thread is
+   identified downstream as the one sitting in mullemeck.exe, not in the
+   observer DLL / ntdll waits. */
+static void emit_thread_backtrace(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    THREADENTRY32 te;
+    DWORD self = GetCurrentThreadId();
+    DWORD pid = GetCurrentProcessId();
+    if (snap == INVALID_HANDLE_VALUE) return;
+    te.dwSize = sizeof(te);
+    if (Thread32First(snap, &te)) {
+        do {
+            HANDLE th;
+            DWORD eip = 0u;
+            if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) {
+                continue;
+            }
+            th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE,
+                            te.th32ThreadID);
+            if (th) {
+                CONTEXT ctx;
+                ctx.ContextFlags = CONTEXT_CONTROL;
+                if (SuspendThread(th) != (DWORD)-1) {
+                    if (GetThreadContext(th, &ctx)) eip = ctx.Eip;
+                    ResumeThread(th);
+                }
+                CloseHandle(th);
+            }
+            if (eip) {
+                char mod[160];
+                char line[288];
+                int ml;
+                if (!stable_module_identity(eip, mod, sizeof(mod))) {
+                    snprintf(mod, sizeof(mod), "unknown");
+                }
+                ml = snprintf(line, sizeof(line),
+                    "MVD {\"schema\":1,"
+                    "\"protocol\":\"miel-vliegt-native-thread-eip\","
+                    "\"thread\":%lu,\"eip\":%lu,\"module\":\"%s\"}\r\n",
+                    (unsigned long)te.th32ThreadID, (unsigned long)eip, mod);
+                if (ml > 0 && (size_t)ml < sizeof(line)) {
+                    append_record_checked(line, (DWORD)ml);
+                }
+            }
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+}
+
 static DWORD WINAPI session_controller_thread(LPVOID ignored)
 {
     DWORD index;
@@ -4958,6 +5015,7 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
                     append_record_checked(mline, (DWORD)ml);
                 }
             }
+            emit_thread_backtrace();
             flush_trace();
         }
         if (session_state == SESSION_COMPLETE ||
