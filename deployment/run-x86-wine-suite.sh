@@ -127,7 +127,7 @@ done
 
 # Start Xvfb
 echo "=== Starting Xvfb ==="
-Xvfb :99 -screen 0 646x512x16 -nolisten tcp &
+Xvfb :99 -screen 0 646x512x24 -nolisten tcp &
 sleep 2
 export DISPLAY=:99
 # NB: do NOT run wine here (e.g. `wine reg add` for a virtual desktop) — it
