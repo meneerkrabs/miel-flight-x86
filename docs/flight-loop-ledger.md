@@ -62,7 +62,9 @@ niet runtime. Sterkste bewijs-as.
 | 18 | 2026-08-09 | wine 31288505457 | (pending) | — | thread-EIP: waar parkeert main-thread? |
 | 18 result | 2026-08-09 | — | **DE BLOCKER GEVONDEN** (gtDirect3d-log): game loopt eeuwig op `SetDisplayMode(640x480,16/24/32)` → **DDERR_UNSUPPORTED** — rootless Wine kan display-mode niet wisselen → DirectDraw-init voltooit nooit → manager (app+0x1ac) nooit gebouwd. Thread-EIP: 2 game-threads stuck in ntdll-wait (Sleep tussen retries). Virtual-desktop-hypothese was JUIST. | 7aec0a4: virtual desktop via configure_gdi_renderer (ná wineboot, geen guard-trip) | manager!=0? tick? scene? |
 | 19 | 2026-08-09 | wine 31289125037 | (pending) | — | SetDisplayMode slaagt? manager construeert? |
-| 20 | (pending) | — | — | — | — |
+| 19 result | 2026-08-09 | — | Virtual-desktop reg GESCHREVEN+geverifieerd (desktop_enable/size in prefix-bootstrap.json) MAAR SetDisplayMode nog DDERR_UNSUPPORTED, manager:0. Desktop alleen niet genoeg. Verdenking: depth-mismatch (Xvfb 16-bit vs game 32/24/16) of renderer=gdi weigert mode-change, of desktop pakt niet op CreateProcess-exe. | GLM lost ddraw-headless-config op (b4qptgjia) | juiste Xvfb-line + reg-values |
+| 20 | 2026-08-09 | GLM b4qptgjia | (pending) | — | SetDisplayMode succes-config |
+| 21 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
 **Grote winst (blijft):** libgcc root-cause GEFIXT → observer laadt, **app construeert** (0x953200). Was 100+ iters muurvast in vorige sessies.
