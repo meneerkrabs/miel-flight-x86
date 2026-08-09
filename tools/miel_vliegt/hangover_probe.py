@@ -1142,6 +1142,14 @@ def configure_gdi_renderer(
         ("renderer", r"HKCU\Software\Wine\Direct3D", "renderer", "gdi"),
         ("decorated", r"HKCU\Software\Wine\X11 Driver", "Decorated", "N"),
         ("graphics", r"HKCU\Software\Wine\Drivers", "Graphics", "x11"),
+        # Virtual (managed) desktop. The game's DirectDraw init loops forever
+        # on SetDisplayMode(640x480,*) -> DDERR_UNSUPPORTED under rootless Wine
+        # (can't change the real display mode), so display init never finishes
+        # and the Manager (application+0x1ac) never constructs. With a managed
+        # desktop, DirectDraw mode changes become window resizes and succeed.
+        ("desktop_enable", r"HKCU\Software\Wine\Explorer", "Desktop", "Default"),
+        ("desktop_size",
+         r"HKCU\Software\Wine\Explorer\Desktops", "Default", "640x480"),
     )
     # For wine backend: also set AppInit_DLLs to load observer hook directly
     # This bypasses the DINPUT proxy which Wine can't load reliably
