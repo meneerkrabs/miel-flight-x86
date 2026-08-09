@@ -139,3 +139,6 @@ NULL (err 126) → proxy `signal_observer_failure` → launcher `ok=false`→exi
 → élk scenario aborteert in proxy-bootstrap vóór scene-logica → takeoff-climb
 nooit bereikt. FEX/JIT/manager-tick/0xC0000005 waren allemaal rode haringen.
 Fix = `-static-libgcc`. Verifieer met iter-7.
+
+## iter-24: ddraw QueryInterface-probe DISPATCHED (e3e22bb, run 31315231222)
+GLM bouwde de trampoline-hook (compile-clean, main-thread geverifieerd: inline-trampoline correct, vtable-patch VirtualProtect-guarded, opcode-guard tegen relatieve prologue). Logt QueryInterface-IID's → interface (IDirectDraw 3args/ret0x10 vs DD2 {B3A6F3E0} 5args/ret0x18 vs DD7) → dán de echte SetDisplayMode→DD_OK naked-stub. Wacht op run.
