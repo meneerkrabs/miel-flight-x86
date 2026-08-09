@@ -57,7 +57,8 @@ niet runtime. Sterkste bewijs-as.
 | 15 | 2026-08-09 | GLM b6j0xpxal (niet-converged) + eigen tooling-lezing | GLM convergeerde niet op manager-constructie-mechanisme. Zelf gevonden: Xvfb draait `646x512x16` **rootless, GEEN wine virtual desktop**; game gebruikt DirectDraw. Hypothese: headless rootless Wine geeft DirectDraw geen echte surface → manager-constructie aborteert. | d6de92f: forceer wine virtual desktop (HKCU\Software\Wine\Explorer Desktop=Default 646x512) | wordt app+0x1ac non-null? |
 | 16 | 2026-08-09 | wine 31287200239 | (pending) | — | mode-probe: manager!=0 met virtual desktop? |
 | 16 result | 2026-08-09 | — | **Virtual desktop REFUTEERT display-hypothese:** `manager:0` nog steeds, geen DirectDraw-error. Manager-constructie hangt NIET op managed desktop. Goedkope hypotheses uitgeput. | — | main-thread-EIP backtrace = definitief |
-| 17 | 2026-08-09 | GLM design (geen dispatch) | (pending) | — | veilig thread-context-capture-patroon |
+| 17 | 2026-08-09 | wine 31287913862 | GLM design (deel): `stable_module_identity`(:9312) resolve-helper, geen thread-enum in observer. Zelf geschreven: Toolhelp32 thread-enum + suspend/get-Eip/resume/log per thread. | 7d75dd3: all-thread EIP+module capture @10/30/60/120s | main-thread (mullemeck.exe) EIP = exacte blokkerende call |
+| 18 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
 **Grote winst (blijft):** libgcc root-cause GEFIXT → observer laadt, **app construeert** (0x953200). Was 100+ iters muurvast in vorige sessies.
