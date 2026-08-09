@@ -1150,6 +1150,13 @@ def configure_gdi_renderer(
         ("desktop_enable", r"HKCU\Software\Wine\Explorer", "Desktop", "Default"),
         ("desktop_size",
          r"HKCU\Software\Wine\Explorer\Desktops", "Default", "640x480"),
+        # Disable XVidMode/XRandR real display-mode switching. Without this,
+        # Wine tries to change the actual X screen mode for DirectDraw
+        # SetDisplayMode and fails DDERR_UNSUPPORTED under Xvfb; with it off,
+        # mode changes are emulated as resizes inside the virtual desktop, so
+        # SetDisplayMode(640x480) succeeds and DirectDraw init completes.
+        ("xvidmode",
+         r"HKCU\Software\Wine\X11 Driver", "UseXVidMode", "N"),
     )
     # For wine backend: also set AppInit_DLLs to load observer hook directly
     # This bypasses the DINPUT proxy which Wine can't load reliably
