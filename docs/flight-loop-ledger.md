@@ -66,6 +66,7 @@ niet runtime. Sterkste bewijs-as.
 | 20 | 2026-08-09 | wine 31308724995 | GLM (b4qptgjia/bmcvtveaq) convergeerde NIET op ddraw-config (3 pogingen). Zelf gevonden: `install_headless_config` schrijft `config.ini` (`fullscreen false`) naar executable.parent = **wél de game-cwd** (`--cwd`=executable.parent), dus config wordt gelezen maar stopt de SetDisplayMode-loop niet (gtSoftware doet mode-enum alsnog). | 1701be5: Xvfb 16→24-bit (+ virtual desktop al gezet) | SetDisplayMode(640x480x24) slaagt? manager!=0? |
 | 20 result | 2026-08-09 | — | Xvfb 24-bit: nog DDERR_UNSUPPORTED (2 failures ipv 4), manager:0. Display-config-aanpak (virtual desktop + depth) UITGEPUT. Game blijft SetDisplayMode aanroepen ondanks config.ini fullscreen=false. | GLM: Miel.ini fullscreen-override? / ddraw SetDisplayMode-hook | — |
 | 21 | 2026-08-09 | GLM ddraw-hook analyse | (pending) | — | waar beslist gtSoftware fullscreen / hoe SetDisplayMode stubben |
+| 21 | 2026-08-09 | wine 31309481795 | GLM (b5r6l3vgj) dumpte game-adres-defines, geen ddraw-fix. Zelf: klassieke remedie `UseXVidMode=N` (wine sla real XVidMode/XRandR-mode-switch over → emuleer via virtual desktop). | ebe8df7: HKCU\Software\Wine\X11 Driver UseXVidMode=N | SetDisplayMode slaagt? manager!=0? |
 | 22 | (pending) | — | — | — | — |
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
