@@ -67,7 +67,22 @@ niet runtime. Sterkste bewijs-as.
 | 20 result | 2026-08-09 | — | Xvfb 24-bit: nog DDERR_UNSUPPORTED (2 failures ipv 4), manager:0. Display-config-aanpak (virtual desktop + depth) UITGEPUT. Game blijft SetDisplayMode aanroepen ondanks config.ini fullscreen=false. | GLM: Miel.ini fullscreen-override? / ddraw SetDisplayMode-hook | — |
 | 21 | 2026-08-09 | GLM ddraw-hook analyse | (pending) | — | waar beslist gtSoftware fullscreen / hoe SetDisplayMode stubben |
 | 21 | 2026-08-09 | wine 31309481795 | GLM (b5r6l3vgj) dumpte game-adres-defines, geen ddraw-fix. Zelf: klassieke remedie `UseXVidMode=N` (wine sla real XVidMode/XRandR-mode-switch over → emuleer via virtual desktop). | ebe8df7: HKCU\Software\Wine\X11 Driver UseXVidMode=N | SetDisplayMode slaagt? manager!=0? |
-| 22 | (pending) | — | — | — | — |
+| 21 result | 2026-08-09 | — | `UseXVidMode=N` ook geen effect. Nog DDERR_UNSUPPORTED, manager:0. **Config-display-remedies UITGEPUT** (virtual desktop, depth 24, UseXVidMode, config.ini fullscreen=false). | — | consolidatie / handoff |
+
+## HANDOFF-STAND na iter-21 (voor gebruiker — config-weg uitgeput)
+**Twee root causes gevonden deze sessie (autonome loop, 21 iters):**
+1. **libgcc (GEFIXT, `-static-libgcc`):** observer-DLL importeerde `libgcc_s_sjlj-1.dll` (ontbreekt onder Wine) → observer laadde nooit (err 126). Was de 100+-iter-blocker in vorige sessies. Nu: observer laadt, app construeert.
+2. **DirectDraw SetDisplayMode headless (OPEN):** gtDirect3d-log toont `SetDisplayMode(640x480,16/24/32)`→`DDERR_UNSUPPORTED`; manager (`app+0x1ac`) construeert nooit → geen tick/login/scene.
+
+**Config-remedies geprobeerd, GEEN effect op DDERR:** wine virtual desktop (640x480), Xvfb depth 16→24, `UseXVidMode=N`, `config.ini fullscreen=false` (wordt gelezen uit game-cwd maar stopt SetDisplayMode niet).
+
+**Mogelijke rode haring / heroverweging:** thread-EIP-capture (iter-18) toonde beide game-threads STUCK in **ntdll-waits** (thread 224 @ntdll+0xd590, 324 @ntdll+0xd800), NIET spinnend in SetDisplayMode. De DDERR kan benign zijn (game valt naar windowed via `SetResolution Windowed` = slaagt) en de échte block = een ntdll-wait op een kernel-object dat headless nooit signaleert — NIET geresolved. Volgende diagnostiek zou zijn: het wait-object van die ntdll-waits identificeren.
+
+**Resterende opties (gebruiker beslist):**
+- (a) ddraw `SetDisplayMode` vtable-hook → DD_OK forceren (geavanceerd, COM-vtable-hook in observer; IDirectDraw::SetDisplayMode ~vtable-index 21; vereist ddraw-interface-ptr — GLM convergeerde hier niet op).
+- (b) ntdll-wait-object resolven (diepere thread-instrumentatie) om te bepalen of de DDERR een rode haring is.
+- (c) echte display-mode-capable X (niet Xvfb) / een ddraw-shim.
+- Config-weg is op; volgende stap = grotere investering (deep RE / infra).
 
 ## HANDOFF-STAND na iter-16 (voor gebruiker)
 **Grote winst (blijft):** libgcc root-cause GEFIXT → observer laadt, **app construeert** (0x953200). Was 100+ iters muurvast in vorige sessies.
