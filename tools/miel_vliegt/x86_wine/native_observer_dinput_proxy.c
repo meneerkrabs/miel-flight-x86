@@ -165,11 +165,24 @@ failed:
     return FALSE;
 }
 
+/* === ddraw.dll!DirectDrawCreate diagnostic probe (fwd decls) ===
+   The game loops IDirectDraw::SetDisplayMode(640x480)->DDERR_UNSUPPORTED
+   headless. Before stubbing we need the COM interface version (IDirectDraw vs
+   IDirectDraw2 vs IDirectDraw7) and the exact SetDisplayMode argcount. This
+   probe hooks DirectDrawCreate with a TRAMPOLINE so the real fn still runs,
+   then dumps the returned object's vtable + logs every QueryInterface riid. */
+static BOOL ddraw_probe_installed = FALSE;
+static void install_ddraw_hook(void);
+
 static DWORD WINAPI bootstrap_after_loader(LPVOID unused)
 {
     DWORD started = GetTickCount();
     (void)unused;
     for (;;) {
+        if (!ddraw_probe_installed && GetModuleHandleA("ddraw.dll")) {
+            ddraw_probe_installed = TRUE;
+            install_ddraw_hook();
+        }
         if (GetModuleHandleA("Cc.dll")) {
             proxy_diagnostic("cc_ready_initialize");
             return initialize_proxy() ? 0u : 1u;
@@ -544,4 +557,177 @@ static void install_exit_hook(void) {
         }
     }
     }
+}
+
+/* === ddraw.dll!DirectDrawCreate trampoline + vtable probe ===
+ *
+ * patch_jmp (above) overwrites 5 bytes with a JMP rel32 but keeps NO copy of
+ * the original prologue, so a hook installed that way cannot call the real
+ * function. To observe DirectDrawCreate AND still run it, we build a classic
+ * inline-trampoline:
+ *
+ *   trampoline: [original 5 prologue bytes][E9 rel32 -> real+5]
+ *
+ * The hook calls the trampoline (= runs the real function) and then inspects
+ * the COM object that came back. We dump the vtable pointer plus the
+ * QueryInterface (vtbl[0]), SetDisplayMode (vtbl[0x54/4 == 21]) and
+ * WaitForVerticalBlank (vtbl[0x58/4 == 22]) slots, and patch vtbl[0]
+ * (QueryInterface) with a logging wrapper that prints the 16-byte riid so we
+ * can distinguish IID_IDirectDraw2 {B3A6F3E0-2DEA-11CF-A9CD-00AA006C1000}
+ * from IID_IDirectDraw7 {15E65EC0-3B9C-11D2-B92F-00609797EA5B}.
+ *
+ * RELOCATION NOTE: the first 5 bytes are copied VERBATIM. Any instruction with
+ * a relative operand (call/jmp/jcc rel8|rel32, 0x9A call abs ptr16:32, 0xE0-0xE3
+ * loop/jcxz) would compute its target against the ORIGINAL address and misfire
+ * from the trampoline. Wine/mingw's DirectDrawCreate is a plain C prologue
+ * (push ebp; mov ebp,esp; ...) so it should be safe; we dump the bytes and bail
+ * loudly if a risky opcode is detected. */
+
+/* The trampoline region (5 copied bytes + 5-byte JMP back). */
+static unsigned char *ddraw_trampoline = NULL;
+
+/* Saved real QueryInterface so the logging wrapper can forward. */
+static void *ddraw_saved_QI = NULL;
+
+/* Guard so we patch only the first created object's vtable (avoids clobbering
+   ddraw_saved_QI across objects that may have different real QI impls). */
+static BOOL ddraw_qi_patched = FALSE;
+
+typedef HRESULT(WINAPI *DirectDrawCreate_t)(void *lpGUID, void **lplpDD,
+                                            void *pUnkOuter);
+typedef HRESULT(WINAPI *QueryInterface_t)(void *thisptr, const void *riid,
+                                          void **ppv);
+
+/* COM QueryInterface logging wrapper. stdcall: this, riid, ppv on stack. The
+   riid GUID is {Data1(4 LE), Data2(2 LE), Data3(2 LE), Data4[8]}, so printing
+   the raw bytes in order yields the canonical GUID string form. */
+static HRESULT WINAPI ddraw_QI_hook(void *thisptr, const void *riid, void **ppv)
+{
+    if (riid && !IsBadReadPtr(riid, 16)) {
+        const unsigned char *g = (const unsigned char *)riid;
+        char b[128];
+        wsprintfA(b,
+                   "MVP_QI riid=%02X%02X%02X%02X-%02X%02X-%02X%02X-"
+                   "%02X%02X-%02X%02X%02X%02X%02X%02X",
+                   g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                   g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
+        proxy_log_file(b);
+    }
+    if (ddraw_saved_QI)
+        return ((QueryInterface_t)ddraw_saved_QI)(thisptr, riid, ppv);
+    return (HRESULT)0x80004002L; /* E_NOINTERFACE */
+}
+
+/* DirectDrawCreate hook: call the real fn via the trampoline, then read back
+   the object's vtable and patch its QueryInterface slot. */
+static HRESULT WINAPI DirectDrawCreate_hook(void *lpGUID, void **lplpDD,
+                                            void *pUnkOuter)
+{
+    proxy_log_file("MVP_DDCREATE enter");
+    HRESULT hr = ((DirectDrawCreate_t)(void *)ddraw_trampoline)(
+        lpGUID, lplpDD, pUnkOuter);
+    {
+        char rb[96];
+        wsprintfA(rb, "MVP_DDCREATE hr=0x%08X", (unsigned)hr);
+        proxy_log_file(rb);
+    }
+    if (SUCCEEDED(hr) && lplpDD && *lplpDD) {
+        void *obj = *lplpDD;
+        /* Object's first DWORD is the COM vtable pointer. */
+        if (!IsBadReadPtr(obj, sizeof(void *))) {
+            void **vtbl = *(void ***)obj;
+            char b[256];
+            wsprintfA(b,
+                       "MVP_DDV obj=%p vtbl=%p QI[0]=%p "
+                       "SetDisplayMode[21]=%p WaitForVB[22]=%p",
+                       obj, vtbl, vtbl[0], vtbl[21], vtbl[22]);
+            proxy_log_file(b);
+            /* Patch vtbl[0] (QueryInterface) to log every requested riid.
+               Only do this once: a second object may have a different real QI
+               and overwriting ddraw_saved_QI would corrupt it. */
+            if (!ddraw_qi_patched &&
+                !IsBadReadPtr(&vtbl[0], sizeof(void *))) {
+                ddraw_saved_QI = vtbl[0];
+                DWORD op;
+                if (VirtualProtect(&vtbl[0], sizeof(void *),
+                                   PAGE_READWRITE, &op)) {
+                    vtbl[0] = (void *)ddraw_QI_hook;
+                    VirtualProtect(&vtbl[0], sizeof(void *), op, &op);
+                    FlushInstructionCache(GetCurrentProcess(),
+                                          &vtbl[0], sizeof(void *));
+                    ddraw_qi_patched = TRUE;
+                    proxy_log_file("MVP_DDV QI vtable patched");
+                } else {
+                    proxy_log_file(
+                        "MVP_DDV QI vtable patch FAILED (VirtualProtect)");
+                }
+            }
+        }
+    }
+    return hr;
+}
+
+static void install_ddraw_hook(void)
+{
+    HMODULE ddraw = GetModuleHandleA("ddraw.dll");
+    if (!ddraw) return;
+    FARPROC proc = GetProcAddress(ddraw, "DirectDrawCreate");
+    if (!proc) {
+        proxy_log_file("MVP_DDRAW DirectDrawCreate not found");
+        return;
+    }
+
+    unsigned char *real = (unsigned char *)proc;
+
+    /* Dump the prologue bytes so relocation safety is verifiable from the log.
+       Read into locals first (arg eval order is unspecified). */
+    {
+        unsigned char p0 = 0, p1 = 0, p2 = 0, p3 = 0, p4 = 0,
+                      p5 = 0, p6 = 0, p7 = 0;
+        p0 = real[0]; p1 = real[1]; p2 = real[2]; p3 = real[3]; p4 = real[4];
+        if (!IsBadReadPtr(real, 8)) {
+            p5 = real[5]; p6 = real[6]; p7 = real[7];
+        }
+        char b[160];
+        wsprintfA(b,
+                   "MVP_DDRAW DirectDrawCreate @ %p "
+                   "prologue=%02X %02X %02X %02X %02X %02X %02X %02X",
+                   real, p0, p1, p2, p3, p4, p5, p6, p7);
+        proxy_log_file(b);
+    }
+
+    /* Relocation-safety check for the first 5 bytes. */
+    {
+        unsigned char c0 = real[0];
+        BOOL risky = FALSE;
+        if (c0 == 0xE8 || c0 == 0xE9 || c0 == 0xEB || c0 == 0x9A ||
+            (c0 >= 0x70 && c0 <= 0x7F) || (c0 >= 0xE0 && c0 <= 0xE3)) {
+            risky = TRUE;
+        }
+        if (c0 == 0x0F && !IsBadReadPtr(real + 1, 1) &&
+            real[1] >= 0x80 && real[1] <= 0x8F) {
+            risky = TRUE; /* 0F 8x jcc rel32 (6 bytes) */
+        }
+        if (risky) {
+            proxy_log_file(
+                "MVP_DDRAW ABORT: prologue has relative opcode, "
+                "trampoline unsafe");
+            return;
+        }
+    }
+
+    /* Build trampoline: [5 original bytes][E9 rel32 -> real+5]. */
+    ddraw_trampoline = (unsigned char *)VirtualAlloc(
+        NULL, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!ddraw_trampoline) {
+        proxy_log_file("MVP_DDRAW trampoline alloc FAILED");
+        return;
+    }
+    memcpy(ddraw_trampoline, real, 5);
+    LONG_PTR back = (LONG_PTR)(real + 5) - (LONG_PTR)(ddraw_trampoline + 10);
+    ddraw_trampoline[5] = 0xE9; /* JMP rel32 */
+    *(LONG_PTR *)(ddraw_trampoline + 6) = back;
+
+    /* Patch real DirectDrawCreate -> our hook (uses patch_jmp above). */
+    patch_jmp(real, (void *)DirectDrawCreate_hook, "DirectDrawCreate");
 }
