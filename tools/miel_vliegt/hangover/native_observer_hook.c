@@ -4926,11 +4926,15 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
                vs MODE_RESOLVE("mode_login"). If current never becomes login,
                the pending->current commit (not the tick) is the real blocker. */
             {
-                DWORD mgr = (DWORD)InterlockedCompareExchange(
-                    &late_bootstrap_manager_address, 0, 0);
-                DWORD cur = 0u, pend = 0u, login = 0u;
-                char mline[288];
+                /* Derive the manager from the live application (app+0x1ac);
+                   late_bootstrap_manager_address is 0 here (never set on this
+                   path), which zeroed the earlier probe. */
+                DWORD app = (DWORD)(ULONG_PTR)(
+                    (ApplicationGetterFunction)(ULONG_PTR)APPLICATION_GETTER)();
+                DWORD mgr = 0u, cur = 0u, pend = 0u, login = 0u;
+                char mline[320];
                 int ml;
+                if (app) read_pointer(app, 0x1acu, &mgr);
                 if (mgr) {
                     login = (DWORD)(ULONG_PTR)(
                         (ModeResolveFunction)(ULONG_PTR)MODE_RESOLVE)(
@@ -4941,11 +4945,12 @@ static DWORD WINAPI session_controller_thread(LPVOID ignored)
                 ml = snprintf(mline, sizeof(mline),
                     "MVD {\"schema\":1,"
                     "\"protocol\":\"miel-vliegt-native-mode-probe\","
-                    "\"manager\":%lu,\"current\":%lu,\"pending\":%lu,"
-                    "\"login\":%lu,\"current_is_login\":%s,"
+                    "\"application\":%lu,\"manager\":%lu,\"current\":%lu,"
+                    "\"pending\":%lu,\"login\":%lu,\"current_is_login\":%s,"
                     "\"pending_is_login\":%s,\"manager_ticks\":%ld}\r\n",
-                    (unsigned long)mgr, (unsigned long)cur,
-                    (unsigned long)pend, (unsigned long)login,
+                    (unsigned long)app, (unsigned long)mgr,
+                    (unsigned long)cur, (unsigned long)pend,
+                    (unsigned long)login,
                     (login && cur == login) ? "true" : "false",
                     (login && pend == login) ? "true" : "false",
                     (long)InterlockedCompareExchange(&manager_tick_count, 0, 0));
