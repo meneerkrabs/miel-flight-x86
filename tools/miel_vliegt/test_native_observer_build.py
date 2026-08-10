@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -847,23 +849,112 @@ class NativeObserverBuildTest(unittest.TestCase):
             build.ROOT / "tools/miel_vliegt/x86_wine/Dockerfile"
         ).read_text(encoding="utf-8")
         self.assertIn("-shared -Wl,--kill-at", dockerfile)
-        self.assertIn("i686-w64-mingw32-objdump -p /out-DINPUT.dll", dockerfile)
+        self.assertIn("i686-w64-mingw32-objdump -p /out/DINPUT.dll", dockerfile)
         self.assertIn("DirectInputCreateA$$'", dockerfile)
         self.assertIn("! grep -Eq 'DirectInputCreateA@[0-9]+'", dockerfile)
         receipt_start = dockerfile.index(
-            "sha256sum /out-native-observer-launcher.exe"
+            "sha256sum /out/native-observer-launcher.exe"
         )
         identity_receipt = dockerfile[
             receipt_start:
-            dockerfile.index("FROM --platform=linux/386", receipt_start)
+            dockerfile.index("\n\nFROM ubuntu:24.04\n", receipt_start)
         ]
         for artifact in (
-            "/out-native-observer-launcher.exe",
-            "/out-native-observer-hook.dll",
-            "/out-DINPUT.dll",
+            "/out/native-observer-launcher.exe",
+            "/out/native-observer-hook.dll",
+            "/out/DINPUT.dll",
         ):
             self.assertIn(artifact, identity_receipt)
-        self.assertIn("/out-native-observer-build.sha256", identity_receipt)
+        self.assertIn("/out/native-observer-build.sha256", identity_receipt)
+
+    @unittest.skipUnless(
+        shutil.which("i686-w64-mingw32-gcc") and
+        shutil.which("i686-w64-mingw32-objdump"),
+        "MinGW x86 compiler is required for the DirectInput ABI contract",
+    )
+    def test_fake_directinput_vtables_compile_with_exact_stdcall_arity(self):
+        source = (
+            build.ROOT /
+            "tools/miel_vliegt/x86_wine/native_observer_dinput_proxy.c"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            obj = root / "DINPUT.o"
+            dll = root / "DINPUT.dll"
+            subprocess.run([
+                "i686-w64-mingw32-gcc", "-std=c11", "-O0", "-Wall",
+                "-Wextra", "-Werror", "-c", str(source), "-o", str(obj),
+            ], check=True, capture_output=True, text=True)
+            symbols = subprocess.run([
+                "i686-w64-mingw32-objdump", "-t", str(obj),
+            ], check=True, capture_output=True, text=True).stdout
+            for symbol in (
+                "_fake_di_QueryInterface@12",
+                "_fake_di_AddRef@4",
+                "_fake_di_Release@4",
+                "_fake_di_CreateDevice@16",
+                "_fake_di_EnumDevices@20",
+                "_fake_di_GetDeviceStatus@8",
+                "_fake_di_RunControlPanel@12",
+                "_fake_di_Initialize@12",
+                "_fake_device_QueryInterface@12",
+                "_fake_device_AddRef@4",
+                "_fake_device_Release@4",
+                "_fake_device_GetCapabilities@8",
+                "_fake_device_EnumObjects@16",
+                "_fake_device_GetProperty@12",
+                "_fake_device_SetProperty@12",
+                "_fake_device_Acquire@4",
+                "_fake_device_Unacquire@4",
+                "_fake_device_GetDeviceState@12",
+                "_fake_device_GetDeviceData@20",
+                "_fake_device_SetDataFormat@8",
+                "_fake_device_SetEventNotification@8",
+                "_fake_device_SetCooperativeLevel@12",
+                "_fake_device_GetObjectInfo@16",
+                "_fake_device_GetDeviceInfo@8",
+                "_fake_device_RunControlPanel@12",
+                "_fake_device_Initialize@16",
+            ):
+                self.assertIn(symbol, symbols)
+
+            subprocess.run([
+                "i686-w64-mingw32-gcc", "-std=c11", "-Os",
+                "-static-libgcc", "-Wall", "-Wextra", "-Werror", "-shared",
+                "-Wl,--kill-at", str(source), "-o", str(dll),
+            ], check=True, capture_output=True, text=True)
+            exports = subprocess.run([
+                "i686-w64-mingw32-objdump", "-p", str(dll),
+            ], check=True, capture_output=True, text=True).stdout
+            self.assertRegex(
+                exports, r"(?m)^\s*\[\s*0\].*DirectInputCreateA$",
+            )
+            self.assertNotRegex(exports, r"DirectInputCreateA@[0-9]+")
+
+    def test_fake_directinput_boot_path_never_enters_wine_device_creation(self):
+        source = (
+            build.ROOT /
+            "tools/miel_vliegt/x86_wine/native_observer_dinput_proxy.c"
+        ).read_text(encoding="utf-8")
+        export = source[source.index(
+            "__declspec(dllexport) HRESULT WINAPI DirectInputCreateA"
+        ):source.index("BOOL WINAPI DllMain")]
+        self.assertNotIn("real_direct_input_create(", export)
+        self.assertIn("fake->lpVtbl = &fake_direct_input_vtbl", export)
+        self.assertIn("*direct_input = (LPDIRECTINPUTA)fake", export)
+        get_state = source[source.index(
+            "static HRESULT WINAPI fake_device_GetDeviceState"
+        ):source.index("static HRESULT WINAPI fake_device_GetDeviceData")]
+        self.assertIn("ZeroMemory(state, size)", get_state)
+        for method in (
+            "fake_device_Acquire",
+            "fake_device_SetProperty",
+            "fake_device_SetDataFormat",
+            "fake_device_SetCooperativeLevel",
+        ):
+            body = source[source.index(f"static HRESULT WINAPI {method}"):]
+            body = body[:body.index("\n}")]
+            self.assertIn("return DI_OK;", body)
 
     def test_runtime_state_adapter_has_one_reviewed_write_and_exact_boundaries(self):
         source = (

@@ -160,3 +160,13 @@ Stubt IDirectInputDevice::Acquire (idx 7, ret 0x4) via CreateDevice-wrap in de p
 
 ## iter-30: dinput-INTERNE wait bevestigd (run 31377887350, ReadProcessMemory-fix)
 Main-thread 224: shallow dinput (0x9310/0x2756/0xb4db) + diep wined3d (depth 87/93) + msvcrt. GEEN mullemeck.exe-frame (>512b diep). Acquire+SetCooperativeLevel stubs raakten de wait NIET → t is een **dinput-INTERNE event/device-wait** (wine dinput headless), niet een publieke vtable-method. GLM kan wine-internals niet. Opties: (a) fake IDirectInput (proxy geeft stub-device, breekt input-replay), (b) wine dinput config/env, (c) headless-dinput-limiet. Trager pacen; volgende = fake-device-experiment of wine-dinput-config.
+
+## iter-31: typed fake DirectInput boot-adapter
+De proxy betreedt Wine's blokkerende `DirectInputCreateA`-implementatie niet meer en
+retourneert heap-backed `IDirectInputA`/`IDirectInputDeviceA`-objecten met de
+officiële MinGW DirectInput 5-vtables. De compiler bepaalt de x86-stdcall-cleanup;
+static asserts en een objdump-contract pinnen de relevante slots en alle 26
+`@N`-decoraties. Bootmethoden geven `DI_OK`, device-state is nul en input-replay
+blijft bewust een volgende adapterlaag. Lokale `-Werror`-DLL-build + drie gerichte
+tests groen. **Volgende gate:** x86-Wine-CI; alleen `mode-probe manager != 0` bewijst
+dat de interne dinput-wacht werkelijk is omzeild.

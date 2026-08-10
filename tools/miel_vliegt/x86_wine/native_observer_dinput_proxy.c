@@ -1,12 +1,15 @@
 #define WIN32_LEAN_AND_MEAN
+#define DIRECTINPUT_VERSION 0x0500
 #include <windows.h>
+#include <dinput.h>
 typedef LONG NTSTATUS;
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stddef.h>
 
 typedef HRESULT (WINAPI *DirectInputCreateAFunction)(
-    HINSTANCE, DWORD, void **, void *);
+    HINSTANCE, DWORD, LPDIRECTINPUTA *, LPUNKNOWN);
 typedef DWORD (WINAPI *MielObserverInitializeFunction)(LPVOID);
 
 #define BOOTSTRAP_TIMEOUT_MS 600000u
@@ -205,107 +208,394 @@ static DWORD WINAPI bootstrap_after_loader(LPVOID unused)
     return 1u;
 }
 
-/* === DirectInput Acquire unblock ===
-   The game's MAIN thread blocks headless inside dinput.dll during startup
-   (stack-walk: parked in an ntdll wait with the call chain entirely in
-   dinput.dll) — IDirectInputDevice::Acquire waits on a foreground/focused
-   window that never exists headless, so the Manager never constructs. The
-   suite injects input via SendInput, so a real device acquire isn't needed:
-   stub Acquire (IDirectInputDevice vtable index 7, `this`-only = ret 0x4) to
-   return DI_OK(0) immediately. Reached by wrapping IDirectInput::CreateDevice
-   (vtable index 3) to patch each returned device's Acquire slot. */
-static __attribute__((naked)) void di_acquire_stub(void)
+/* === Headless DirectInput boot adapter ===
+   Wine's real DirectInputCreateA enters an internal device/event wait before
+   returning its COM object. Patching public device methods cannot reach that
+   wait, so the headless capture path must not enter wine-dinput at all.
+
+   These are real DirectInput 5 COM objects, not untyped arrays: MinGW's
+   IDirectInputAVtbl/IDirectInputDeviceAVtbl declarations pin every slot and
+   every WINAPI (__stdcall) argument count. That lets the compiler emit the
+   required x86 `ret N` cleanup from the reviewed interface signatures instead
+   of duplicating byte counts in handwritten assembly. Input replay is a later
+   adapter; this boot implementation deliberately returns neutral state. */
+typedef struct FakeDirectInput {
+    const IDirectInputAVtbl *lpVtbl;
+    LONG references;
+} FakeDirectInput;
+
+typedef struct FakeDirectInputDevice {
+    const IDirectInputDeviceAVtbl *lpVtbl;
+    LONG references;
+} FakeDirectInputDevice;
+
+static const IDirectInputAVtbl fake_direct_input_vtbl;
+static const IDirectInputDeviceAVtbl fake_direct_input_device_vtbl;
+
+/* Local IID constants avoid adding a uuid-library link dependency to the
+   proxy while keeping QueryInterface strict. */
+static const GUID fake_iid_iunknown = {
+    0x00000000, 0x0000, 0x0000,
+    {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}
+};
+static const GUID fake_iid_direct_input_a = {
+    0x89521360, 0xAA8A, 0x11CF,
+    {0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}
+};
+static const GUID fake_iid_direct_input_device_a = {
+    0x5944E680, 0xC92E, 0x11CF,
+    {0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}
+};
+
+_Static_assert(sizeof(void *) == 4, "DINPUT proxy requires the x86 COM ABI");
+_Static_assert(offsetof(IDirectInputAVtbl, CreateDevice) == 3 * sizeof(void *),
+               "IDirectInputA::CreateDevice must remain vtable slot 3");
+_Static_assert(offsetof(IDirectInputDeviceAVtbl, Acquire) == 7 * sizeof(void *),
+               "IDirectInputDeviceA::Acquire must remain vtable slot 7");
+_Static_assert(offsetof(IDirectInputDeviceAVtbl, GetDeviceState) ==
+               9 * sizeof(void *),
+               "IDirectInputDeviceA::GetDeviceState must remain slot 9");
+_Static_assert(offsetof(IDirectInputDeviceAVtbl, SetDataFormat) ==
+               11 * sizeof(void *),
+               "IDirectInputDeviceA::SetDataFormat must remain slot 11");
+_Static_assert(offsetof(IDirectInputDeviceAVtbl, SetCooperativeLevel) ==
+               13 * sizeof(void *),
+               "IDirectInputDeviceA::SetCooperativeLevel must remain slot 13");
+
+static BOOL fake_iid_equal(REFIID left, const GUID *right)
 {
-    __asm__ __volatile__("xorl %eax, %eax\n\tret $0x4\n");
+    return left && !memcmp(left, right, sizeof(*right));
 }
 
-/* SetCooperativeLevel(this, hwnd, flags) = this+2 args = ret 0xC. Returning
-   DI_OK skips the window-manager cooperative-level handshake that blocks
-   headless (no foreground window). */
-static __attribute__((naked)) void di_setcooplevel_stub(void)
+static HRESULT WINAPI fake_di_QueryInterface(IDirectInputA *iface, REFIID iid,
+                                              void **result)
 {
-    __asm__ __volatile__("xorl %eax, %eax\n\tret $0xC\n");
-}
-
-static void *di_createdevice_saved = NULL;
-
-static void patch_one_slot(void **vtbl, int idx, void *stub)
-{
-    DWORD op;
-    if (!IsBadReadPtr(&vtbl[idx], sizeof(void *)) && vtbl[idx] != stub &&
-        VirtualProtect(&vtbl[idx], sizeof(void *), PAGE_READWRITE, &op)) {
-        vtbl[idx] = stub;
-        VirtualProtect(&vtbl[idx], sizeof(void *), op, &op);
-        FlushInstructionCache(GetCurrentProcess(), &vtbl[idx], sizeof(void *));
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (!fake_iid_equal(iid, &fake_iid_iunknown) &&
+        !fake_iid_equal(iid, &fake_iid_direct_input_a)) {
+        return E_NOINTERFACE;
     }
+    *result = iface;
+    iface->lpVtbl->AddRef(iface);
+    return S_OK;
 }
 
-static void patch_device_acquire(void *dev)
+static ULONG WINAPI fake_di_AddRef(IDirectInputA *iface)
 {
-    if (!dev || IsBadReadPtr(dev, sizeof(void *))) return;
-    {
-        void **vtbl = *(void ***)dev;
-        char b[96];
-        wsprintfA(b, "MVP_DI dev=%p Acquire[7]=%p GetState[9]=%p CoopLvl[13]=%p",
-                  dev, vtbl[7], vtbl[9], vtbl[13]);
-        proxy_log_file(b);
-        patch_one_slot(vtbl, 7, (void *)di_acquire_stub);        /* Acquire */
-        patch_one_slot(vtbl, 13, (void *)di_setcooplevel_stub);  /* SetCoopLvl */
-        proxy_log_file("MVP_DI Acquire + SetCooperativeLevel patched -> DI_OK");
+    FakeDirectInput *self = (FakeDirectInput *)iface;
+    return (ULONG)InterlockedIncrement(&self->references);
+}
+
+static ULONG WINAPI fake_di_Release(IDirectInputA *iface)
+{
+    FakeDirectInput *self = (FakeDirectInput *)iface;
+    LONG references = InterlockedDecrement(&self->references);
+    if (references == 0) HeapFree(GetProcessHeap(), 0, self);
+    return (ULONG)references;
+}
+
+static HRESULT WINAPI fake_device_QueryInterface(IDirectInputDeviceA *iface,
+                                                  REFIID iid, void **result)
+{
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (!fake_iid_equal(iid, &fake_iid_iunknown) &&
+        !fake_iid_equal(iid, &fake_iid_direct_input_device_a)) {
+        return E_NOINTERFACE;
     }
+    *result = iface;
+    iface->lpVtbl->AddRef(iface);
+    return S_OK;
 }
 
-typedef HRESULT(WINAPI *CreateDevice_t)(void *thisptr, const void *rguid,
-                                        void **lplpDev, void *outer);
-
-static HRESULT WINAPI di_CreateDevice_hook(void *thisptr, const void *rguid,
-                                           void **lplpDev, void *outer)
+static ULONG WINAPI fake_device_AddRef(IDirectInputDeviceA *iface)
 {
-    HRESULT hr = ((CreateDevice_t)di_createdevice_saved)(thisptr, rguid,
-                                                         lplpDev, outer);
-    if (SUCCEEDED(hr) && lplpDev && *lplpDev) patch_device_acquire(*lplpDev);
-    return hr;
+    FakeDirectInputDevice *self = (FakeDirectInputDevice *)iface;
+    return (ULONG)InterlockedIncrement(&self->references);
 }
 
-/* Patch an IDirectInput object's CreateDevice slot (index 3) so every device
-   it creates gets its Acquire stubbed. Shared vtable → patch once. */
-static void patch_directinput_createdevice(void *di)
+static ULONG WINAPI fake_device_Release(IDirectInputDeviceA *iface)
 {
-    if (di_createdevice_saved || !di || IsBadReadPtr(di, sizeof(void *))) return;
-    {
-        void **vtbl = *(void ***)di;
-        DWORD op;
-        if (!IsBadReadPtr(&vtbl[3], sizeof(void *))) {
-            di_createdevice_saved = vtbl[3];
-            if (VirtualProtect(&vtbl[3], sizeof(void *), PAGE_READWRITE, &op)) {
-                vtbl[3] = (void *)di_CreateDevice_hook;
-                VirtualProtect(&vtbl[3], sizeof(void *), op, &op);
-                FlushInstructionCache(GetCurrentProcess(), &vtbl[3],
-                                      sizeof(void *));
-                proxy_log_file("MVP_DI CreateDevice hooked");
-            } else {
-                di_createdevice_saved = NULL;
-            }
-        }
+    FakeDirectInputDevice *self = (FakeDirectInputDevice *)iface;
+    LONG references = InterlockedDecrement(&self->references);
+    if (references == 0) HeapFree(GetProcessHeap(), 0, self);
+    return (ULONG)references;
+}
+
+static HRESULT WINAPI fake_di_CreateDevice(IDirectInputA *iface, REFGUID guid,
+                                           LPDIRECTINPUTDEVICEA *result,
+                                           LPUNKNOWN outer)
+{
+    FakeDirectInputDevice *device;
+    (void)iface;
+    (void)guid;
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (outer) return CLASS_E_NOAGGREGATION;
+    device = (FakeDirectInputDevice *)HeapAlloc(
+        GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*device));
+    if (!device) return E_OUTOFMEMORY;
+    device->lpVtbl = &fake_direct_input_device_vtbl;
+    device->references = 1;
+    *result = (LPDIRECTINPUTDEVICEA)device;
+    proxy_log_file("MVP_DI fake IDirectInputDeviceA created");
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_di_EnumDevices(IDirectInputA *iface, DWORD type,
+                                          LPDIENUMDEVICESCALLBACKA callback,
+                                          LPVOID reference, DWORD flags)
+{
+    (void)iface;
+    (void)type;
+    (void)callback;
+    (void)reference;
+    (void)flags;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_di_GetDeviceStatus(IDirectInputA *iface,
+                                               REFGUID guid)
+{
+    (void)iface;
+    (void)guid;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_di_RunControlPanel(IDirectInputA *iface, HWND owner,
+                                              DWORD flags)
+{
+    (void)iface;
+    (void)owner;
+    (void)flags;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_di_Initialize(IDirectInputA *iface,
+                                         HINSTANCE instance, DWORD version)
+{
+    (void)iface;
+    (void)instance;
+    (void)version;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetCapabilities(IDirectInputDeviceA *iface,
+                                                   LPDIDEVCAPS capabilities)
+{
+    DWORD size;
+    (void)iface;
+    if (!capabilities) return E_POINTER;
+    size = capabilities->dwSize;
+    if (size != sizeof(DIDEVCAPS) && size != sizeof(DIDEVCAPS_DX3)) {
+        return DIERR_INVALIDPARAM;
     }
+    ZeroMemory(capabilities, size);
+    capabilities->dwSize = size;
+    return DI_OK;
 }
+
+static HRESULT WINAPI fake_device_EnumObjects(
+    IDirectInputDeviceA *iface, LPDIENUMDEVICEOBJECTSCALLBACKA callback,
+    LPVOID reference, DWORD flags)
+{
+    (void)iface;
+    (void)callback;
+    (void)reference;
+    (void)flags;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetProperty(IDirectInputDeviceA *iface,
+                                               REFGUID property,
+                                               LPDIPROPHEADER value)
+{
+    (void)iface;
+    (void)property;
+    (void)value;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_SetProperty(IDirectInputDeviceA *iface,
+                                               REFGUID property,
+                                               LPCDIPROPHEADER value)
+{
+    (void)iface;
+    (void)property;
+    (void)value;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_Acquire(IDirectInputDeviceA *iface)
+{
+    (void)iface;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_Unacquire(IDirectInputDeviceA *iface)
+{
+    (void)iface;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetDeviceState(IDirectInputDeviceA *iface,
+                                                  DWORD size, LPVOID state)
+{
+    (void)iface;
+    if (size && !state) return E_POINTER;
+    if (size) ZeroMemory(state, size);
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetDeviceData(
+    IDirectInputDeviceA *iface, DWORD object_size,
+    LPDIDEVICEOBJECTDATA data, LPDWORD count, DWORD flags)
+{
+    (void)iface;
+    (void)object_size;
+    (void)data;
+    (void)flags;
+    if (!count) return E_POINTER;
+    *count = 0;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_SetDataFormat(IDirectInputDeviceA *iface,
+                                                 LPCDIDATAFORMAT format)
+{
+    (void)iface;
+    (void)format;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_SetEventNotification(
+    IDirectInputDeviceA *iface, HANDLE event)
+{
+    (void)iface;
+    (void)event;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_SetCooperativeLevel(
+    IDirectInputDeviceA *iface, HWND window, DWORD flags)
+{
+    (void)iface;
+    (void)window;
+    (void)flags;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetObjectInfo(
+    IDirectInputDeviceA *iface, LPDIDEVICEOBJECTINSTANCEA info,
+    DWORD object, DWORD how)
+{
+    DWORD size;
+    (void)iface;
+    (void)object;
+    (void)how;
+    if (!info) return E_POINTER;
+    size = info->dwSize;
+    if (size != sizeof(DIDEVICEOBJECTINSTANCEA) &&
+        size != sizeof(DIDEVICEOBJECTINSTANCE_DX3A)) {
+        return DIERR_INVALIDPARAM;
+    }
+    ZeroMemory(info, size);
+    info->dwSize = size;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_GetDeviceInfo(IDirectInputDeviceA *iface,
+                                                 LPDIDEVICEINSTANCEA info)
+{
+    DWORD size;
+    (void)iface;
+    if (!info) return E_POINTER;
+    size = info->dwSize;
+    if (size != sizeof(DIDEVICEINSTANCEA) &&
+        size != sizeof(DIDEVICEINSTANCE_DX3A)) {
+        return DIERR_INVALIDPARAM;
+    }
+    ZeroMemory(info, size);
+    info->dwSize = size;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_RunControlPanel(IDirectInputDeviceA *iface,
+                                                  HWND owner, DWORD flags)
+{
+    (void)iface;
+    (void)owner;
+    (void)flags;
+    return DI_OK;
+}
+
+static HRESULT WINAPI fake_device_Initialize(IDirectInputDeviceA *iface,
+                                             HINSTANCE instance,
+                                             DWORD version, REFGUID guid)
+{
+    (void)iface;
+    (void)instance;
+    (void)version;
+    (void)guid;
+    return DI_OK;
+}
+
+static const IDirectInputAVtbl fake_direct_input_vtbl = {
+    fake_di_QueryInterface,
+    fake_di_AddRef,
+    fake_di_Release,
+    fake_di_CreateDevice,
+    fake_di_EnumDevices,
+    fake_di_GetDeviceStatus,
+    fake_di_RunControlPanel,
+    fake_di_Initialize
+};
+
+static const IDirectInputDeviceAVtbl fake_direct_input_device_vtbl = {
+    fake_device_QueryInterface,
+    fake_device_AddRef,
+    fake_device_Release,
+    fake_device_GetCapabilities,
+    fake_device_EnumObjects,
+    fake_device_GetProperty,
+    fake_device_SetProperty,
+    fake_device_Acquire,
+    fake_device_Unacquire,
+    fake_device_GetDeviceState,
+    fake_device_GetDeviceData,
+    fake_device_SetDataFormat,
+    fake_device_SetEventNotification,
+    fake_device_SetCooperativeLevel,
+    fake_device_GetObjectInfo,
+    fake_device_GetDeviceInfo,
+    fake_device_RunControlPanel,
+    fake_device_Initialize
+};
 
 __declspec(dllexport) HRESULT WINAPI DirectInputCreateA(
-    HINSTANCE instance, DWORD version, void **direct_input, void *outer)
+    HINSTANCE instance, DWORD version, LPDIRECTINPUTA *direct_input,
+    LPUNKNOWN outer)
 {
+    FakeDirectInput *fake;
     /* Try to initialize the observer proxy. If it fails (e.g. Cc.dll not
-       loaded yet), still forward to the real DirectInputCreateA so the game
-       doesn't crash. The bootstrap thread will retry observer initialization. */
+       loaded yet), the bootstrap thread retries observer initialization. Do
+       not call real DirectInputCreateA here: Wine's implementation blocks in
+       its internal headless device wait before any public COM method runs. */
     initialize_proxy();
-    if (real_direct_input_create) {
-        HRESULT hr = real_direct_input_create(instance, version, direct_input,
-                                              outer);
-        if (SUCCEEDED(hr) && direct_input && *direct_input) {
-            patch_directinput_createdevice(*direct_input);
-        }
-        return hr;
-    }
-    return (HRESULT)0x80004005L;
+    (void)instance;
+    (void)version;
+    if (!direct_input) return E_POINTER;
+    *direct_input = NULL;
+    if (outer) return CLASS_E_NOAGGREGATION;
+    fake = (FakeDirectInput *)HeapAlloc(
+        GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*fake));
+    if (!fake) return E_OUTOFMEMORY;
+    fake->lpVtbl = &fake_direct_input_vtbl;
+    fake->references = 1;
+    *direct_input = (LPDIRECTINPUTA)fake;
+    proxy_log_file("MVP_DI fake IDirectInputA created; wine-dinput bypassed");
+    return DI_OK;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
@@ -381,7 +671,6 @@ static void describe_address(void *addr, char *out, size_t out_size) {
 }
 
 /* === Exit prevention: hook PostQuitMessage + ExitProcess === */
-static void (WINAPI *real_ExitProcess)(UINT uExitCode) = NULL;
 
 void WINAPI ExitProcess_hook(UINT uExitCode) {
     char who[MAX_PATH + 32];
@@ -476,7 +765,6 @@ NTSTATUS WINAPI NtTerminateProcess_hook(HANDLE hProcess, NTSTATUS status) {
 }
 
 /* Also hook RtlExitUserProcess in ntdll — catches _exit() and exit() */
-static VOID (WINAPI *real_RtlExitUserProcess)(NTSTATUS ExitStatus) = NULL;
 void WINAPI RtlExitUserProcess_hook(NTSTATUS ExitStatus) {
     fprintf(stderr, "MVP_RtlExitUserProcess(0x%08X): BLOCKED\n", (unsigned)ExitStatus);
     fflush(stderr);
