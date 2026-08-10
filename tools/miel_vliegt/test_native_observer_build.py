@@ -75,6 +75,80 @@ class NativeObserverBuildTest(unittest.TestCase):
         ):
             self.assertIn(f'"{stage}"', initialize)
 
+    def test_dinput_proxy_registers_one_process_scoped_exception_handler(self):
+        source = (
+            build.ROOT / "tools/miel_vliegt/x86_wine/"
+            "native_observer_dinput_proxy.c"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(source.count("install_exit_hook();"), 1)
+        self.assertIn(
+            "DisableThreadLibraryCalls(instance);\n        install_exit_hook();",
+            source,
+        )
+        installer = source[
+            source.index("static void install_exit_hook(void) {"):
+            source.index("/* === ddraw.dll!DirectDrawCreate", source.index(
+                "static void install_exit_hook(void) {"))
+        ]
+        self.assertIn("crash_handler_install_started, 1, 0", installer)
+        self.assertIn("AddVectoredExceptionHandler(0, crash_logger)", installer)
+        self.assertIn("VEH crash logger installed once", installer)
+
+    @unittest.skipUnless(
+        shutil.which("i686-w64-mingw32-gcc") and
+        shutil.which("i686-w64-mingw32-objdump"),
+        "MinGW x86 compiler is required for the DirectDraw ABI contract",
+    )
+    def test_dinput_proxy_bounds_typed_ddraw7_startup_forwarding(self):
+        source = (
+            build.ROOT / "tools/miel_vliegt/x86_wine/"
+            "native_observer_dinput_proxy.c"
+        ).read_text(encoding="utf-8")
+        self.assertIn("#define DDRAW_TRACE_RECORD_LIMIT 128", source)
+        self.assertIn("if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;", source)
+        for method, slot in (
+            ("CreateSurface", 6),
+            ("EnumDisplayModes", 8),
+            ("GetCaps", 11),
+            ("GetDisplayMode", 12),
+            ("RestoreDisplayMode", 19),
+            ("SetCooperativeLevel", 20),
+        ):
+            self.assertIn(f'ddraw_trace_enter("{method}")', source)
+            self.assertIn(f'ddraw_trace_leave("{method}", hr)', source)
+            self.assertIn(
+                f"vtbl[{slot}] = (void *)ddraw_{method}_hook", source,
+            )
+            self.assertIn(f"hr = ddraw_saved_{method}(", source)
+        self.assertIn("static HRESULT WINAPI set_display_mode_stub(", source)
+        self.assertIn('ddraw_trace_leave("SetDisplayMode", DD_OK)', source)
+        symbols = self._proxy_object_symbols()
+        for symbol in (
+            "_ddraw_CreateSurface_hook@16",
+            "_ddraw_EnumDisplayModes_hook@20",
+            "_ddraw_GetCaps_hook@12",
+            "_ddraw_GetDisplayMode_hook@8",
+            "_ddraw_RestoreDisplayMode_hook@4",
+            "_ddraw_SetCooperativeLevel_hook@12",
+            "_set_display_mode_stub@24",
+        ):
+            self.assertIn(symbol, symbols)
+
+    def _proxy_object_symbols(self):
+        source = (
+            build.ROOT / "tools/miel_vliegt/x86_wine/"
+            "native_observer_dinput_proxy.c"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            obj = Path(directory) / "DINPUT.o"
+            subprocess.run([
+                "i686-w64-mingw32-gcc", "-std=c11", "-O0", "-Wall",
+                "-Wextra", "-Werror", "-c", str(source), "-o", str(obj),
+            ], check=True, capture_output=True, text=True)
+            return subprocess.run([
+                "i686-w64-mingw32-objdump", "-t", str(obj),
+            ], check=True, capture_output=True, text=True).stdout
+
     def test_manifest_binds_artifact_toolchain_and_all_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self._root(directory)

@@ -1,7 +1,9 @@
 #define WIN32_LEAN_AND_MEAN
 #define DIRECTINPUT_VERSION 0x0500
+#define DIRECTDRAW_VERSION 0x0700
 #include <windows.h>
 #include <dinput.h>
+#include <ddraw.h>
 typedef LONG NTSTATUS;
 #include <stdio.h>
 #include <string.h>
@@ -296,6 +298,22 @@ _Static_assert(offsetof(IDirectInputDeviceAVtbl, SetDataFormat) ==
 _Static_assert(offsetof(IDirectInputDeviceAVtbl, SetCooperativeLevel) ==
                13 * sizeof(void *),
                "IDirectInputDeviceA::SetCooperativeLevel must remain slot 13");
+_Static_assert(offsetof(IDirectDraw7Vtbl, CreateSurface) == 6 * sizeof(void *),
+               "IDirectDraw7::CreateSurface must remain slot 6");
+_Static_assert(offsetof(IDirectDraw7Vtbl, EnumDisplayModes) == 8 * sizeof(void *),
+               "IDirectDraw7::EnumDisplayModes must remain slot 8");
+_Static_assert(offsetof(IDirectDraw7Vtbl, GetCaps) == 11 * sizeof(void *),
+               "IDirectDraw7::GetCaps must remain slot 11");
+_Static_assert(offsetof(IDirectDraw7Vtbl, GetDisplayMode) == 12 * sizeof(void *),
+               "IDirectDraw7::GetDisplayMode must remain slot 12");
+_Static_assert(offsetof(IDirectDraw7Vtbl, RestoreDisplayMode) ==
+               19 * sizeof(void *),
+               "IDirectDraw7::RestoreDisplayMode must remain slot 19");
+_Static_assert(offsetof(IDirectDraw7Vtbl, SetCooperativeLevel) ==
+               20 * sizeof(void *),
+               "IDirectDraw7::SetCooperativeLevel must remain slot 20");
+_Static_assert(offsetof(IDirectDraw7Vtbl, SetDisplayMode) == 21 * sizeof(void *),
+               "IDirectDraw7::SetDisplayMode must remain slot 21");
 
 static BOOL fake_iid_equal(REFIID left, const GUID *right)
 {
@@ -707,6 +725,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         }
     }
         DisableThreadLibraryCalls(instance);
+        install_exit_hook();
         /* The thread begins after DLL attachment leaves loader lock, waits
            only for Cc.dll, and installs the observer before the fleeting
            pending-login transition. The observer itself proves that boundary. */
@@ -720,10 +739,6 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         }
     }
     { HMODULE _exe = GetModuleHandleA(NULL); HMODULE _cc = GetModuleHandleA("Cc.dll"); fprintf(stderr, "MVP_BASE: exe=%p cc=%p\n", _exe, _cc); fflush(stderr); }
-    /* Install diagnostics only. Process termination must remain observable by
-       the launcher; suppressing a clean exit turns a useful failure into a
-       ten-minute bootstrap timeout. */
-    install_exit_hook();
     return TRUE;
 }
 
@@ -849,11 +864,23 @@ static BOOL patch_jmp(void *target, void *hook, const char *label) {
     return TRUE;
 }
 
+static volatile LONG crash_handler_install_started;
+static PVOID crash_handler;
+
 static void install_exit_hook(void) {
     /* The launcher already owns process-lifecycle observation. Keep the proxy
        limited to exception telemetry and never rewrite termination exports. */
-    AddVectoredExceptionHandler(0, crash_logger);
-    fprintf(stderr, "MVP: VEH crash logger installed\n"); fflush(stderr);
+    if (InterlockedCompareExchange(
+            &crash_handler_install_started, 1, 0) != 0) return;
+    crash_handler = AddVectoredExceptionHandler(0, crash_logger);
+    if (crash_handler) {
+        proxy_log_file("MVP: VEH crash logger installed once");
+        fprintf(stderr, "MVP: VEH crash logger installed once\n");
+    } else {
+        proxy_log_file("MVP: VEH crash logger install FAILED");
+        InterlockedExchange(&crash_handler_install_started, 0);
+    }
+    fflush(stderr);
 }
 
 /* === ddraw.dll!DirectDrawCreate trampoline + vtable probe ===
@@ -964,27 +991,141 @@ static HRESULT WINAPI DirectDrawCreate_hook(void *lpGUID, void **lplpDD,
     return hr;
 }
 
-/* SetDisplayMode -> DD_OK stub. The game (gtSoftware) loops SetDisplayMode
-   forever because headless Wine returns DDERR_UNSUPPORTED; returning DD_OK(0)
-   makes it accept the mode and proceed to windowed rendering so the Manager
-   constructs. __stdcall COM method: this + 5 args (w,h,bpp,refresh,flags) for
-   IDirectDraw2/4/7 = 24 bytes = ret 0x18. (CreateEx always yields DD4/DD7,
-   whose SetDisplayMode is the 5-arg form at vtable index 21.) */
-static __attribute__((naked)) void set_display_mode_stub(void)
+/* Bounded typed IDirectDraw7 startup telemetry. Every forwarding wrapper logs
+   entry and HRESULT so a call that never returns is distinguishable from the
+   first rejected operation. A shared budget prevents polling or retries from
+   flooding the small proxy artifact. */
+#define DDRAW_TRACE_RECORD_LIMIT 128
+static volatile LONG ddraw_trace_sequence;
+
+static void ddraw_trace_enter(const char *method)
 {
-    __asm__ __volatile__("xorl %eax, %eax\n\tret $0x18\n");
+    LONG sequence = InterlockedIncrement(&ddraw_trace_sequence);
+    char line[128];
+    if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;
+    wsprintfA(line, "MVP_DD7 sequence=%ld method=%s phase=enter",
+              sequence, method);
+    proxy_log_file(line);
 }
 
-static BOOL ddraw_sdm_patched = FALSE;
+static void ddraw_trace_leave(const char *method, HRESULT hr)
+{
+    LONG sequence = InterlockedIncrement(&ddraw_trace_sequence);
+    char line[144];
+    if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;
+    wsprintfA(line, "MVP_DD7 sequence=%ld method=%s phase=leave hr=0x%08X",
+              sequence, method, (unsigned)hr);
+    proxy_log_file(line);
+}
+
+typedef HRESULT (WINAPI *DDrawCreateSurface_t)(
+    IDirectDraw7 *, LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7 *, IUnknown *);
+typedef HRESULT (WINAPI *DDrawEnumDisplayModes_t)(
+    IDirectDraw7 *, DWORD, LPDDSURFACEDESC2, LPVOID,
+    LPDDENUMMODESCALLBACK2);
+typedef HRESULT (WINAPI *DDrawGetCaps_t)(IDirectDraw7 *, LPDDCAPS, LPDDCAPS);
+typedef HRESULT (WINAPI *DDrawGetDisplayMode_t)(
+    IDirectDraw7 *, LPDDSURFACEDESC2);
+typedef HRESULT (WINAPI *DDrawRestoreDisplayMode_t)(IDirectDraw7 *);
+typedef HRESULT (WINAPI *DDrawSetCooperativeLevel_t)(
+    IDirectDraw7 *, HWND, DWORD);
+
+static DDrawCreateSurface_t ddraw_saved_CreateSurface;
+static DDrawEnumDisplayModes_t ddraw_saved_EnumDisplayModes;
+static DDrawGetCaps_t ddraw_saved_GetCaps;
+static DDrawGetDisplayMode_t ddraw_saved_GetDisplayMode;
+static DDrawRestoreDisplayMode_t ddraw_saved_RestoreDisplayMode;
+static DDrawSetCooperativeLevel_t ddraw_saved_SetCooperativeLevel;
+
+static HRESULT WINAPI ddraw_CreateSurface_hook(
+    IDirectDraw7 *iface, LPDDSURFACEDESC2 desc,
+    LPDIRECTDRAWSURFACE7 *surface, IUnknown *outer)
+{
+    HRESULT hr;
+    ddraw_trace_enter("CreateSurface");
+    hr = ddraw_saved_CreateSurface(iface, desc, surface, outer);
+    ddraw_trace_leave("CreateSurface", hr);
+    return hr;
+}
+
+static HRESULT WINAPI ddraw_EnumDisplayModes_hook(
+    IDirectDraw7 *iface, DWORD flags, LPDDSURFACEDESC2 desc, LPVOID context,
+    LPDDENUMMODESCALLBACK2 callback)
+{
+    HRESULT hr;
+    ddraw_trace_enter("EnumDisplayModes");
+    hr = ddraw_saved_EnumDisplayModes(iface, flags, desc, context, callback);
+    ddraw_trace_leave("EnumDisplayModes", hr);
+    return hr;
+}
+
+static HRESULT WINAPI ddraw_GetCaps_hook(
+    IDirectDraw7 *iface, LPDDCAPS driver, LPDDCAPS hardware)
+{
+    HRESULT hr;
+    ddraw_trace_enter("GetCaps");
+    hr = ddraw_saved_GetCaps(iface, driver, hardware);
+    ddraw_trace_leave("GetCaps", hr);
+    return hr;
+}
+
+static HRESULT WINAPI ddraw_GetDisplayMode_hook(
+    IDirectDraw7 *iface, LPDDSURFACEDESC2 desc)
+{
+    HRESULT hr;
+    ddraw_trace_enter("GetDisplayMode");
+    hr = ddraw_saved_GetDisplayMode(iface, desc);
+    ddraw_trace_leave("GetDisplayMode", hr);
+    return hr;
+}
+
+static HRESULT WINAPI ddraw_RestoreDisplayMode_hook(IDirectDraw7 *iface)
+{
+    HRESULT hr;
+    ddraw_trace_enter("RestoreDisplayMode");
+    hr = ddraw_saved_RestoreDisplayMode(iface);
+    ddraw_trace_leave("RestoreDisplayMode", hr);
+    return hr;
+}
+
+static HRESULT WINAPI ddraw_SetCooperativeLevel_hook(
+    IDirectDraw7 *iface, HWND window, DWORD flags)
+{
+    HRESULT hr;
+    ddraw_trace_enter("SetCooperativeLevel");
+    hr = ddraw_saved_SetCooperativeLevel(iface, window, flags);
+    ddraw_trace_leave("SetCooperativeLevel", hr);
+    return hr;
+}
+
+/* SetDisplayMode -> DD_OK adapter. The game (gtSoftware) loops SetDisplayMode
+   forever because headless Wine returns DDERR_UNSUPPORTED; returning DD_OK(0)
+   makes it accept the mode and proceed to windowed rendering so the Manager
+   constructs. The typed WINAPI signature lets the compiler enforce the x86
+   stdcall cleanup for this+5 arguments. */
+static HRESULT WINAPI set_display_mode_stub(
+    IDirectDraw7 *iface, DWORD width, DWORD height, DWORD bpp,
+    DWORD refresh, DWORD flags)
+{
+    (void)iface; (void)width; (void)height; (void)bpp;
+    (void)refresh; (void)flags;
+    ddraw_trace_enter("SetDisplayMode");
+    ddraw_trace_leave("SetDisplayMode", DD_OK);
+    return DD_OK;
+}
+
+static BOOL ddraw_startup_patched = FALSE;
 static unsigned char *ddraw_ex_trampoline = NULL;
 typedef HRESULT(WINAPI *DirectDrawCreateEx_t)(void *lpGUID, void **lplpDD,
                                               const void *iid, void *pUnkOuter);
 
-/* Patch the SetDisplayMode slot (vtable index 21) of a created DirectDraw
-   object to the DD_OK stub, VirtualProtect-guarded, once. */
-static void patch_setdisplaymode(void *obj)
+/* Patch the reviewed IDirectDraw7 startup slots once. All new diagnostic
+   wrappers forward to Wine unchanged; SetDisplayMode retains the pre-existing
+   headless DD_OK adapter. */
+static void patch_ddraw_startup_methods(void *obj)
 {
-    if (ddraw_sdm_patched || !obj || IsBadReadPtr(obj, sizeof(void *))) return;
+    if (ddraw_startup_patched || !obj ||
+        IsBadReadPtr(obj, sizeof(void *))) return;
     {
         void **vtbl = *(void ***)obj;
         DWORD op;
@@ -992,16 +1133,31 @@ static void patch_setdisplaymode(void *obj)
         wsprintfA(b, "MVP_DDEX obj=%p vtbl=%p SetDisplayMode[21]=%p",
                   obj, vtbl, vtbl[21]);
         proxy_log_file(b);
-        if (!IsBadReadPtr(&vtbl[21], sizeof(void *)) &&
-            VirtualProtect(&vtbl[21], sizeof(void *), PAGE_READWRITE, &op)) {
+        if (!IsBadReadPtr(vtbl, 22u * sizeof(void *)) &&
+            VirtualProtect(vtbl, 22u * sizeof(void *), PAGE_READWRITE, &op)) {
+            ddraw_saved_CreateSurface = (DDrawCreateSurface_t)vtbl[6];
+            ddraw_saved_EnumDisplayModes = (DDrawEnumDisplayModes_t)vtbl[8];
+            ddraw_saved_GetCaps = (DDrawGetCaps_t)vtbl[11];
+            ddraw_saved_GetDisplayMode = (DDrawGetDisplayMode_t)vtbl[12];
+            ddraw_saved_RestoreDisplayMode =
+                (DDrawRestoreDisplayMode_t)vtbl[19];
+            ddraw_saved_SetCooperativeLevel =
+                (DDrawSetCooperativeLevel_t)vtbl[20];
+            vtbl[6] = (void *)ddraw_CreateSurface_hook;
+            vtbl[8] = (void *)ddraw_EnumDisplayModes_hook;
+            vtbl[11] = (void *)ddraw_GetCaps_hook;
+            vtbl[12] = (void *)ddraw_GetDisplayMode_hook;
+            vtbl[19] = (void *)ddraw_RestoreDisplayMode_hook;
+            vtbl[20] = (void *)ddraw_SetCooperativeLevel_hook;
             vtbl[21] = (void *)set_display_mode_stub;
-            VirtualProtect(&vtbl[21], sizeof(void *), op, &op);
-            FlushInstructionCache(GetCurrentProcess(), &vtbl[21],
-                                  sizeof(void *));
-            ddraw_sdm_patched = TRUE;
-            proxy_log_file("MVP_DDEX SetDisplayMode patched -> DD_OK");
+            VirtualProtect(vtbl, 22u * sizeof(void *), op, &op);
+            FlushInstructionCache(
+                GetCurrentProcess(), vtbl, 22u * sizeof(void *));
+            ddraw_startup_patched = TRUE;
+            proxy_log_file(
+                "MVP_DDEX startup methods traced; SetDisplayMode -> DD_OK");
         } else {
-            proxy_log_file("MVP_DDEX SetDisplayMode patch FAILED");
+            proxy_log_file("MVP_DDEX startup method patch FAILED");
         }
     }
 }
@@ -1031,7 +1187,9 @@ static HRESULT WINAPI DirectDrawCreateEx_hook(void *lpGUID, void **lplpDD,
                   g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
         proxy_log_file(b);
     }
-    if (SUCCEEDED(hr) && lplpDD && *lplpDD) patch_setdisplaymode(*lplpDD);
+    if (SUCCEEDED(hr) && lplpDD && *lplpDD) {
+        patch_ddraw_startup_methods(*lplpDD);
+    }
     return hr;
 }
 
