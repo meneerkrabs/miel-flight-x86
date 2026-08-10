@@ -136,6 +136,23 @@ class NativeObserverBuildTest(unittest.TestCase):
             self.assertIn(symbol, symbols)
         self.assertIn("vtbl[0] = (void *)ddraw_QI_hook", source)
         self.assertIn("MVP_QI result hr=0x%08X output=%p object=%p", source)
+        self.assertIn("memcmp(riid, &miel_iid_idirect3d7", source)
+        for method, slot in (
+            ("EnumDevices", 3),
+            ("CreateDevice", 4),
+            ("CreateVertexBuffer", 5),
+            ("EnumZBufferFormats", 6),
+            ("EvictManagedTextures", 7),
+        ):
+            self.assertIn(f"vtbl[{slot}] = (void *)d3d7_{method}_hook", source)
+        for symbol in (
+            "_d3d7_EnumDevices_hook@12",
+            "_d3d7_CreateDevice_hook@16",
+            "_d3d7_CreateVertexBuffer_hook@16",
+            "_d3d7_EnumZBufferFormats_hook@16",
+            "_d3d7_EvictManagedTextures_hook@4",
+        ):
+            self.assertIn(symbol, symbols)
         for method, slot in (
             ("Release", 2),
             ("AddAttachedSurface", 3),

@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <dinput.h>
 #include <ddraw.h>
+#include <d3d.h>
 typedef LONG NTSTATUS;
 #include <stdio.h>
 #include <string.h>
@@ -934,6 +935,12 @@ typedef HRESULT(WINAPI *DirectDrawCreate_t)(void *lpGUID, void **lplpDD,
                                             void *pUnkOuter);
 typedef HRESULT(WINAPI *QueryInterface_t)(void *thisptr, const void *riid,
                                           void **ppv);
+static void patch_d3d7_startup_methods(IDirect3D7 *object);
+
+static const GUID miel_iid_idirect3d7 = {
+    0xf5049e77, 0x4861, 0x11d2,
+    {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}
+};
 
 /* COM QueryInterface logging wrapper. stdcall: this, riid, ppv on stack. The
    riid GUID is {Data1(4 LE), Data2(2 LE), Data3(2 LE), Data4[8]}, so printing
@@ -941,6 +948,7 @@ typedef HRESULT(WINAPI *QueryInterface_t)(void *thisptr, const void *riid,
 static HRESULT WINAPI ddraw_QI_hook(void *thisptr, const void *riid, void **ppv)
 {
     HRESULT hr = (HRESULT)0x80004002L;
+    void *object;
     if (riid && !IsBadReadPtr(riid, 16)) {
         const unsigned char *g = (const unsigned char *)riid;
         char b[128];
@@ -955,11 +963,16 @@ static HRESULT WINAPI ddraw_QI_hook(void *thisptr, const void *riid, void **ppv)
         hr = ((QueryInterface_t)ddraw_saved_QI)(thisptr, riid, ppv);
     }
     {
-        void *object = (ppv && !IsBadReadPtr(ppv, sizeof(*ppv))) ? *ppv : NULL;
         char b[128];
+        object = (ppv && !IsBadReadPtr(ppv, sizeof(*ppv))) ? *ppv : NULL;
         wsprintfA(b, "MVP_QI result hr=0x%08X output=%p object=%p",
                   (unsigned)hr, ppv, object);
         proxy_log_file(b);
+    }
+    if (SUCCEEDED(hr) && object && riid &&
+        !IsBadReadPtr(riid, sizeof(GUID)) &&
+        memcmp(riid, &miel_iid_idirect3d7, sizeof(GUID)) == 0) {
+        patch_d3d7_startup_methods((IDirect3D7 *)object);
     }
     return hr;
 }
@@ -1057,6 +1070,94 @@ static void ddraw_trace_detail(const char *detail)
     if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;
     wsprintfA(line, "MVP_DD7 sequence=%ld detail=%s", sequence, detail);
     proxy_log_file(line);
+}
+
+_Static_assert(offsetof(IDirect3D7Vtbl, EnumDevices) == 3 * sizeof(void *),
+               "IDirect3D7::EnumDevices must remain slot 3");
+_Static_assert(offsetof(IDirect3D7Vtbl, CreateDevice) == 4 * sizeof(void *),
+               "IDirect3D7::CreateDevice must remain slot 4");
+_Static_assert(offsetof(IDirect3D7Vtbl, CreateVertexBuffer) == 5 * sizeof(void *),
+               "IDirect3D7::CreateVertexBuffer must remain slot 5");
+_Static_assert(offsetof(IDirect3D7Vtbl, EnumZBufferFormats) == 6 * sizeof(void *),
+               "IDirect3D7::EnumZBufferFormats must remain slot 6");
+_Static_assert(offsetof(IDirect3D7Vtbl, EvictManagedTextures) == 7 * sizeof(void *),
+               "IDirect3D7::EvictManagedTextures must remain slot 7");
+
+typedef HRESULT (WINAPI *D3D7EnumDevices_t)(
+    IDirect3D7 *, LPD3DENUMDEVICESCALLBACK7, void *);
+typedef HRESULT (WINAPI *D3D7CreateDevice_t)(
+    IDirect3D7 *, REFCLSID, IDirectDrawSurface7 *, IDirect3DDevice7 **);
+typedef HRESULT (WINAPI *D3D7CreateVertexBuffer_t)(
+    IDirect3D7 *, D3DVERTEXBUFFERDESC *, IDirect3DVertexBuffer7 **, DWORD);
+typedef HRESULT (WINAPI *D3D7EnumZBufferFormats_t)(
+    IDirect3D7 *, REFCLSID, LPD3DENUMPIXELFORMATSCALLBACK, void *);
+typedef HRESULT (WINAPI *D3D7EvictManagedTextures_t)(IDirect3D7 *);
+
+static D3D7EnumDevices_t d3d7_saved_EnumDevices;
+static D3D7CreateDevice_t d3d7_saved_CreateDevice;
+static D3D7CreateVertexBuffer_t d3d7_saved_CreateVertexBuffer;
+static D3D7EnumZBufferFormats_t d3d7_saved_EnumZBufferFormats;
+static D3D7EvictManagedTextures_t d3d7_saved_EvictManagedTextures;
+static BOOL d3d7_startup_patched;
+
+#define D3D7_FORWARD(name, declaration, arguments) \
+    static HRESULT WINAPI d3d7_##name##_hook declaration \
+    { \
+        HRESULT hr; \
+        ddraw_trace_enter("IDirect3D7::" #name); \
+        hr = d3d7_saved_##name arguments; \
+        ddraw_trace_leave("IDirect3D7::" #name, hr); \
+        return hr; \
+    }
+
+D3D7_FORWARD(EnumDevices,
+             (IDirect3D7 *iface, LPD3DENUMDEVICESCALLBACK7 callback,
+              void *context),
+             (iface, callback, context))
+D3D7_FORWARD(CreateDevice,
+             (IDirect3D7 *iface, REFCLSID iid,
+              IDirectDrawSurface7 *surface, IDirect3DDevice7 **device),
+             (iface, iid, surface, device))
+D3D7_FORWARD(CreateVertexBuffer,
+             (IDirect3D7 *iface, D3DVERTEXBUFFERDESC *desc,
+              IDirect3DVertexBuffer7 **buffer, DWORD flags),
+             (iface, desc, buffer, flags))
+D3D7_FORWARD(EnumZBufferFormats,
+             (IDirect3D7 *iface, REFCLSID iid,
+              LPD3DENUMPIXELFORMATSCALLBACK callback, void *context),
+             (iface, iid, callback, context))
+D3D7_FORWARD(EvictManagedTextures,
+             (IDirect3D7 *iface), (iface))
+
+#undef D3D7_FORWARD
+
+static void patch_d3d7_startup_methods(IDirect3D7 *object)
+{
+    void **vtbl;
+    DWORD old_protect;
+    if (d3d7_startup_patched || !object ||
+        IsBadReadPtr(object, sizeof(void *))) return;
+    vtbl = *(void ***)object;
+    if (IsBadReadPtr(vtbl, 8u * sizeof(void *)) ||
+        !VirtualProtect(vtbl, 8u * sizeof(void *), PAGE_READWRITE,
+                        &old_protect)) {
+        proxy_log_file("MVP_D3D7 startup method patch FAILED");
+        return;
+    }
+    d3d7_saved_EnumDevices = (D3D7EnumDevices_t)vtbl[3];
+    d3d7_saved_CreateDevice = (D3D7CreateDevice_t)vtbl[4];
+    d3d7_saved_CreateVertexBuffer = (D3D7CreateVertexBuffer_t)vtbl[5];
+    d3d7_saved_EnumZBufferFormats = (D3D7EnumZBufferFormats_t)vtbl[6];
+    d3d7_saved_EvictManagedTextures = (D3D7EvictManagedTextures_t)vtbl[7];
+    vtbl[3] = (void *)d3d7_EnumDevices_hook;
+    vtbl[4] = (void *)d3d7_CreateDevice_hook;
+    vtbl[5] = (void *)d3d7_CreateVertexBuffer_hook;
+    vtbl[6] = (void *)d3d7_EnumZBufferFormats_hook;
+    vtbl[7] = (void *)d3d7_EvictManagedTextures_hook;
+    VirtualProtect(vtbl, 8u * sizeof(void *), old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), vtbl, 8u * sizeof(void *));
+    d3d7_startup_patched = TRUE;
+    proxy_log_file("MVP_D3D7 startup methods traced");
 }
 
 #define DDRAW_PIXEL_CALLSITE_LIMIT 8
