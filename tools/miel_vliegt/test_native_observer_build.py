@@ -134,6 +134,11 @@ class NativeObserverBuildTest(unittest.TestCase):
             "_set_display_mode_stub@24",
         ):
             self.assertIn(symbol, symbols)
+        self.assertIn("IDirect3D7::EnumZBufferFormats-request", source)
+        self.assertIn("EnumZBufferFormats-callback ordinal=%u", source)
+        self.assertIn("format->dwZBufferBitDepth", source)
+        self.assertIn("format->dwStencilBitDepth", source)
+        self.assertIn("result = state->callback(format, state->context)", source)
         self.assertIn("vtbl[0] = (void *)ddraw_QI_hook", source)
         self.assertIn("MVP_QI result hr=0x%08X output=%p object=%p", source)
         self.assertIn("memcmp(riid, &miel_iid_idirect3d7", source)

@@ -1122,14 +1122,69 @@ D3D7_FORWARD(CreateVertexBuffer,
              (IDirect3D7 *iface, D3DVERTEXBUFFERDESC *desc,
               IDirect3DVertexBuffer7 **buffer, DWORD flags),
              (iface, desc, buffer, flags))
-D3D7_FORWARD(EnumZBufferFormats,
-             (IDirect3D7 *iface, REFCLSID iid,
-              LPD3DENUMPIXELFORMATSCALLBACK callback, void *context),
-             (iface, iid, callback, context))
 D3D7_FORWARD(EvictManagedTextures,
              (IDirect3D7 *iface), (iface))
 
 #undef D3D7_FORWARD
+
+typedef struct D3D7ZFormatCallbackContext {
+    LPD3DENUMPIXELFORMATSCALLBACK callback;
+    void *context;
+    unsigned count;
+} D3D7ZFormatCallbackContext;
+
+static HRESULT CALLBACK d3d7_zformat_callback(
+    DDPIXELFORMAT *format, void *opaque)
+{
+    D3D7ZFormatCallbackContext *state =
+        (D3D7ZFormatCallbackContext *)opaque;
+    HRESULT result;
+    char detail[256];
+    if (format && !IsBadReadPtr(format, sizeof(*format))) {
+        wsprintfA(detail,
+                  "IDirect3D7::EnumZBufferFormats-callback ordinal=%u "
+                  "flags=0x%08lX z_bits=%lu stencil_bits=%lu "
+                  "z_mask=0x%08lX stencil_mask=0x%08lX",
+                  state->count, format->dwFlags,
+                  format->dwZBufferBitDepth, format->dwStencilBitDepth,
+                  format->dwZBitMask, format->dwStencilBitMask);
+        ddraw_trace_detail(detail);
+    }
+    result = state->callback(format, state->context);
+    wsprintfA(detail,
+              "IDirect3D7::EnumZBufferFormats-callback ordinal=%u "
+              "result=0x%08X",
+              state->count, (unsigned)result);
+    ddraw_trace_detail(detail);
+    state->count++;
+    return result;
+}
+
+static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
+    IDirect3D7 *iface, REFCLSID iid,
+    LPD3DENUMPIXELFORMATSCALLBACK callback, void *context)
+{
+    HRESULT hr;
+    D3D7ZFormatCallbackContext state = {callback, context, 0};
+    if (iid && !IsBadReadPtr(iid, sizeof(*iid))) {
+        char detail[192];
+        wsprintfA(detail,
+                  "IDirect3D7::EnumZBufferFormats-request "
+                  "iid=%08lX-%04X-%04X-%02X%02X-"
+                  "%02X%02X%02X%02X%02X%02X callback=%p context=%p",
+                  iid->Data1, iid->Data2, iid->Data3,
+                  iid->Data4[0], iid->Data4[1], iid->Data4[2],
+                  iid->Data4[3], iid->Data4[4], iid->Data4[5],
+                  iid->Data4[6], iid->Data4[7], callback, context);
+        ddraw_trace_detail(detail);
+    }
+    ddraw_trace_enter("IDirect3D7::EnumZBufferFormats");
+    hr = d3d7_saved_EnumZBufferFormats(
+        iface, iid, callback ? d3d7_zformat_callback : NULL,
+        callback ? &state : context);
+    ddraw_trace_leave("IDirect3D7::EnumZBufferFormats", hr);
+    return hr;
+}
 
 static void patch_d3d7_startup_methods(IDirect3D7 *object)
 {
