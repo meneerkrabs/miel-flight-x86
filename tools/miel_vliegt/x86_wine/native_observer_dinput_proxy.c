@@ -177,17 +177,24 @@ static void install_ddraw_hook(void);
 static DWORD WINAPI bootstrap_after_loader(LPVOID unused)
 {
     DWORD started = GetTickCount();
+    BOOL initialized = FALSE;
     (void)unused;
     for (;;) {
+        /* ddraw.dll loads during the game's display init, which happens AFTER
+           Cc.dll. So keep polling for ddraw even past observer init, otherwise
+           the probe never installs (the old loop returned on Cc.dll ready). */
         if (!ddraw_probe_installed && GetModuleHandleA("ddraw.dll")) {
             ddraw_probe_installed = TRUE;
             install_ddraw_hook();
         }
-        if (GetModuleHandleA("Cc.dll")) {
+        if (!initialized && GetModuleHandleA("Cc.dll")) {
             proxy_diagnostic("cc_ready_initialize");
-            return initialize_proxy() ? 0u : 1u;
+            if (!initialize_proxy()) return 1u;
+            initialized = TRUE;
         }
+        if (initialized && ddraw_probe_installed) return 0u;
         if ((DWORD)(GetTickCount() - started) >= BOOTSTRAP_TIMEOUT_MS) {
+            if (initialized) return 0u;
             proxy_diagnostic("cc_ready_timeout");
             break;
         }
