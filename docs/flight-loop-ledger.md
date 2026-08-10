@@ -148,3 +148,6 @@ Probe-loop returnde op Cc.dll-ready; ddraw.dll laadt later (display-init). Fix: 
 
 ## iter-26: SetDisplayMode->DD_OK FIX (7ebfd00, run 31370980217)
 Probe bewees: game roept DirectDrawCreate NIET (geen MVP_DDCREATE) → gebruikt DirectDrawCreateEx (DD7). Hook CreateEx + patch vtbl[21] (SetDisplayMode) → naked DD_OK-stub (ret 0x18). Stopt de DDERR-loop → DirectDraw-init voltooit → manager construeert? = echte fix 2e root cause. Wacht op run: gtDirect3d (DDERR weg?) + mode-probe (manager!=0?).
+
+## iter-27: DDERR-fix WERKT maar was RODE HARING (249c683, run 31372208687)
+iid bevestigd IID_IDirectDraw7 {15E65EC0-...}, SetDisplayMode patched→DD_OK, **DDERR count 0** (loop weg). MAAR manager nog 0, main-thread nog exact dezelfde ntdll-waits (0xd590/0xd800). gtDirect3d-loop = aparte render-thread. **Echte manager-stall = ntdll-kernel-wait die main-thread nooit uitkomt** (niet SetDisplayMode). Stack-walk toegevoegd aan emit_thread_backtrace (Esp+return-adressen in mullemeck.exe/gtSoftware) → benoemt de blokkerende game-call.
