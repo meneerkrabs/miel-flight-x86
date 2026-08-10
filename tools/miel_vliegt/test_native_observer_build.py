@@ -33,6 +33,8 @@ class NativeObserverBuildTest(unittest.TestCase):
             "TerminateProcess_hook",
             "NtTerminateProcess_hook",
             "RtlExitUserProcess_hook",
+            "GetVersionExA_hook",
+            "install_version_hook",
         ):
             self.assertNotIn(forbidden, source)
         self.assertIn(

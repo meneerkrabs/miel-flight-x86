@@ -31,42 +31,7 @@ static void proxy_log_file(const char *msg)
     }
 }
 
-/* === GetVersionEx hook: lie about OS version for old games === */
-typedef BOOL (WINAPI *GetVersionExA_t)(LPOSVERSIONINFOA);
-static GetVersionExA_t real_GetVersionExA = NULL;
-
-BOOL WINAPI GetVersionExA_hook(LPOSVERSIONINFOA lpVersionInformation) {
-    BOOL result = real_GetVersionExA(lpVersionInformation);
-    if (result && lpVersionInformation) {
-        /* Report as Windows XP SP3 (5.1.2600) */
-        lpVersionInformation->dwMajorVersion = 5;
-        lpVersionInformation->dwMinorVersion = 1;
-        lpVersionInformation->dwBuildNumber = 2600;
-        lpVersionInformation->dwPlatformId = VER_PLATFORM_WIN32_NT;
-    }
-    return result;
-}
-
 static void install_exit_hook(void);
-
-static void install_version_hook(void) {
-    HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
-    if (!kernel32) return;
-    real_GetVersionExA = (GetVersionExA_t)GetProcAddress(kernel32, "GetVersionExA");
-    if (!real_GetVersionExA) return;
-    
-    BYTE *target = (BYTE*)real_GetVersionExA;
-    DWORD old_protect;
-    if (!VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &old_protect)) return;
-    
-    LONG_PTR offset = (LONG_PTR)GetVersionExA_hook - (LONG_PTR)(target + 5);
-    target[0] = 0xE9;
-    *(LONG_PTR*)(target + 1) = offset;
-    
-    VirtualProtect(target, 5, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), target, 5);
-    proxy_log_file("GetVersionExA hook installed (XP SP3)");
-}
 
 static void proxy_diagnostic(const char *reason)
 {
@@ -721,7 +686,6 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         }
     }
     { HMODULE _exe = GetModuleHandleA(NULL); HMODULE _cc = GetModuleHandleA("Cc.dll"); fprintf(stderr, "MVP_BASE: exe=%p cc=%p\n", _exe, _cc); fflush(stderr); }
-    install_version_hook();
     /* Install diagnostics only. Process termination must remain observable by
        the launcher; suppressing a clean exit turns a useful failure into a
        ten-minute bootstrap timeout. */
