@@ -154,3 +154,6 @@ iid bevestigd IID_IDirectDraw7 {15E65EC0-...}, SetDisplayMode patched→DD_OK, *
 
 ## iter-28: ECHTE BLOCKER = DirectInput (run 31372208687 stack-walk)
 Main-thread 224 @ntdll+0xd590, call-chain volledig in **dinput.dll** (0x90b0←0x25e7←0xb46b). Game blokkeert in DirectInput-init headless (coop-acquire wacht op foreground/device). NIET ddraw (DDERR-fix was rode haring). Fix: DINPUT-proxy wrapt al DirectInputCreateA — extend om de blokkerende IDirectInputDevice-method (Acquire/GetDeviceState/SetCoopLevel) te stubben → non-blocking success → manager construeert.
+
+## iter-29: DirectInput Acquire->DI_OK FIX (54c99b9, run 31373752804)
+Stubt IDirectInputDevice::Acquire (idx 7, ret 0x4) via CreateDevice-wrap in de proxy. Fix voor de echte blocker (main-thread blokkeert in dinput Acquire headless). Als dit werkt → manager construeert → cascade login/scene. Wacht op mode-probe (manager!=0? ticks>0?).
