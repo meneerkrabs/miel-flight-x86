@@ -674,10 +674,109 @@ static HRESULT WINAPI DirectDrawCreate_hook(void *lpGUID, void **lplpDD,
     return hr;
 }
 
+/* SetDisplayMode -> DD_OK stub. The game (gtSoftware) loops SetDisplayMode
+   forever because headless Wine returns DDERR_UNSUPPORTED; returning DD_OK(0)
+   makes it accept the mode and proceed to windowed rendering so the Manager
+   constructs. __stdcall COM method: this + 5 args (w,h,bpp,refresh,flags) for
+   IDirectDraw2/4/7 = 24 bytes = ret 0x18. (CreateEx always yields DD4/DD7,
+   whose SetDisplayMode is the 5-arg form at vtable index 21.) */
+static __attribute__((naked)) void set_display_mode_stub(void)
+{
+    __asm__ __volatile__("xorl %eax, %eax\n\tret $0x18\n");
+}
+
+static BOOL ddraw_sdm_patched = FALSE;
+static unsigned char *ddraw_ex_trampoline = NULL;
+typedef HRESULT(WINAPI *DirectDrawCreateEx_t)(void *lpGUID, void **lplpDD,
+                                              const void *iid, void *pUnkOuter);
+
+/* Patch the SetDisplayMode slot (vtable index 21) of a created DirectDraw
+   object to the DD_OK stub, VirtualProtect-guarded, once. */
+static void patch_setdisplaymode(void *obj)
+{
+    if (ddraw_sdm_patched || !obj || IsBadReadPtr(obj, sizeof(void *))) return;
+    {
+        void **vtbl = *(void ***)obj;
+        DWORD op;
+        char b[128];
+        wsprintfA(b, "MVP_DDEX obj=%p vtbl=%p SetDisplayMode[21]=%p",
+                  obj, vtbl, vtbl[21]);
+        proxy_log_file(b);
+        if (!IsBadReadPtr(&vtbl[21], sizeof(void *)) &&
+            VirtualProtect(&vtbl[21], sizeof(void *), PAGE_READWRITE, &op)) {
+            vtbl[21] = (void *)set_display_mode_stub;
+            VirtualProtect(&vtbl[21], sizeof(void *), op, &op);
+            FlushInstructionCache(GetCurrentProcess(), &vtbl[21],
+                                  sizeof(void *));
+            ddraw_sdm_patched = TRUE;
+            proxy_log_file("MVP_DDEX SetDisplayMode patched -> DD_OK");
+        } else {
+            proxy_log_file("MVP_DDEX SetDisplayMode patch FAILED");
+        }
+    }
+}
+
+/* DirectDrawCreateEx hook: gtSoftware creates its DirectDraw via CreateEx
+   (returns IDirectDraw7), not DirectDrawCreate — so this is where we patch. */
+static HRESULT WINAPI DirectDrawCreateEx_hook(void *lpGUID, void **lplpDD,
+                                              const void *iid, void *pUnkOuter)
+{
+    proxy_log_file("MVP_DDEX enter");
+    HRESULT hr = ((DirectDrawCreateEx_t)(void *)ddraw_ex_trampoline)(
+        lpGUID, lplpDD, iid, pUnkOuter);
+    if (iid && !IsBadReadPtr(iid, 16)) {
+        const unsigned char *g = (const unsigned char *)iid;
+        char b[128];
+        wsprintfA(b, "MVP_DDEX iid=%02X%02X%02X%02X-%02X%02X-%02X%02X-"
+                  "%02X%02X-%02X%02X%02X%02X%02X%02X",
+                  g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                  g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
+        proxy_log_file(b);
+    }
+    if (SUCCEEDED(hr) && lplpDD && *lplpDD) patch_setdisplaymode(*lplpDD);
+    return hr;
+}
+
+/* Build an inline trampoline for `real` (5 copied bytes + JMP to real+5) and
+   patch real -> hook. Returns the trampoline, or NULL on unsafe prologue. */
+static unsigned char *install_export_trampoline(unsigned char *real,
+                                                void *hook, const char *label)
+{
+    unsigned char c0 = real[0];
+    unsigned char *tramp;
+    LONG_PTR back;
+    if (c0 == 0xE8 || c0 == 0xE9 || c0 == 0xEB || c0 == 0x9A ||
+        (c0 >= 0x70 && c0 <= 0x7F) || (c0 >= 0xE0 && c0 <= 0xE3) ||
+        (c0 == 0x0F && !IsBadReadPtr(real + 1, 1) &&
+         real[1] >= 0x80 && real[1] <= 0x8F)) {
+        proxy_log_file("MVP_DDEX ABORT: unsafe prologue");
+        return NULL;
+    }
+    tramp = (unsigned char *)VirtualAlloc(NULL, 16, MEM_COMMIT | MEM_RESERVE,
+                                          PAGE_EXECUTE_READWRITE);
+    if (!tramp) return NULL;
+    memcpy(tramp, real, 5);
+    back = (LONG_PTR)(real + 5) - (LONG_PTR)(tramp + 10);
+    tramp[5] = 0xE9;
+    *(LONG_PTR *)(tramp + 6) = back;
+    patch_jmp(real, hook, label);
+    return tramp;
+}
+
 static void install_ddraw_hook(void)
 {
     HMODULE ddraw = GetModuleHandleA("ddraw.dll");
     if (!ddraw) return;
+    /* gtSoftware uses DirectDrawCreateEx (DD7) — hook it and patch
+       SetDisplayMode -> DD_OK directly. */
+    {
+        FARPROC ex = GetProcAddress(ddraw, "DirectDrawCreateEx");
+        if (ex && !ddraw_ex_trampoline) {
+            ddraw_ex_trampoline = install_export_trampoline(
+                (unsigned char *)ex, (void *)DirectDrawCreateEx_hook,
+                "DirectDrawCreateEx");
+        }
+    }
     FARPROC proc = GetProcAddress(ddraw, "DirectDrawCreate");
     if (!proc) {
         proxy_log_file("MVP_DDRAW DirectDrawCreate not found");
