@@ -1133,6 +1133,8 @@ typedef struct D3D7ZFormatCallbackContext {
     unsigned count;
 } D3D7ZFormatCallbackContext;
 
+static void d3d7_trace_enumz_callsite(void *caller);
+
 static HRESULT CALLBACK d3d7_zformat_callback(
     DDPIXELFORMAT *format, void *opaque)
 {
@@ -1165,6 +1167,7 @@ static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
     LPD3DENUMPIXELFORMATSCALLBACK callback, void *context)
 {
     HRESULT hr;
+    void *caller = __builtin_return_address(0);
     D3D7ZFormatCallbackContext state = {callback, context, 0};
     if (iid && !IsBadReadPtr(iid, sizeof(*iid))) {
         char detail[192];
@@ -1183,6 +1186,15 @@ static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
         iface, iid, callback ? d3d7_zformat_callback : NULL,
         callback ? &state : context);
     ddraw_trace_leave("IDirect3D7::EnumZBufferFormats", hr);
+    {
+        char detail[160];
+        wsprintfA(detail,
+                  "IDirect3D7::EnumZBufferFormats-result hr=0x%08X "
+                  "callbacks=%u",
+                  (unsigned)hr, state.count);
+        ddraw_trace_detail(detail);
+    }
+    d3d7_trace_enumz_callsite(caller);
     return hr;
 }
 
@@ -1251,6 +1263,49 @@ static void ddraw_trace_pixel_callsite(void *caller)
         wsprintfA(
             detail,
             "Surface7::GetPixelFormat-caller-code chunk=%u start=%p bytes=%s",
+            chunk, chunk_start, bytes);
+        ddraw_trace_detail(detail);
+    }
+}
+
+#define D3D7_ENUMZ_CALLSITE_LIMIT 8
+#define D3D7_ENUMZ_CALLSITE_CODE_CHUNKS 4
+static void *d3d7_enumz_callsites[D3D7_ENUMZ_CALLSITE_LIMIT];
+static unsigned d3d7_enumz_callsite_count;
+
+static void d3d7_trace_enumz_callsite(void *caller)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    unsigned index;
+    char where[MAX_PATH + 32];
+    char detail[320];
+    BYTE *code;
+    char bytes[129];
+    unsigned chunk;
+    if (!caller) return;
+    for (index = 0; index < d3d7_enumz_callsite_count; index++) {
+        if (d3d7_enumz_callsites[index] == caller) return;
+    }
+    if (d3d7_enumz_callsite_count >= D3D7_ENUMZ_CALLSITE_LIMIT) return;
+    d3d7_enumz_callsites[d3d7_enumz_callsite_count++] = caller;
+    describe_address(caller, where, sizeof(where));
+    wsprintfA(detail,
+              "IDirect3D7::EnumZBufferFormats-caller return=%p where=%s",
+              caller, where);
+    ddraw_trace_detail(detail);
+    code = (BYTE *)caller - 16;
+    for (chunk = 0; chunk < D3D7_ENUMZ_CALLSITE_CODE_CHUNKS; chunk++) {
+        BYTE *chunk_start = code + chunk * 64u;
+        if (IsBadReadPtr(chunk_start, 64u)) break;
+        for (index = 0; index < 64u; index++) {
+            bytes[index * 2] = hex[chunk_start[index] >> 4];
+            bytes[index * 2 + 1] = hex[chunk_start[index] & 0x0Fu];
+        }
+        bytes[128] = '\0';
+        wsprintfA(
+            detail,
+            "IDirect3D7::EnumZBufferFormats-caller-code "
+            "chunk=%u start=%p bytes=%s",
             chunk, chunk_start, bytes);
         ddraw_trace_detail(detail);
     }
