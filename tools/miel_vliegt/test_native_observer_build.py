@@ -133,6 +133,48 @@ class NativeObserverBuildTest(unittest.TestCase):
             "_set_display_mode_stub@24",
         ):
             self.assertIn(symbol, symbols)
+        for method, slot in (
+            ("Release", 2),
+            ("AddAttachedSurface", 3),
+            ("GetAttachedSurface", 12),
+            ("GetCaps", 14),
+            ("GetDC", 17),
+            ("GetPixelFormat", 21),
+            ("GetSurfaceDesc", 22),
+            ("IsLost", 24),
+            ("Lock", 25),
+            ("Restore", 27),
+            ("SetClipper", 28),
+            ("SetPalette", 31),
+            ("Unlock", 32),
+        ):
+            self.assertIn(f"vtbl[{slot}] = (void *)dds_{method}_hook", source)
+        self.assertIn('ddraw_trace_enter("Surface7::" #name)', source)
+        self.assertIn('ddraw_trace_leave("Surface7::" #name, hr)', source)
+        self.assertIn('ddraw_trace_leave_ulong("Surface7::Release", references)',
+                      source)
+        for symbol in (
+            "_dds_Release_hook@4",
+            "_dds_AddAttachedSurface_hook@8",
+            "_dds_GetAttachedSurface_hook@12",
+            "_dds_GetCaps_hook@8",
+            "_dds_GetDC_hook@8",
+            "_dds_GetPixelFormat_hook@8",
+            "_dds_GetSurfaceDesc_hook@8",
+            "_dds_IsLost_hook@4",
+            "_dds_Lock_hook@20",
+            "_dds_Restore_hook@4",
+            "_dds_SetClipper_hook@8",
+            "_dds_SetPalette_hook@8",
+            "_dds_Unlock_hook@8",
+        ):
+            self.assertIn(symbol, symbols)
+        create_surface = source[
+            source.index("static HRESULT WINAPI ddraw_CreateSurface_hook"):
+            source.index("static HRESULT WINAPI ddraw_EnumDisplayModes_hook")
+        ]
+        self.assertIn("patch_ddraw_surface_startup_methods(*surface)",
+                      create_surface)
 
     def _proxy_object_symbols(self):
         source = (

@@ -314,6 +314,19 @@ _Static_assert(offsetof(IDirectDraw7Vtbl, SetCooperativeLevel) ==
                "IDirectDraw7::SetCooperativeLevel must remain slot 20");
 _Static_assert(offsetof(IDirectDraw7Vtbl, SetDisplayMode) == 21 * sizeof(void *),
                "IDirectDraw7::SetDisplayMode must remain slot 21");
+_Static_assert(offsetof(IDirectDrawSurface7Vtbl, AddAttachedSurface) ==
+               3 * sizeof(void *),
+               "IDirectDrawSurface7::AddAttachedSurface must remain slot 3");
+_Static_assert(offsetof(IDirectDrawSurface7Vtbl, GetAttachedSurface) ==
+               12 * sizeof(void *),
+               "IDirectDrawSurface7::GetAttachedSurface must remain slot 12");
+_Static_assert(offsetof(IDirectDrawSurface7Vtbl, GetSurfaceDesc) ==
+               22 * sizeof(void *),
+               "IDirectDrawSurface7::GetSurfaceDesc must remain slot 22");
+_Static_assert(offsetof(IDirectDrawSurface7Vtbl, Lock) == 25 * sizeof(void *),
+               "IDirectDrawSurface7::Lock must remain slot 25");
+_Static_assert(offsetof(IDirectDrawSurface7Vtbl, Unlock) == 32 * sizeof(void *),
+               "IDirectDrawSurface7::Unlock must remain slot 32");
 
 static BOOL fake_iid_equal(REFIID left, const GUID *right)
 {
@@ -1018,6 +1031,16 @@ static void ddraw_trace_leave(const char *method, HRESULT hr)
     proxy_log_file(line);
 }
 
+static void ddraw_trace_leave_ulong(const char *method, ULONG result)
+{
+    LONG sequence = InterlockedIncrement(&ddraw_trace_sequence);
+    char line[144];
+    if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;
+    wsprintfA(line, "MVP_DD7 sequence=%ld method=%s phase=leave result=%lu",
+              sequence, method, result);
+    proxy_log_file(line);
+}
+
 typedef HRESULT (WINAPI *DDrawCreateSurface_t)(
     IDirectDraw7 *, LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7 *, IUnknown *);
 typedef HRESULT (WINAPI *DDrawEnumDisplayModes_t)(
@@ -1036,6 +1059,7 @@ static DDrawGetCaps_t ddraw_saved_GetCaps;
 static DDrawGetDisplayMode_t ddraw_saved_GetDisplayMode;
 static DDrawRestoreDisplayMode_t ddraw_saved_RestoreDisplayMode;
 static DDrawSetCooperativeLevel_t ddraw_saved_SetCooperativeLevel;
+static void patch_ddraw_surface_startup_methods(IDirectDrawSurface7 *surface);
 
 static HRESULT WINAPI ddraw_CreateSurface_hook(
     IDirectDraw7 *iface, LPDDSURFACEDESC2 desc,
@@ -1045,6 +1069,9 @@ static HRESULT WINAPI ddraw_CreateSurface_hook(
     ddraw_trace_enter("CreateSurface");
     hr = ddraw_saved_CreateSurface(iface, desc, surface, outer);
     ddraw_trace_leave("CreateSurface", hr);
+    if (SUCCEEDED(hr) && surface && *surface) {
+        patch_ddraw_surface_startup_methods(*surface);
+    }
     return hr;
 }
 
@@ -1096,6 +1123,141 @@ static HRESULT WINAPI ddraw_SetCooperativeLevel_hook(
     hr = ddraw_saved_SetCooperativeLevel(iface, window, flags);
     ddraw_trace_leave("SetCooperativeLevel", hr);
     return hr;
+}
+
+typedef ULONG (WINAPI *DDSurfaceRelease_t)(IDirectDrawSurface7 *);
+typedef HRESULT (WINAPI *DDSurfaceAddAttachedSurface_t)(
+    IDirectDrawSurface7 *, LPDIRECTDRAWSURFACE7);
+typedef HRESULT (WINAPI *DDSurfaceGetAttachedSurface_t)(
+    IDirectDrawSurface7 *, LPDDSCAPS2, LPDIRECTDRAWSURFACE7 *);
+typedef HRESULT (WINAPI *DDSurfaceGetCaps_t)(
+    IDirectDrawSurface7 *, LPDDSCAPS2);
+typedef HRESULT (WINAPI *DDSurfaceGetDC_t)(IDirectDrawSurface7 *, HDC *);
+typedef HRESULT (WINAPI *DDSurfaceGetPixelFormat_t)(
+    IDirectDrawSurface7 *, LPDDPIXELFORMAT);
+typedef HRESULT (WINAPI *DDSurfaceGetSurfaceDesc_t)(
+    IDirectDrawSurface7 *, LPDDSURFACEDESC2);
+typedef HRESULT (WINAPI *DDSurfaceSimple_t)(IDirectDrawSurface7 *);
+typedef HRESULT (WINAPI *DDSurfaceLock_t)(
+    IDirectDrawSurface7 *, LPRECT, LPDDSURFACEDESC2, DWORD, HANDLE);
+typedef HRESULT (WINAPI *DDSurfaceSetClipper_t)(
+    IDirectDrawSurface7 *, LPDIRECTDRAWCLIPPER);
+typedef HRESULT (WINAPI *DDSurfaceSetPalette_t)(
+    IDirectDrawSurface7 *, LPDIRECTDRAWPALETTE);
+typedef HRESULT (WINAPI *DDSurfaceUnlock_t)(IDirectDrawSurface7 *, LPRECT);
+
+static DDSurfaceRelease_t dds_saved_Release;
+static DDSurfaceAddAttachedSurface_t dds_saved_AddAttachedSurface;
+static DDSurfaceGetAttachedSurface_t dds_saved_GetAttachedSurface;
+static DDSurfaceGetCaps_t dds_saved_GetCaps;
+static DDSurfaceGetDC_t dds_saved_GetDC;
+static DDSurfaceGetPixelFormat_t dds_saved_GetPixelFormat;
+static DDSurfaceGetSurfaceDesc_t dds_saved_GetSurfaceDesc;
+static DDSurfaceSimple_t dds_saved_IsLost;
+static DDSurfaceLock_t dds_saved_Lock;
+static DDSurfaceSimple_t dds_saved_Restore;
+static DDSurfaceSetClipper_t dds_saved_SetClipper;
+static DDSurfaceSetPalette_t dds_saved_SetPalette;
+static DDSurfaceUnlock_t dds_saved_Unlock;
+static BOOL ddraw_surface_startup_patched;
+
+#define DDS_FORWARD(name, declaration, arguments) \
+    static HRESULT WINAPI dds_##name##_hook declaration \
+    { \
+        HRESULT hr; \
+        ddraw_trace_enter("Surface7::" #name); \
+        hr = dds_saved_##name arguments; \
+        ddraw_trace_leave("Surface7::" #name, hr); \
+        return hr; \
+    }
+
+DDS_FORWARD(AddAttachedSurface,
+            (IDirectDrawSurface7 *iface, LPDIRECTDRAWSURFACE7 attached),
+            (iface, attached))
+DDS_FORWARD(GetAttachedSurface,
+            (IDirectDrawSurface7 *iface, LPDDSCAPS2 caps,
+             LPDIRECTDRAWSURFACE7 *attached),
+            (iface, caps, attached))
+DDS_FORWARD(GetCaps,
+            (IDirectDrawSurface7 *iface, LPDDSCAPS2 caps), (iface, caps))
+DDS_FORWARD(GetDC,
+            (IDirectDrawSurface7 *iface, HDC *dc), (iface, dc))
+DDS_FORWARD(GetPixelFormat,
+            (IDirectDrawSurface7 *iface, LPDDPIXELFORMAT format),
+            (iface, format))
+DDS_FORWARD(GetSurfaceDesc,
+            (IDirectDrawSurface7 *iface, LPDDSURFACEDESC2 desc),
+            (iface, desc))
+DDS_FORWARD(IsLost, (IDirectDrawSurface7 *iface), (iface))
+DDS_FORWARD(Lock,
+            (IDirectDrawSurface7 *iface, LPRECT rect,
+             LPDDSURFACEDESC2 desc, DWORD flags, HANDLE event),
+            (iface, rect, desc, flags, event))
+DDS_FORWARD(Restore, (IDirectDrawSurface7 *iface), (iface))
+DDS_FORWARD(SetClipper,
+            (IDirectDrawSurface7 *iface, LPDIRECTDRAWCLIPPER clipper),
+            (iface, clipper))
+DDS_FORWARD(SetPalette,
+            (IDirectDrawSurface7 *iface, LPDIRECTDRAWPALETTE palette),
+            (iface, palette))
+DDS_FORWARD(Unlock,
+            (IDirectDrawSurface7 *iface, LPRECT rect), (iface, rect))
+
+#undef DDS_FORWARD
+
+static ULONG WINAPI dds_Release_hook(IDirectDrawSurface7 *iface)
+{
+    ULONG references;
+    ddraw_trace_enter("Surface7::Release");
+    references = dds_saved_Release(iface);
+    ddraw_trace_leave_ulong("Surface7::Release", references);
+    return references;
+}
+
+static void patch_ddraw_surface_startup_methods(IDirectDrawSurface7 *surface)
+{
+    void **vtbl;
+    DWORD old_protect;
+    if (ddraw_surface_startup_patched || !surface ||
+        IsBadReadPtr(surface, sizeof(void *))) return;
+    vtbl = *(void ***)surface;
+    if (IsBadReadPtr(vtbl, 33u * sizeof(void *)) ||
+        !VirtualProtect(vtbl, 33u * sizeof(void *), PAGE_READWRITE,
+                        &old_protect)) {
+        proxy_log_file("MVP_DDS7 startup method patch FAILED");
+        return;
+    }
+    dds_saved_Release = (DDSurfaceRelease_t)vtbl[2];
+    dds_saved_AddAttachedSurface = (DDSurfaceAddAttachedSurface_t)vtbl[3];
+    dds_saved_GetAttachedSurface = (DDSurfaceGetAttachedSurface_t)vtbl[12];
+    dds_saved_GetCaps = (DDSurfaceGetCaps_t)vtbl[14];
+    dds_saved_GetDC = (DDSurfaceGetDC_t)vtbl[17];
+    dds_saved_GetPixelFormat = (DDSurfaceGetPixelFormat_t)vtbl[21];
+    dds_saved_GetSurfaceDesc = (DDSurfaceGetSurfaceDesc_t)vtbl[22];
+    dds_saved_IsLost = (DDSurfaceSimple_t)vtbl[24];
+    dds_saved_Lock = (DDSurfaceLock_t)vtbl[25];
+    dds_saved_Restore = (DDSurfaceSimple_t)vtbl[27];
+    dds_saved_SetClipper = (DDSurfaceSetClipper_t)vtbl[28];
+    dds_saved_SetPalette = (DDSurfaceSetPalette_t)vtbl[31];
+    dds_saved_Unlock = (DDSurfaceUnlock_t)vtbl[32];
+    vtbl[2] = (void *)dds_Release_hook;
+    vtbl[3] = (void *)dds_AddAttachedSurface_hook;
+    vtbl[12] = (void *)dds_GetAttachedSurface_hook;
+    vtbl[14] = (void *)dds_GetCaps_hook;
+    vtbl[17] = (void *)dds_GetDC_hook;
+    vtbl[21] = (void *)dds_GetPixelFormat_hook;
+    vtbl[22] = (void *)dds_GetSurfaceDesc_hook;
+    vtbl[24] = (void *)dds_IsLost_hook;
+    vtbl[25] = (void *)dds_Lock_hook;
+    vtbl[27] = (void *)dds_Restore_hook;
+    vtbl[28] = (void *)dds_SetClipper_hook;
+    vtbl[31] = (void *)dds_SetPalette_hook;
+    vtbl[32] = (void *)dds_Unlock_hook;
+    VirtualProtect(vtbl, 33u * sizeof(void *), old_protect, &old_protect);
+    FlushInstructionCache(
+        GetCurrentProcess(), vtbl, 33u * sizeof(void *));
+    ddraw_surface_startup_patched = TRUE;
+    proxy_log_file("MVP_DDS7 startup methods traced");
 }
 
 /* SetDisplayMode -> DD_OK adapter. The game (gtSoftware) loops SetDisplayMode
