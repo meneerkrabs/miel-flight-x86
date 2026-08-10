@@ -867,6 +867,20 @@ class NativeObserverBuildTest(unittest.TestCase):
             self.assertIn(artifact, identity_receipt)
         self.assertIn("/out/native-observer-build.sha256", identity_receipt)
 
+    def test_x86_oracle_preserves_the_exact_proxy_link_map(self):
+        workflow = (
+            build.ROOT / ".github/workflows/native-flight-x86-suite.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("-Map,/opt/miel/DINPUT.map", workflow)
+        self.assertIn("objdump -h -t /opt/miel/DINPUT.dll", workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertIn(
+            "output/build-diagnostics/DINPUT.map", workflow,
+        )
+        self.assertIn(
+            "output/build-diagnostics/DINPUT.symbols", workflow,
+        )
+
     @unittest.skipUnless(
         shutil.which("i686-w64-mingw32-gcc") and
         shutil.which("i686-w64-mingw32-objdump"),

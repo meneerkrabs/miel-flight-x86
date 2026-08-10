@@ -186,3 +186,20 @@ COM-entry met een monotone sequence. Polling (`GetDeviceState`) kan de log niet
 volschrijven. De volgende CI-run moet exact aantonen welke fake methode als
 laatste wordt aangeroepen; pas daarna volgt een gedragswijziging. Geen nieuwe
 stubhypothese zonder die call-path-receipt.
+
+## iter-33: publieke fake-ABI voltooit tot en met EnumDevices (run 31390525346)
+De begrensde COM-telemetrie bewijst de normale hoofdreeks exact: eerst
+`GetDeviceStatus`, daarna `CreateDevice`, `SetDataFormat`,
+`SetCooperativeLevel`, `SetProperty`, `Acquire`, een tweede deviceconstructie
+en ten slotte `EnumDevices`. Pas bij timeout-cleanup volgen `Unacquire` en de
+twee `Release`-calls. De adapter hangt dus niet in een publieke vtablemethode;
+alle calls tot en met `Acquire` keren terug. De vier mode-probes blijven wel
+`application=9782080`, `manager=0`, `manager_ticks=0`.
+
+De resterende stackregels `dinput.dll+0x9650/+0x2b0d/+0xb7f8` zijn zonder de
+exacte CI-linklayout niet verantwoord aan bronfuncties te koppelen. De x86-run
+publiceert daarom voortaan de linker-map en objdump-symbooltabel van precies
+de geladen proxy als builddiagnostiek. De volgende gedragswijziging volgt pas
+nadat die adressen tegen hetzelfde binaire bestand zijn opgelost; in het
+bijzonder wordt `EnumDevices` niet op basis van vermoeden van een callback
+voorzien.
