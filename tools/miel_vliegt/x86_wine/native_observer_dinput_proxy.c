@@ -219,21 +219,39 @@ static __attribute__((naked)) void di_acquire_stub(void)
     __asm__ __volatile__("xorl %eax, %eax\n\tret $0x4\n");
 }
 
+/* SetCooperativeLevel(this, hwnd, flags) = this+2 args = ret 0xC. Returning
+   DI_OK skips the window-manager cooperative-level handshake that blocks
+   headless (no foreground window). */
+static __attribute__((naked)) void di_setcooplevel_stub(void)
+{
+    __asm__ __volatile__("xorl %eax, %eax\n\tret $0xC\n");
+}
+
 static void *di_createdevice_saved = NULL;
+
+static void patch_one_slot(void **vtbl, int idx, void *stub)
+{
+    DWORD op;
+    if (!IsBadReadPtr(&vtbl[idx], sizeof(void *)) && vtbl[idx] != stub &&
+        VirtualProtect(&vtbl[idx], sizeof(void *), PAGE_READWRITE, &op)) {
+        vtbl[idx] = stub;
+        VirtualProtect(&vtbl[idx], sizeof(void *), op, &op);
+        FlushInstructionCache(GetCurrentProcess(), &vtbl[idx], sizeof(void *));
+    }
+}
 
 static void patch_device_acquire(void *dev)
 {
     if (!dev || IsBadReadPtr(dev, sizeof(void *))) return;
     {
         void **vtbl = *(void ***)dev;
-        DWORD op;
-        if (!IsBadReadPtr(&vtbl[7], sizeof(void *)) && vtbl[7] != di_acquire_stub &&
-            VirtualProtect(&vtbl[7], sizeof(void *), PAGE_READWRITE, &op)) {
-            vtbl[7] = (void *)di_acquire_stub;
-            VirtualProtect(&vtbl[7], sizeof(void *), op, &op);
-            FlushInstructionCache(GetCurrentProcess(), &vtbl[7], sizeof(void *));
-            proxy_log_file("MVP_DI Acquire patched -> DI_OK");
-        }
+        char b[96];
+        wsprintfA(b, "MVP_DI dev=%p Acquire[7]=%p GetState[9]=%p CoopLvl[13]=%p",
+                  dev, vtbl[7], vtbl[9], vtbl[13]);
+        proxy_log_file(b);
+        patch_one_slot(vtbl, 7, (void *)di_acquire_stub);        /* Acquire */
+        patch_one_slot(vtbl, 13, (void *)di_setcooplevel_stub);  /* SetCoopLvl */
+        proxy_log_file("MVP_DI Acquire + SetCooperativeLevel patched -> DI_OK");
     }
 }
 
