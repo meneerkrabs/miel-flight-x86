@@ -17,6 +17,7 @@ typedef DWORD (WINAPI *MielObserverInitializeFunction)(LPVOID);
 static HMODULE real_dinput;
 static DirectInputCreateAFunction real_direct_input_create;
 static volatile LONG initialization_state;
+static volatile LONG initialization_stage_seen[8];
 
 static void proxy_log_file(const char *msg)
 {
@@ -29,6 +30,19 @@ static void proxy_log_file(const char *msg)
         WriteFile(h, "\r\n", 2, &written, NULL);
         CloseHandle(h);
     }
+}
+
+static void proxy_initialization_stage(unsigned slot, const char *stage)
+{
+    char line[128];
+    if (slot >= sizeof(initialization_stage_seen) /
+                    sizeof(initialization_stage_seen[0]) ||
+        InterlockedCompareExchange(&initialization_stage_seen[slot], 1, 0) != 0) {
+        return;
+    }
+    wsprintfA(line, "MVP_INIT thread=%lu stage=%s",
+              (unsigned long)GetCurrentThreadId(), stage);
+    proxy_log_file(line);
 }
 
 static void install_exit_hook(void);
@@ -76,17 +90,25 @@ static BOOL initialize_proxy(void)
     const char *failure_reason = "initialize_unknown";
     LONG observed = InterlockedCompareExchange(&initialization_state, 1, 0);
     if (observed != 0) {
-        while ((observed = InterlockedCompareExchange(
-                    &initialization_state, 0, 0)) == 1) Sleep(1u);
+        /* DirectInputCreateA can race the post-loader bootstrap worker while
+           that worker owns Wine's loader-sensitive initialization. Never wait
+           for the worker here: the exported boot adapter can return its fake
+           object immediately, allowing the game/loader thread to make the
+           progress that the worker itself may require. */
         return observed == 2;
     }
     length = GetEnvironmentVariableA(
         "MIEL_REAL_DINPUT", dinput_path, sizeof(dinput_path));
     failure_reason = "real_dinput_environment";
     if (length == 0u || length >= sizeof(dinput_path)) goto failed;
+    proxy_initialization_stage(0u, "real_dinput_load_begin");
     real_dinput = LoadLibraryA(dinput_path);
     failure_reason = "real_dinput_load";
-    if (!real_dinput) goto failed;
+    if (!real_dinput) {
+        proxy_initialization_stage(1u, "real_dinput_load_failure");
+        goto failed;
+    }
+    proxy_initialization_stage(1u, "real_dinput_load_success");
     real_direct_input_create = (DirectInputCreateAFunction)(ULONG_PTR)
         GetProcAddress(real_dinput, "DirectInputCreateA");
     failure_reason = "real_dinput_export";
@@ -102,9 +124,11 @@ static BOOL initialize_proxy(void)
         "MIEL_OBSERVER_DLL", observer_path, sizeof(observer_path));
     failure_reason = "observer_environment";
     if (length == 0u || length >= sizeof(observer_path)) goto failed;
+    proxy_initialization_stage(2u, "observer_load_begin");
     observer_module = LoadLibraryA(observer_path);
     failure_reason = "observer_load";
     if (!observer_module) {
+        proxy_initialization_stage(3u, "observer_load_failure");
         /* LoadLibrary failed — capture WHY: GetLastError (126 =
            ERROR_MOD_NOT_FOUND missing dependency, 2 = file not found,
            193 = bad exe format) plus the path we tried, so the artifact
@@ -115,6 +139,7 @@ static BOOL initialize_proxy(void)
         if (ln > 0 && (size_t)ln < sizeof(lb)) proxy_log_file(lb);
         goto failed;
     }
+    proxy_initialization_stage(3u, "observer_load_success");
     observer_initialize = (MielObserverInitializeFunction)(ULONG_PTR)
         GetProcAddress(observer_module, "MielObserverInitialize");
     if (!observer_initialize) {
@@ -122,7 +147,16 @@ static BOOL initialize_proxy(void)
             GetProcAddress(observer_module, "MielObserverInitialize@4");
     }
     failure_reason = "observer_initialize";
-    if (!observer_initialize || observer_initialize(NULL) != 1u) goto failed;
+    if (!observer_initialize) {
+        proxy_initialization_stage(4u, "observer_export_missing");
+        goto failed;
+    }
+    proxy_initialization_stage(4u, "observer_initialize_begin");
+    if (observer_initialize(NULL) != 1u) {
+        proxy_initialization_stage(5u, "observer_initialize_failure");
+        goto failed;
+    }
+    proxy_initialization_stage(5u, "observer_initialize_success");
     proxy_diagnostic("observer_initialized");
     InterlockedExchange(&initialization_state, 2);
     return TRUE;

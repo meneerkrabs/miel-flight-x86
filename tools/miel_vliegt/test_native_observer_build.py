@@ -41,6 +41,40 @@ class NativeObserverBuildTest(unittest.TestCase):
             '"MVP_DDEX result hr=0x%08X output=%p object=%p"', source,
         )
 
+    def test_dinput_proxy_initialization_handoff_never_waits_for_owner(self):
+        source = (
+            build.ROOT / "tools/miel_vliegt/x86_wine/"
+            "native_observer_dinput_proxy.c"
+        ).read_text(encoding="utf-8")
+        initialize = source[
+            source.index("static BOOL initialize_proxy(void)"):
+            source.index("/* === ddraw.dll!DirectDrawCreate", source.index(
+                "static BOOL initialize_proxy(void)"))
+        ]
+        contention = initialize[
+            initialize.index("if (observed != 0)"):
+            initialize.index("length = GetEnvironmentVariableA")
+        ]
+        self.assertIn("return observed == 2;", contention)
+        self.assertNotRegex(contention, r"\bwhile\s*\(")
+        self.assertNotIn("Sleep", contention)
+        self.assertIn(
+            "InterlockedCompareExchange(&initialization_stage_seen[slot]",
+            source,
+        )
+        self.assertIn(
+            '"MVP_INIT thread=%lu stage=%s"', source,
+        )
+        for stage in (
+            "real_dinput_load_begin",
+            "real_dinput_load_success",
+            "observer_load_begin",
+            "observer_load_success",
+            "observer_initialize_begin",
+            "observer_initialize_success",
+        ):
+            self.assertIn(f'"{stage}"', initialize)
+
     def test_manifest_binds_artifact_toolchain_and_all_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self._root(directory)
