@@ -159,6 +159,13 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn("Surface7::GetAttachedSurface-result surface=%p", source)
         self.assertIn("Surface7::GetPixelFormat-result flags=0x%08lX", source)
         self.assertIn("format->dwRGBAlphaBitMask", source)
+        self.assertIn("SetDisplayMode-adapter request=%lux%lux%lu", source)
+        self.assertIn("adapter=%lux%lux%lu", source)
+        restore_display_mode = source[
+            source.index("static HRESULT WINAPI ddraw_RestoreDisplayMode_hook"):
+            source.index("static HRESULT WINAPI ddraw_SetCooperativeLevel_hook")
+        ]
+        self.assertIn("ddraw_adapter_bpp = 0", restore_display_mode)
         for symbol in (
             "_dds_Release_hook@4",
             "_dds_AddAttachedSurface_hook@8",

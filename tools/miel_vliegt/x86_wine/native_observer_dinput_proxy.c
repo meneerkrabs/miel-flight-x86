@@ -1068,6 +1068,11 @@ static DDrawGetCaps_t ddraw_saved_GetCaps;
 static DDrawGetDisplayMode_t ddraw_saved_GetDisplayMode;
 static DDrawRestoreDisplayMode_t ddraw_saved_RestoreDisplayMode;
 static DDrawSetCooperativeLevel_t ddraw_saved_SetCooperativeLevel;
+static DWORD ddraw_adapter_width;
+static DWORD ddraw_adapter_height;
+static DWORD ddraw_adapter_bpp;
+static DWORD ddraw_adapter_refresh;
+static DWORD ddraw_adapter_flags;
 static void patch_ddraw_surface_startup_methods(IDirectDrawSurface7 *surface);
 
 static HRESULT WINAPI ddraw_CreateSurface_hook(
@@ -1133,6 +1138,13 @@ static HRESULT WINAPI ddraw_RestoreDisplayMode_hook(IDirectDraw7 *iface)
     ddraw_trace_enter("RestoreDisplayMode");
     hr = ddraw_saved_RestoreDisplayMode(iface);
     ddraw_trace_leave("RestoreDisplayMode", hr);
+    if (SUCCEEDED(hr)) {
+        ddraw_adapter_width = 0;
+        ddraw_adapter_height = 0;
+        ddraw_adapter_bpp = 0;
+        ddraw_adapter_refresh = 0;
+        ddraw_adapter_flags = 0;
+    }
     return hr;
 }
 
@@ -1257,11 +1269,14 @@ static HRESULT WINAPI dds_GetPixelFormat_hook(
         wsprintfA(detail,
                   "Surface7::GetPixelFormat-result flags=0x%08lX "
                   "fourcc=0x%08lX bits=%lu r=0x%08lX g=0x%08lX "
-                  "b=0x%08lX a=0x%08lX",
+                  "b=0x%08lX a=0x%08lX adapter=%lux%lux%lu "
+                  "refresh=%lu mode_flags=0x%08lX",
                   format->dwFlags, format->dwFourCC,
                   format->dwRGBBitCount, format->dwRBitMask,
                   format->dwGBitMask, format->dwBBitMask,
-                  format->dwRGBAlphaBitMask);
+                  format->dwRGBAlphaBitMask, ddraw_adapter_width,
+                  ddraw_adapter_height, ddraw_adapter_bpp,
+                  ddraw_adapter_refresh, ddraw_adapter_flags);
         ddraw_trace_detail(detail);
     }
     return hr;
@@ -1331,8 +1346,18 @@ static HRESULT WINAPI set_display_mode_stub(
     IDirectDraw7 *iface, DWORD width, DWORD height, DWORD bpp,
     DWORD refresh, DWORD flags)
 {
-    (void)iface; (void)width; (void)height; (void)bpp;
-    (void)refresh; (void)flags;
+    char detail[192];
+    (void)iface;
+    ddraw_adapter_width = width;
+    ddraw_adapter_height = height;
+    ddraw_adapter_bpp = bpp;
+    ddraw_adapter_refresh = refresh;
+    ddraw_adapter_flags = flags;
+    wsprintfA(detail,
+              "SetDisplayMode-adapter request=%lux%lux%lu refresh=%lu "
+              "flags=0x%08lX",
+              width, height, bpp, refresh, flags);
+    ddraw_trace_detail(detail);
     ddraw_trace_enter("SetDisplayMode");
     ddraw_trace_leave("SetDisplayMode", DD_OK);
     return DD_OK;
