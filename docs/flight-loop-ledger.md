@@ -151,3 +151,6 @@ Probe bewees: game roept DirectDrawCreate NIET (geen MVP_DDCREATE) → gebruikt 
 
 ## iter-27: DDERR-fix WERKT maar was RODE HARING (249c683, run 31372208687)
 iid bevestigd IID_IDirectDraw7 {15E65EC0-...}, SetDisplayMode patched→DD_OK, **DDERR count 0** (loop weg). MAAR manager nog 0, main-thread nog exact dezelfde ntdll-waits (0xd590/0xd800). gtDirect3d-loop = aparte render-thread. **Echte manager-stall = ntdll-kernel-wait die main-thread nooit uitkomt** (niet SetDisplayMode). Stack-walk toegevoegd aan emit_thread_backtrace (Esp+return-adressen in mullemeck.exe/gtSoftware) → benoemt de blokkerende game-call.
+
+## iter-28: ECHTE BLOCKER = DirectInput (run 31372208687 stack-walk)
+Main-thread 224 @ntdll+0xd590, call-chain volledig in **dinput.dll** (0x90b0←0x25e7←0xb46b). Game blokkeert in DirectInput-init headless (coop-acquire wacht op foreground/device). NIET ddraw (DDERR-fix was rode haring). Fix: DINPUT-proxy wrapt al DirectInputCreateA — extend om de blokkerende IDirectInputDevice-method (Acquire/GetDeviceState/SetCoopLevel) te stubben → non-blocking success → manager construeert.
