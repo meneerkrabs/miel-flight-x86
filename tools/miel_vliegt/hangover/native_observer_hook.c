@@ -4899,7 +4899,7 @@ static void emit_thread_backtrace(void)
         do {
             HANDLE th;
             DWORD eip = 0u, esp = 0u;
-            DWORD stackbuf[256];
+            DWORD stackbuf[128];
             DWORD stackn = 0u;
             if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) {
                 continue;
@@ -4911,13 +4911,17 @@ static void emit_thread_backtrace(void)
                 ctx.ContextFlags = CONTEXT_CONTROL;
                 if (SuspendThread(th) != (DWORD)-1) {
                     if (GetThreadContext(th, &ctx)) { eip = ctx.Eip; esp = ctx.Esp; }
-                    /* Snapshot the stack while suspended (copy fast, resolve
-                       after resume — never log while suspended). */
-                    if (esp && !IsBadReadPtr((void *)(ULONG_PTR)esp,
-                                             sizeof(stackbuf))) {
-                        memcpy(stackbuf, (void *)(ULONG_PTR)esp,
-                               sizeof(stackbuf));
-                        stackn = 256u;
+                    /* Snapshot the stack while suspended via ReadProcessMemory
+                       (never faults — returns partial on an unmapped guard
+                       page, unlike a direct memcpy which crashed the observer
+                       at larger windows). Resolve after resume. */
+                    if (esp) {
+                        SIZE_T got = 0;
+                        if (ReadProcessMemory(GetCurrentProcess(),
+                                (void *)(ULONG_PTR)esp, stackbuf,
+                                sizeof(stackbuf), &got) && got >= sizeof(DWORD)) {
+                            stackn = (DWORD)(got / sizeof(DWORD));
+                        }
                     }
                     ResumeThread(th);
                 }
