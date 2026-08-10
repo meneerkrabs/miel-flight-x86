@@ -1008,7 +1008,7 @@ static HRESULT WINAPI DirectDrawCreate_hook(void *lpGUID, void **lplpDD,
    entry and HRESULT so a call that never returns is distinguishable from the
    first rejected operation. A shared budget prevents polling or retries from
    flooding the small proxy artifact. */
-#define DDRAW_TRACE_RECORD_LIMIT 128
+#define DDRAW_TRACE_RECORD_LIMIT 512
 static volatile LONG ddraw_trace_sequence;
 
 static void ddraw_trace_enter(const char *method)
@@ -1041,6 +1041,15 @@ static void ddraw_trace_leave_ulong(const char *method, ULONG result)
     proxy_log_file(line);
 }
 
+static void ddraw_trace_detail(const char *detail)
+{
+    LONG sequence = InterlockedIncrement(&ddraw_trace_sequence);
+    char line[320];
+    if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;
+    wsprintfA(line, "MVP_DD7 sequence=%ld detail=%s", sequence, detail);
+    proxy_log_file(line);
+}
+
 typedef HRESULT (WINAPI *DDrawCreateSurface_t)(
     IDirectDraw7 *, LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7 *, IUnknown *);
 typedef HRESULT (WINAPI *DDrawEnumDisplayModes_t)(
@@ -1066,6 +1075,18 @@ static HRESULT WINAPI ddraw_CreateSurface_hook(
     LPDIRECTDRAWSURFACE7 *surface, IUnknown *outer)
 {
     HRESULT hr;
+    if (desc && !IsBadReadPtr(desc, sizeof(*desc))) {
+        char detail[256];
+        wsprintfA(detail,
+                  "CreateSurface-request flags=0x%08lX width=%lu height=%lu "
+                  "backbuffers=%lu caps=0x%08lX caps2=0x%08lX "
+                  "pixel_flags=0x%08lX pixel_bits=%lu",
+                  desc->dwFlags, desc->dwWidth, desc->dwHeight,
+                  desc->dwBackBufferCount, desc->ddsCaps.dwCaps,
+                  desc->ddsCaps.dwCaps2, desc->ddpfPixelFormat.dwFlags,
+                  desc->ddpfPixelFormat.dwRGBBitCount);
+        ddraw_trace_detail(detail);
+    }
     ddraw_trace_enter("CreateSurface");
     hr = ddraw_saved_CreateSurface(iface, desc, surface, outer);
     ddraw_trace_leave("CreateSurface", hr);
@@ -1174,17 +1195,10 @@ static BOOL ddraw_surface_startup_patched;
 DDS_FORWARD(AddAttachedSurface,
             (IDirectDrawSurface7 *iface, LPDIRECTDRAWSURFACE7 attached),
             (iface, attached))
-DDS_FORWARD(GetAttachedSurface,
-            (IDirectDrawSurface7 *iface, LPDDSCAPS2 caps,
-             LPDIRECTDRAWSURFACE7 *attached),
-            (iface, caps, attached))
 DDS_FORWARD(GetCaps,
             (IDirectDrawSurface7 *iface, LPDDSCAPS2 caps), (iface, caps))
 DDS_FORWARD(GetDC,
             (IDirectDrawSurface7 *iface, HDC *dc), (iface, dc))
-DDS_FORWARD(GetPixelFormat,
-            (IDirectDrawSurface7 *iface, LPDDPIXELFORMAT format),
-            (iface, format))
 DDS_FORWARD(GetSurfaceDesc,
             (IDirectDrawSurface7 *iface, LPDDSURFACEDESC2 desc),
             (iface, desc))
@@ -1204,6 +1218,54 @@ DDS_FORWARD(Unlock,
             (IDirectDrawSurface7 *iface, LPRECT rect), (iface, rect))
 
 #undef DDS_FORWARD
+
+static HRESULT WINAPI dds_GetAttachedSurface_hook(
+    IDirectDrawSurface7 *iface, LPDDSCAPS2 caps,
+    LPDIRECTDRAWSURFACE7 *attached)
+{
+    HRESULT hr;
+    char detail[192];
+    if (caps && !IsBadReadPtr(caps, sizeof(*caps))) {
+        wsprintfA(detail,
+                  "Surface7::GetAttachedSurface-request caps=0x%08lX "
+                  "caps2=0x%08lX",
+                  caps->dwCaps, caps->dwCaps2);
+        ddraw_trace_detail(detail);
+    }
+    ddraw_trace_enter("Surface7::GetAttachedSurface");
+    hr = dds_saved_GetAttachedSurface(iface, caps, attached);
+    ddraw_trace_leave("Surface7::GetAttachedSurface", hr);
+    if (SUCCEEDED(hr) && attached &&
+        !IsBadReadPtr(attached, sizeof(*attached))) {
+        wsprintfA(detail, "Surface7::GetAttachedSurface-result surface=%p",
+                  *attached);
+        ddraw_trace_detail(detail);
+    }
+    return hr;
+}
+
+static HRESULT WINAPI dds_GetPixelFormat_hook(
+    IDirectDrawSurface7 *iface, LPDDPIXELFORMAT format)
+{
+    HRESULT hr;
+    ddraw_trace_enter("Surface7::GetPixelFormat");
+    hr = dds_saved_GetPixelFormat(iface, format);
+    ddraw_trace_leave("Surface7::GetPixelFormat", hr);
+    if (SUCCEEDED(hr) && format &&
+        !IsBadReadPtr(format, sizeof(*format))) {
+        char detail[256];
+        wsprintfA(detail,
+                  "Surface7::GetPixelFormat-result flags=0x%08lX "
+                  "fourcc=0x%08lX bits=%lu r=0x%08lX g=0x%08lX "
+                  "b=0x%08lX a=0x%08lX",
+                  format->dwFlags, format->dwFourCC,
+                  format->dwRGBBitCount, format->dwRBitMask,
+                  format->dwGBitMask, format->dwBBitMask,
+                  format->dwRGBAlphaBitMask);
+        ddraw_trace_detail(detail);
+    }
+    return hr;
+}
 
 static ULONG WINAPI dds_Release_hook(IDirectDrawSurface7 *iface)
 {

@@ -104,7 +104,7 @@ class NativeObserverBuildTest(unittest.TestCase):
             build.ROOT / "tools/miel_vliegt/x86_wine/"
             "native_observer_dinput_proxy.c"
         ).read_text(encoding="utf-8")
-        self.assertIn("#define DDRAW_TRACE_RECORD_LIMIT 128", source)
+        self.assertIn("#define DDRAW_TRACE_RECORD_LIMIT 512", source)
         self.assertIn("if (sequence > DDRAW_TRACE_RECORD_LIMIT) return;", source)
         for method, slot in (
             ("CreateSurface", 6),
@@ -153,6 +153,12 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn('ddraw_trace_leave("Surface7::" #name, hr)', source)
         self.assertIn('ddraw_trace_leave_ulong("Surface7::Release", references)',
                       source)
+        self.assertIn("CreateSurface-request flags=0x%08lX", source)
+        self.assertIn("Surface7::GetAttachedSurface-request caps=0x%08lX",
+                      source)
+        self.assertIn("Surface7::GetAttachedSurface-result surface=%p", source)
+        self.assertIn("Surface7::GetPixelFormat-result flags=0x%08lX", source)
+        self.assertIn("format->dwRGBAlphaBitMask", source)
         for symbol in (
             "_dds_Release_hook@4",
             "_dds_AddAttachedSurface_hook@8",
