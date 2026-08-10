@@ -1050,6 +1050,41 @@ static void ddraw_trace_detail(const char *detail)
     proxy_log_file(line);
 }
 
+#define DDRAW_PIXEL_CALLSITE_LIMIT 8
+static void *ddraw_pixel_callsites[DDRAW_PIXEL_CALLSITE_LIMIT];
+static unsigned ddraw_pixel_callsite_count;
+
+static void ddraw_trace_pixel_callsite(void *caller)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    unsigned index;
+    char where[MAX_PATH + 32];
+    char detail[320];
+    BYTE *code;
+    char bytes[129];
+    if (!caller) return;
+    for (index = 0; index < ddraw_pixel_callsite_count; index++) {
+        if (ddraw_pixel_callsites[index] == caller) return;
+    }
+    if (ddraw_pixel_callsite_count >= DDRAW_PIXEL_CALLSITE_LIMIT) return;
+    ddraw_pixel_callsites[ddraw_pixel_callsite_count++] = caller;
+    describe_address(caller, where, sizeof(where));
+    wsprintfA(detail, "Surface7::GetPixelFormat-caller return=%p where=%s",
+              caller, where);
+    ddraw_trace_detail(detail);
+    code = (BYTE *)caller - 16;
+    if (IsBadReadPtr(code, 64u)) return;
+    for (index = 0; index < 64u; index++) {
+        bytes[index * 2] = hex[code[index] >> 4];
+        bytes[index * 2 + 1] = hex[code[index] & 0x0Fu];
+    }
+    bytes[128] = '\0';
+    wsprintfA(detail,
+              "Surface7::GetPixelFormat-caller-code start=%p bytes=%s",
+              code, bytes);
+    ddraw_trace_detail(detail);
+}
+
 typedef HRESULT (WINAPI *DDrawCreateSurface_t)(
     IDirectDraw7 *, LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7 *, IUnknown *);
 typedef HRESULT (WINAPI *DDrawEnumDisplayModes_t)(
@@ -1260,6 +1295,7 @@ static HRESULT WINAPI dds_GetPixelFormat_hook(
     IDirectDrawSurface7 *iface, LPDDPIXELFORMAT format)
 {
     HRESULT hr;
+    void *caller = __builtin_return_address(0);
     ddraw_trace_enter("Surface7::GetPixelFormat");
     hr = dds_saved_GetPixelFormat(iface, format);
     ddraw_trace_leave("Surface7::GetPixelFormat", hr);
@@ -1279,6 +1315,7 @@ static HRESULT WINAPI dds_GetPixelFormat_hook(
                   ddraw_adapter_refresh, ddraw_adapter_flags);
         ddraw_trace_detail(detail);
     }
+    ddraw_trace_pixel_callsite(caller);
     return hr;
 }
 

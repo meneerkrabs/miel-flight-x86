@@ -161,6 +161,13 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn("format->dwRGBAlphaBitMask", source)
         self.assertIn("SetDisplayMode-adapter request=%lux%lux%lu", source)
         self.assertIn("adapter=%lux%lux%lu", source)
+        self.assertIn("#define DDRAW_PIXEL_CALLSITE_LIMIT 8", source)
+        self.assertIn("void *caller = __builtin_return_address(0)", source)
+        self.assertIn("Surface7::GetPixelFormat-caller return=%p where=%s",
+                      source)
+        self.assertIn("Surface7::GetPixelFormat-caller-code start=%p bytes=%s",
+                      source)
+        self.assertIn("ddraw_trace_pixel_callsite(caller)", source)
         restore_display_mode = source[
             source.index("static HRESULT WINAPI ddraw_RestoreDisplayMode_hook"):
             source.index("static HRESULT WINAPI ddraw_SetCooperativeLevel_hook")
