@@ -4899,7 +4899,7 @@ static void emit_thread_backtrace(void)
         do {
             HANDLE th;
             DWORD eip = 0u, esp = 0u;
-            DWORD stackbuf[64];
+            DWORD stackbuf[256];
             DWORD stackn = 0u;
             if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) {
                 continue;
@@ -4917,7 +4917,7 @@ static void emit_thread_backtrace(void)
                                              sizeof(stackbuf))) {
                         memcpy(stackbuf, (void *)(ULONG_PTR)esp,
                                sizeof(stackbuf));
-                        stackn = 64u;
+                        stackn = 256u;
                     }
                     ResumeThread(th);
                 }
@@ -4945,7 +4945,7 @@ static void emit_thread_backtrace(void)
                    syscall path. */
                 {
                     DWORD i, logged = 0u;
-                    for (i = 0u; i < stackn && logged < 8u; ++i) {
+                    for (i = 0u; i < stackn && logged < 16u; ++i) {
                         char fm[160], fl[224];
                         int fn;
                         if (!stable_module_identity(stackbuf[i], fm,
