@@ -4898,7 +4898,9 @@ static void emit_thread_backtrace(void)
     if (Thread32First(snap, &te)) {
         do {
             HANDLE th;
-            DWORD eip = 0u;
+            DWORD eip = 0u, esp = 0u;
+            DWORD stackbuf[64];
+            DWORD stackn = 0u;
             if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) {
                 continue;
             }
@@ -4908,7 +4910,15 @@ static void emit_thread_backtrace(void)
                 CONTEXT ctx;
                 ctx.ContextFlags = CONTEXT_CONTROL;
                 if (SuspendThread(th) != (DWORD)-1) {
-                    if (GetThreadContext(th, &ctx)) eip = ctx.Eip;
+                    if (GetThreadContext(th, &ctx)) { eip = ctx.Eip; esp = ctx.Esp; }
+                    /* Snapshot the stack while suspended (copy fast, resolve
+                       after resume — never log while suspended). */
+                    if (esp && !IsBadReadPtr((void *)(ULONG_PTR)esp,
+                                             sizeof(stackbuf))) {
+                        memcpy(stackbuf, (void *)(ULONG_PTR)esp,
+                               sizeof(stackbuf));
+                        stackn = 64u;
+                    }
                     ResumeThread(th);
                 }
                 CloseHandle(th);
@@ -4927,6 +4937,35 @@ static void emit_thread_backtrace(void)
                     (unsigned long)te.th32ThreadID, (unsigned long)eip, mod);
                 if (ml > 0 && (size_t)ml < sizeof(line)) {
                     append_record_checked(line, (DWORD)ml);
+                }
+                /* Stack-walk: log the first few return addresses that resolve
+                   into mullemeck.exe / gtSoftware.dll / Cc.dll — the game call
+                   chain that led into the ntdll wait (the real manager-stall).
+                   Skip system-DLL frames (ntdll/kernel*) which are just the
+                   syscall path. */
+                {
+                    DWORD i, logged = 0u;
+                    for (i = 0u; i < stackn && logged < 8u; ++i) {
+                        char fm[160], fl[224];
+                        int fn;
+                        if (!stable_module_identity(stackbuf[i], fm,
+                                                    sizeof(fm))) continue;
+                        if (strstr(fm, "ntdll") || strstr(fm, "kernel") ||
+                            strstr(fm, "win32u") || strstr(fm, "user32")) {
+                            continue;
+                        }
+                        fn = snprintf(fl, sizeof(fl),
+                            "MVD {\"schema\":1,"
+                            "\"protocol\":\"miel-vliegt-native-thread-frame\","
+                            "\"thread\":%lu,\"depth\":%lu,\"ret\":%lu,"
+                            "\"module\":\"%s\"}\r\n",
+                            (unsigned long)te.th32ThreadID,
+                            (unsigned long)i, (unsigned long)stackbuf[i], fm);
+                        if (fn > 0 && (size_t)fn < sizeof(fl)) {
+                            append_record_checked(fl, (DWORD)fn);
+                        }
+                        ++logged;
+                    }
                 }
             }
         } while (Thread32Next(snap, &te));
