@@ -205,6 +205,73 @@ static DWORD WINAPI bootstrap_after_loader(LPVOID unused)
     return 1u;
 }
 
+/* === DirectInput Acquire unblock ===
+   The game's MAIN thread blocks headless inside dinput.dll during startup
+   (stack-walk: parked in an ntdll wait with the call chain entirely in
+   dinput.dll) — IDirectInputDevice::Acquire waits on a foreground/focused
+   window that never exists headless, so the Manager never constructs. The
+   suite injects input via SendInput, so a real device acquire isn't needed:
+   stub Acquire (IDirectInputDevice vtable index 7, `this`-only = ret 0x4) to
+   return DI_OK(0) immediately. Reached by wrapping IDirectInput::CreateDevice
+   (vtable index 3) to patch each returned device's Acquire slot. */
+static __attribute__((naked)) void di_acquire_stub(void)
+{
+    __asm__ __volatile__("xorl %eax, %eax\n\tret $0x4\n");
+}
+
+static void *di_createdevice_saved = NULL;
+
+static void patch_device_acquire(void *dev)
+{
+    if (!dev || IsBadReadPtr(dev, sizeof(void *))) return;
+    {
+        void **vtbl = *(void ***)dev;
+        DWORD op;
+        if (!IsBadReadPtr(&vtbl[7], sizeof(void *)) && vtbl[7] != di_acquire_stub &&
+            VirtualProtect(&vtbl[7], sizeof(void *), PAGE_READWRITE, &op)) {
+            vtbl[7] = (void *)di_acquire_stub;
+            VirtualProtect(&vtbl[7], sizeof(void *), op, &op);
+            FlushInstructionCache(GetCurrentProcess(), &vtbl[7], sizeof(void *));
+            proxy_log_file("MVP_DI Acquire patched -> DI_OK");
+        }
+    }
+}
+
+typedef HRESULT(WINAPI *CreateDevice_t)(void *thisptr, const void *rguid,
+                                        void **lplpDev, void *outer);
+
+static HRESULT WINAPI di_CreateDevice_hook(void *thisptr, const void *rguid,
+                                           void **lplpDev, void *outer)
+{
+    HRESULT hr = ((CreateDevice_t)di_createdevice_saved)(thisptr, rguid,
+                                                         lplpDev, outer);
+    if (SUCCEEDED(hr) && lplpDev && *lplpDev) patch_device_acquire(*lplpDev);
+    return hr;
+}
+
+/* Patch an IDirectInput object's CreateDevice slot (index 3) so every device
+   it creates gets its Acquire stubbed. Shared vtable → patch once. */
+static void patch_directinput_createdevice(void *di)
+{
+    if (di_createdevice_saved || !di || IsBadReadPtr(di, sizeof(void *))) return;
+    {
+        void **vtbl = *(void ***)di;
+        DWORD op;
+        if (!IsBadReadPtr(&vtbl[3], sizeof(void *))) {
+            di_createdevice_saved = vtbl[3];
+            if (VirtualProtect(&vtbl[3], sizeof(void *), PAGE_READWRITE, &op)) {
+                vtbl[3] = (void *)di_CreateDevice_hook;
+                VirtualProtect(&vtbl[3], sizeof(void *), op, &op);
+                FlushInstructionCache(GetCurrentProcess(), &vtbl[3],
+                                      sizeof(void *));
+                proxy_log_file("MVP_DI CreateDevice hooked");
+            } else {
+                di_createdevice_saved = NULL;
+            }
+        }
+    }
+}
+
 __declspec(dllexport) HRESULT WINAPI DirectInputCreateA(
     HINSTANCE instance, DWORD version, void **direct_input, void *outer)
 {
@@ -212,8 +279,14 @@ __declspec(dllexport) HRESULT WINAPI DirectInputCreateA(
        loaded yet), still forward to the real DirectInputCreateA so the game
        doesn't crash. The bootstrap thread will retry observer initialization. */
     initialize_proxy();
-    if (real_direct_input_create)
-        return real_direct_input_create(instance, version, direct_input, outer);
+    if (real_direct_input_create) {
+        HRESULT hr = real_direct_input_create(instance, version, direct_input,
+                                              outer);
+        if (SUCCEEDED(hr) && direct_input && *direct_input) {
+            patch_directinput_createdevice(*direct_input);
+        }
+        return hr;
+    }
     return (HRESULT)0x80004005L;
 }
 
