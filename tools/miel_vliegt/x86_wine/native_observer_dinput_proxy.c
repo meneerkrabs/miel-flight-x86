@@ -940,6 +940,7 @@ typedef HRESULT(WINAPI *QueryInterface_t)(void *thisptr, const void *riid,
    the raw bytes in order yields the canonical GUID string form. */
 static HRESULT WINAPI ddraw_QI_hook(void *thisptr, const void *riid, void **ppv)
 {
+    HRESULT hr = (HRESULT)0x80004002L;
     if (riid && !IsBadReadPtr(riid, 16)) {
         const unsigned char *g = (const unsigned char *)riid;
         char b[128];
@@ -950,9 +951,17 @@ static HRESULT WINAPI ddraw_QI_hook(void *thisptr, const void *riid, void **ppv)
                    g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
         proxy_log_file(b);
     }
-    if (ddraw_saved_QI)
-        return ((QueryInterface_t)ddraw_saved_QI)(thisptr, riid, ppv);
-    return (HRESULT)0x80004002L; /* E_NOINTERFACE */
+    if (ddraw_saved_QI) {
+        hr = ((QueryInterface_t)ddraw_saved_QI)(thisptr, riid, ppv);
+    }
+    {
+        void *object = (ppv && !IsBadReadPtr(ppv, sizeof(*ppv))) ? *ppv : NULL;
+        char b[128];
+        wsprintfA(b, "MVP_QI result hr=0x%08X output=%p object=%p",
+                  (unsigned)hr, ppv, object);
+        proxy_log_file(b);
+    }
+    return hr;
 }
 
 /* DirectDrawCreate hook: call the real fn via the trampoline, then read back
@@ -1427,6 +1436,11 @@ static void patch_ddraw_startup_methods(void *obj)
         proxy_log_file(b);
         if (!IsBadReadPtr(vtbl, 22u * sizeof(void *)) &&
             VirtualProtect(vtbl, 22u * sizeof(void *), PAGE_READWRITE, &op)) {
+            if (!ddraw_qi_patched) {
+                ddraw_saved_QI = vtbl[0];
+                vtbl[0] = (void *)ddraw_QI_hook;
+                ddraw_qi_patched = TRUE;
+            }
             ddraw_saved_CreateSurface = (DDrawCreateSurface_t)vtbl[6];
             ddraw_saved_EnumDisplayModes = (DDrawEnumDisplayModes_t)vtbl[8];
             ddraw_saved_GetCaps = (DDrawGetCaps_t)vtbl[11];
@@ -1447,7 +1461,7 @@ static void patch_ddraw_startup_methods(void *obj)
                 GetCurrentProcess(), vtbl, 22u * sizeof(void *));
             ddraw_startup_patched = TRUE;
             proxy_log_file(
-                "MVP_DDEX startup methods traced; SetDisplayMode -> DD_OK");
+                "MVP_DDEX startup/QI methods traced; SetDisplayMode -> DD_OK");
         } else {
             proxy_log_file("MVP_DDEX startup method patch FAILED");
         }

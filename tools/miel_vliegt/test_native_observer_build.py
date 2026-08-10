@@ -124,6 +124,7 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn('ddraw_trace_leave("SetDisplayMode", DD_OK)', source)
         symbols = self._proxy_object_symbols()
         for symbol in (
+            "_ddraw_QI_hook@12",
             "_ddraw_CreateSurface_hook@16",
             "_ddraw_EnumDisplayModes_hook@20",
             "_ddraw_GetCaps_hook@12",
@@ -133,6 +134,8 @@ class NativeObserverBuildTest(unittest.TestCase):
             "_set_display_mode_stub@24",
         ):
             self.assertIn(symbol, symbols)
+        self.assertIn("vtbl[0] = (void *)ddraw_QI_hook", source)
+        self.assertIn("MVP_QI result hr=0x%08X output=%p object=%p", source)
         for method, slot in (
             ("Release", 2),
             ("AddAttachedSurface", 3),
