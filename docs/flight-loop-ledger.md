@@ -157,3 +157,6 @@ Main-thread 224 @ntdll+0xd590, call-chain volledig in **dinput.dll** (0x90b0←0
 
 ## iter-29: DirectInput Acquire->DI_OK FIX (54c99b9, run 31373752804)
 Stubt IDirectInputDevice::Acquire (idx 7, ret 0x4) via CreateDevice-wrap in de proxy. Fix voor de echte blocker (main-thread blokkeert in dinput Acquire headless). Als dit werkt → manager construeert → cascade login/scene. Wacht op mode-probe (manager!=0? ticks>0?).
+
+## iter-30: dinput-INTERNE wait bevestigd (run 31377887350, ReadProcessMemory-fix)
+Main-thread 224: shallow dinput (0x9310/0x2756/0xb4db) + diep wined3d (depth 87/93) + msvcrt. GEEN mullemeck.exe-frame (>512b diep). Acquire+SetCooperativeLevel stubs raakten de wait NIET → t is een **dinput-INTERNE event/device-wait** (wine dinput headless), niet een publieke vtable-method. GLM kan wine-internals niet. Opties: (a) fake IDirectInput (proxy geeft stub-device, breekt input-replay), (b) wine dinput config/env, (c) headless-dinput-limiet. Trager pacen; volgende = fake-device-experiment of wine-dinput-config.
