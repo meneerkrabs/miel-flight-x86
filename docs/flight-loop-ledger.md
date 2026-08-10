@@ -145,3 +145,6 @@ GLM bouwde de trampoline-hook (compile-clean, main-thread geverifieerd: inline-t
 
 ## iter-25: ddraw-probe installeerde niet → persistente poll-fix (009ad5e, run 31369702441)
 Probe-loop returnde op Cc.dll-ready; ddraw.dll laadt later (display-init). Fix: poll ddraw door ná observer-init. Run zou nu MVP_DDCREATE/MVP_QI-IID en vtable[21/22]-ptrs moeten loggen → interface → arg-count.
+
+## iter-26: SetDisplayMode->DD_OK FIX (7ebfd00, run 31370980217)
+Probe bewees: game roept DirectDrawCreate NIET (geen MVP_DDCREATE) → gebruikt DirectDrawCreateEx (DD7). Hook CreateEx + patch vtbl[21] (SetDisplayMode) → naked DD_OK-stub (ret 0x18). Stopt de DDERR-loop → DirectDraw-init voltooit → manager construeert? = echte fix 2e root cause. Wacht op run: gtDirect3d (DDERR weg?) + mode-probe (manager!=0?).
