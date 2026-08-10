@@ -1051,6 +1051,7 @@ static void ddraw_trace_detail(const char *detail)
 }
 
 #define DDRAW_PIXEL_CALLSITE_LIMIT 8
+#define DDRAW_PIXEL_CALLSITE_CODE_CHUNKS 4
 static void *ddraw_pixel_callsites[DDRAW_PIXEL_CALLSITE_LIMIT];
 static unsigned ddraw_pixel_callsite_count;
 
@@ -1062,6 +1063,7 @@ static void ddraw_trace_pixel_callsite(void *caller)
     char detail[320];
     BYTE *code;
     char bytes[129];
+    unsigned chunk;
     if (!caller) return;
     for (index = 0; index < ddraw_pixel_callsite_count; index++) {
         if (ddraw_pixel_callsites[index] == caller) return;
@@ -1073,16 +1075,20 @@ static void ddraw_trace_pixel_callsite(void *caller)
               caller, where);
     ddraw_trace_detail(detail);
     code = (BYTE *)caller - 16;
-    if (IsBadReadPtr(code, 64u)) return;
-    for (index = 0; index < 64u; index++) {
-        bytes[index * 2] = hex[code[index] >> 4];
-        bytes[index * 2 + 1] = hex[code[index] & 0x0Fu];
+    for (chunk = 0; chunk < DDRAW_PIXEL_CALLSITE_CODE_CHUNKS; chunk++) {
+        BYTE *chunk_start = code + chunk * 64u;
+        if (IsBadReadPtr(chunk_start, 64u)) break;
+        for (index = 0; index < 64u; index++) {
+            bytes[index * 2] = hex[chunk_start[index] >> 4];
+            bytes[index * 2 + 1] = hex[chunk_start[index] & 0x0Fu];
+        }
+        bytes[128] = '\0';
+        wsprintfA(
+            detail,
+            "Surface7::GetPixelFormat-caller-code chunk=%u start=%p bytes=%s",
+            chunk, chunk_start, bytes);
+        ddraw_trace_detail(detail);
     }
-    bytes[128] = '\0';
-    wsprintfA(detail,
-              "Surface7::GetPixelFormat-caller-code start=%p bytes=%s",
-              code, bytes);
-    ddraw_trace_detail(detail);
 }
 
 typedef HRESULT (WINAPI *DDrawCreateSurface_t)(
