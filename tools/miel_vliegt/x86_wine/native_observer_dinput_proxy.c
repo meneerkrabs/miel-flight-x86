@@ -232,6 +232,42 @@ typedef struct FakeDirectInputDevice {
 static const IDirectInputAVtbl fake_direct_input_vtbl;
 static const IDirectInputDeviceAVtbl fake_direct_input_device_vtbl;
 
+/* Record each COM entry point once. The sequence number turns a headless CI
+   timeout into a bounded call-path receipt without flooding polling methods. */
+enum FakeDirectInputTraceSlot {
+    FAKE_DI_TRACE_QI, FAKE_DI_TRACE_ADDREF, FAKE_DI_TRACE_RELEASE,
+    FAKE_DI_TRACE_CREATE_DEVICE, FAKE_DI_TRACE_ENUM_DEVICES,
+    FAKE_DI_TRACE_GET_DEVICE_STATUS, FAKE_DI_TRACE_RUN_CONTROL_PANEL,
+    FAKE_DI_TRACE_INITIALIZE, FAKE_DEVICE_TRACE_QI,
+    FAKE_DEVICE_TRACE_ADDREF, FAKE_DEVICE_TRACE_RELEASE,
+    FAKE_DEVICE_TRACE_GET_CAPABILITIES, FAKE_DEVICE_TRACE_ENUM_OBJECTS,
+    FAKE_DEVICE_TRACE_GET_PROPERTY, FAKE_DEVICE_TRACE_SET_PROPERTY,
+    FAKE_DEVICE_TRACE_ACQUIRE, FAKE_DEVICE_TRACE_UNACQUIRE,
+    FAKE_DEVICE_TRACE_GET_STATE, FAKE_DEVICE_TRACE_GET_DATA,
+    FAKE_DEVICE_TRACE_SET_DATA_FORMAT, FAKE_DEVICE_TRACE_SET_EVENT,
+    FAKE_DEVICE_TRACE_SET_COOPERATIVE_LEVEL,
+    FAKE_DEVICE_TRACE_GET_OBJECT_INFO, FAKE_DEVICE_TRACE_GET_DEVICE_INFO,
+    FAKE_DEVICE_TRACE_DEVICE_RUN_CONTROL_PANEL,
+    FAKE_DEVICE_TRACE_INITIALIZE, FAKE_DI_TRACE_SLOT_COUNT
+};
+
+static volatile LONG fake_di_trace_seen[FAKE_DI_TRACE_SLOT_COUNT];
+static volatile LONG fake_di_trace_sequence;
+
+static void fake_di_trace_once(enum FakeDirectInputTraceSlot slot,
+                               const char *method)
+{
+    char line[160];
+    LONG sequence;
+    if (slot < 0 || slot >= FAKE_DI_TRACE_SLOT_COUNT) return;
+    if (InterlockedCompareExchange(&fake_di_trace_seen[slot], 1, 0) != 0) {
+        return;
+    }
+    sequence = InterlockedIncrement(&fake_di_trace_sequence);
+    wsprintfA(line, "MVP_DI call sequence=%ld method=%s", sequence, method);
+    proxy_log_file(line);
+}
+
 /* Local IID constants avoid adding a uuid-library link dependency to the
    proxy while keeping QueryInterface strict. */
 static const GUID fake_iid_iunknown = {
@@ -270,6 +306,7 @@ static BOOL fake_iid_equal(REFIID left, const GUID *right)
 static HRESULT WINAPI fake_di_QueryInterface(IDirectInputA *iface, REFIID iid,
                                               void **result)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_QI, "IDirectInputA::QueryInterface");
     if (!result) return E_POINTER;
     *result = NULL;
     if (!fake_iid_equal(iid, &fake_iid_iunknown) &&
@@ -283,12 +320,14 @@ static HRESULT WINAPI fake_di_QueryInterface(IDirectInputA *iface, REFIID iid,
 
 static ULONG WINAPI fake_di_AddRef(IDirectInputA *iface)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_ADDREF, "IDirectInputA::AddRef");
     FakeDirectInput *self = (FakeDirectInput *)iface;
     return (ULONG)InterlockedIncrement(&self->references);
 }
 
 static ULONG WINAPI fake_di_Release(IDirectInputA *iface)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_RELEASE, "IDirectInputA::Release");
     FakeDirectInput *self = (FakeDirectInput *)iface;
     LONG references = InterlockedDecrement(&self->references);
     if (references == 0) HeapFree(GetProcessHeap(), 0, self);
@@ -298,6 +337,8 @@ static ULONG WINAPI fake_di_Release(IDirectInputA *iface)
 static HRESULT WINAPI fake_device_QueryInterface(IDirectInputDeviceA *iface,
                                                   REFIID iid, void **result)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_QI,
+                       "IDirectInputDeviceA::QueryInterface");
     if (!result) return E_POINTER;
     *result = NULL;
     if (!fake_iid_equal(iid, &fake_iid_iunknown) &&
@@ -311,12 +352,16 @@ static HRESULT WINAPI fake_device_QueryInterface(IDirectInputDeviceA *iface,
 
 static ULONG WINAPI fake_device_AddRef(IDirectInputDeviceA *iface)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_ADDREF,
+                       "IDirectInputDeviceA::AddRef");
     FakeDirectInputDevice *self = (FakeDirectInputDevice *)iface;
     return (ULONG)InterlockedIncrement(&self->references);
 }
 
 static ULONG WINAPI fake_device_Release(IDirectInputDeviceA *iface)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_RELEASE,
+                       "IDirectInputDeviceA::Release");
     FakeDirectInputDevice *self = (FakeDirectInputDevice *)iface;
     LONG references = InterlockedDecrement(&self->references);
     if (references == 0) HeapFree(GetProcessHeap(), 0, self);
@@ -328,6 +373,8 @@ static HRESULT WINAPI fake_di_CreateDevice(IDirectInputA *iface, REFGUID guid,
                                            LPUNKNOWN outer)
 {
     FakeDirectInputDevice *device;
+    fake_di_trace_once(FAKE_DI_TRACE_CREATE_DEVICE,
+                       "IDirectInputA::CreateDevice");
     (void)iface;
     (void)guid;
     if (!result) return E_POINTER;
@@ -347,6 +394,8 @@ static HRESULT WINAPI fake_di_EnumDevices(IDirectInputA *iface, DWORD type,
                                           LPDIENUMDEVICESCALLBACKA callback,
                                           LPVOID reference, DWORD flags)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_ENUM_DEVICES,
+                       "IDirectInputA::EnumDevices");
     (void)iface;
     (void)type;
     (void)callback;
@@ -358,6 +407,8 @@ static HRESULT WINAPI fake_di_EnumDevices(IDirectInputA *iface, DWORD type,
 static HRESULT WINAPI fake_di_GetDeviceStatus(IDirectInputA *iface,
                                                REFGUID guid)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_GET_DEVICE_STATUS,
+                       "IDirectInputA::GetDeviceStatus");
     (void)iface;
     (void)guid;
     return DI_OK;
@@ -366,6 +417,8 @@ static HRESULT WINAPI fake_di_GetDeviceStatus(IDirectInputA *iface,
 static HRESULT WINAPI fake_di_RunControlPanel(IDirectInputA *iface, HWND owner,
                                               DWORD flags)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_RUN_CONTROL_PANEL,
+                       "IDirectInputA::RunControlPanel");
     (void)iface;
     (void)owner;
     (void)flags;
@@ -375,6 +428,7 @@ static HRESULT WINAPI fake_di_RunControlPanel(IDirectInputA *iface, HWND owner,
 static HRESULT WINAPI fake_di_Initialize(IDirectInputA *iface,
                                          HINSTANCE instance, DWORD version)
 {
+    fake_di_trace_once(FAKE_DI_TRACE_INITIALIZE, "IDirectInputA::Initialize");
     (void)iface;
     (void)instance;
     (void)version;
@@ -385,6 +439,8 @@ static HRESULT WINAPI fake_device_GetCapabilities(IDirectInputDeviceA *iface,
                                                    LPDIDEVCAPS capabilities)
 {
     DWORD size;
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_CAPABILITIES,
+                       "IDirectInputDeviceA::GetCapabilities");
     (void)iface;
     if (!capabilities) return E_POINTER;
     size = capabilities->dwSize;
@@ -400,6 +456,8 @@ static HRESULT WINAPI fake_device_EnumObjects(
     IDirectInputDeviceA *iface, LPDIENUMDEVICEOBJECTSCALLBACKA callback,
     LPVOID reference, DWORD flags)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_ENUM_OBJECTS,
+                       "IDirectInputDeviceA::EnumObjects");
     (void)iface;
     (void)callback;
     (void)reference;
@@ -411,6 +469,8 @@ static HRESULT WINAPI fake_device_GetProperty(IDirectInputDeviceA *iface,
                                                REFGUID property,
                                                LPDIPROPHEADER value)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_PROPERTY,
+                       "IDirectInputDeviceA::GetProperty");
     (void)iface;
     (void)property;
     (void)value;
@@ -421,6 +481,8 @@ static HRESULT WINAPI fake_device_SetProperty(IDirectInputDeviceA *iface,
                                                REFGUID property,
                                                LPCDIPROPHEADER value)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_SET_PROPERTY,
+                       "IDirectInputDeviceA::SetProperty");
     (void)iface;
     (void)property;
     (void)value;
@@ -429,12 +491,16 @@ static HRESULT WINAPI fake_device_SetProperty(IDirectInputDeviceA *iface,
 
 static HRESULT WINAPI fake_device_Acquire(IDirectInputDeviceA *iface)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_ACQUIRE,
+                       "IDirectInputDeviceA::Acquire");
     (void)iface;
     return DI_OK;
 }
 
 static HRESULT WINAPI fake_device_Unacquire(IDirectInputDeviceA *iface)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_UNACQUIRE,
+                       "IDirectInputDeviceA::Unacquire");
     (void)iface;
     return DI_OK;
 }
@@ -442,6 +508,8 @@ static HRESULT WINAPI fake_device_Unacquire(IDirectInputDeviceA *iface)
 static HRESULT WINAPI fake_device_GetDeviceState(IDirectInputDeviceA *iface,
                                                   DWORD size, LPVOID state)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_STATE,
+                       "IDirectInputDeviceA::GetDeviceState");
     (void)iface;
     if (size && !state) return E_POINTER;
     if (size) ZeroMemory(state, size);
@@ -452,6 +520,8 @@ static HRESULT WINAPI fake_device_GetDeviceData(
     IDirectInputDeviceA *iface, DWORD object_size,
     LPDIDEVICEOBJECTDATA data, LPDWORD count, DWORD flags)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_DATA,
+                       "IDirectInputDeviceA::GetDeviceData");
     (void)iface;
     (void)object_size;
     (void)data;
@@ -464,6 +534,8 @@ static HRESULT WINAPI fake_device_GetDeviceData(
 static HRESULT WINAPI fake_device_SetDataFormat(IDirectInputDeviceA *iface,
                                                  LPCDIDATAFORMAT format)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_SET_DATA_FORMAT,
+                       "IDirectInputDeviceA::SetDataFormat");
     (void)iface;
     (void)format;
     return DI_OK;
@@ -472,6 +544,8 @@ static HRESULT WINAPI fake_device_SetDataFormat(IDirectInputDeviceA *iface,
 static HRESULT WINAPI fake_device_SetEventNotification(
     IDirectInputDeviceA *iface, HANDLE event)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_SET_EVENT,
+                       "IDirectInputDeviceA::SetEventNotification");
     (void)iface;
     (void)event;
     return DI_OK;
@@ -480,6 +554,8 @@ static HRESULT WINAPI fake_device_SetEventNotification(
 static HRESULT WINAPI fake_device_SetCooperativeLevel(
     IDirectInputDeviceA *iface, HWND window, DWORD flags)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_SET_COOPERATIVE_LEVEL,
+                       "IDirectInputDeviceA::SetCooperativeLevel");
     (void)iface;
     (void)window;
     (void)flags;
@@ -491,6 +567,8 @@ static HRESULT WINAPI fake_device_GetObjectInfo(
     DWORD object, DWORD how)
 {
     DWORD size;
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_OBJECT_INFO,
+                       "IDirectInputDeviceA::GetObjectInfo");
     (void)iface;
     (void)object;
     (void)how;
@@ -509,6 +587,8 @@ static HRESULT WINAPI fake_device_GetDeviceInfo(IDirectInputDeviceA *iface,
                                                  LPDIDEVICEINSTANCEA info)
 {
     DWORD size;
+    fake_di_trace_once(FAKE_DEVICE_TRACE_GET_DEVICE_INFO,
+                       "IDirectInputDeviceA::GetDeviceInfo");
     (void)iface;
     if (!info) return E_POINTER;
     size = info->dwSize;
@@ -524,6 +604,8 @@ static HRESULT WINAPI fake_device_GetDeviceInfo(IDirectInputDeviceA *iface,
 static HRESULT WINAPI fake_device_RunControlPanel(IDirectInputDeviceA *iface,
                                                   HWND owner, DWORD flags)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_DEVICE_RUN_CONTROL_PANEL,
+                       "IDirectInputDeviceA::RunControlPanel");
     (void)iface;
     (void)owner;
     (void)flags;
@@ -534,6 +616,8 @@ static HRESULT WINAPI fake_device_Initialize(IDirectInputDeviceA *iface,
                                              HINSTANCE instance,
                                              DWORD version, REFGUID guid)
 {
+    fake_di_trace_once(FAKE_DEVICE_TRACE_INITIALIZE,
+                       "IDirectInputDeviceA::Initialize");
     (void)iface;
     (void)instance;
     (void)version;

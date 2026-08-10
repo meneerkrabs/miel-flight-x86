@@ -942,6 +942,11 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertNotIn("real_direct_input_create(", export)
         self.assertIn("fake->lpVtbl = &fake_direct_input_vtbl", export)
         self.assertIn("*direct_input = (LPDIRECTINPUTA)fake", export)
+        self.assertEqual(source.count("fake_di_trace_once("), 27)
+        self.assertIn(
+            "InterlockedCompareExchange(&fake_di_trace_seen[slot]", source,
+        )
+        self.assertIn("MVP_DI call sequence=%ld method=%s", source)
         get_state = source[source.index(
             "static HRESULT WINAPI fake_device_GetDeviceState"
         ):source.index("static HRESULT WINAPI fake_device_GetDeviceData")]

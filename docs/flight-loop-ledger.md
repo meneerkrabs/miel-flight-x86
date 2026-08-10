@@ -170,3 +170,19 @@ static asserts en een objdump-contract pinnen de relevante slots en alle 26
 blijft bewust een volgende adapterlaag. Lokale `-Werror`-DLL-build + drie gerichte
 tests groen. **Volgende gate:** x86-Wine-CI; alleen `mode-probe manager != 0` bewijst
 dat de interne dinput-wacht werkelijk is omzeild.
+
+## iter-32: fake object bereikt, manager blijft nul (run 31388481270)
+De x86-Wine-run bewijst dat de nieuwe adapter werkelijk actief is: de proxy logt
+één fake `IDirectInputA` en twee fake `IDirectInputDeviceA`-instanties. De suite
+eindigt desondanks na 600 s met `proxy-bootstrap-timeout`; vier opeenvolgende
+mode-probes blijven `application=9782080`, `manager=0`, `manager_ticks=0`.
+Daarmee is Wine's echte `DirectInputCreateA` omzeild, maar nog niet bewezen waar
+de hoofdthread na de twee `CreateDevice`-calls stopt. De stack bevat nog
+retouradressen in de geladen proxy `dinput.dll`, wat zonder method-identiteit
+ambigu blijft.
+
+De adapter publiceert daarom voortaan één begrensde first-call-regel per officiële
+COM-entry met een monotone sequence. Polling (`GetDeviceState`) kan de log niet
+volschrijven. De volgende CI-run moet exact aantonen welke fake methode als
+laatste wordt aangeroepen; pas daarna volgt een gedragswijziging. Geen nieuwe
+stubhypothese zonder die call-path-receipt.
