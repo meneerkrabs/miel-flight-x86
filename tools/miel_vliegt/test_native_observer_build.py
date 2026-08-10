@@ -21,6 +21,24 @@ class NativeObserverBuildTest(unittest.TestCase):
             path.write_bytes((build.ROOT / relative).read_bytes())
         return root
 
+    def test_dinput_proxy_observes_failures_without_suppressing_process_exit(self):
+        source = (
+            build.ROOT / "tools/miel_vliegt/x86_wine/"
+            "native_observer_dinput_proxy.c"
+        ).read_text(encoding="utf-8")
+        self.assertIn("AddVectoredExceptionHandler(0, crash_logger)", source)
+        self.assertNotIn("Sleep(INFINITE)", source)
+        for forbidden in (
+            "ExitProcess_hook",
+            "TerminateProcess_hook",
+            "NtTerminateProcess_hook",
+            "RtlExitUserProcess_hook",
+        ):
+            self.assertNotIn(forbidden, source)
+        self.assertIn(
+            '"MVP_DDEX result hr=0x%08X output=%p object=%p"', source,
+        )
+
     def test_manifest_binds_artifact_toolchain_and_all_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self._root(directory)
