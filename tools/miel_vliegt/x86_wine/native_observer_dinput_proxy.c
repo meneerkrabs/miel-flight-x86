@@ -1271,7 +1271,7 @@ static void ddraw_trace_pixel_callsite(void *caller)
 }
 
 #define D3D7_ENUMZ_CALLSITE_LIMIT 8
-#define D3D7_ENUMZ_CALLSITE_CODE_CHUNKS 4
+#define D3D7_ENUMZ_CALLSITE_CODE_CHUNKS 12
 static void *d3d7_enumz_callsites[D3D7_ENUMZ_CALLSITE_LIMIT];
 static unsigned d3d7_enumz_callsite_count;
 
