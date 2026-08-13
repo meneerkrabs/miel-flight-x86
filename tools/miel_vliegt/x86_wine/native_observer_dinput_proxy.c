@@ -11,14 +11,10 @@ typedef LONG NTSTATUS;
 #include <errno.h>
 #include <stddef.h>
 
-typedef HRESULT (WINAPI *DirectInputCreateAFunction)(
-    HINSTANCE, DWORD, LPDIRECTINPUTA *, LPUNKNOWN);
 typedef DWORD (WINAPI *MielObserverInitializeFunction)(LPVOID);
 
 #define BOOTSTRAP_TIMEOUT_MS 600000u
 
-static HMODULE real_dinput;
-static DirectInputCreateAFunction real_direct_input_create;
 static volatile LONG initialization_state;
 static volatile LONG initialization_stage_seen[8];
 
@@ -84,7 +80,6 @@ static void signal_observer_failure(void)
 
 static BOOL initialize_proxy(void)
 {
-    char dinput_path[MAX_PATH * 2];
     fprintf(stderr, "MVP_init: called\n"); fflush(stderr);
     char observer_path[MAX_PATH * 2];
     HMODULE observer_module;
@@ -100,22 +95,6 @@ static BOOL initialize_proxy(void)
            progress that the worker itself may require. */
         return observed == 2;
     }
-    length = GetEnvironmentVariableA(
-        "MIEL_REAL_DINPUT", dinput_path, sizeof(dinput_path));
-    failure_reason = "real_dinput_environment";
-    if (length == 0u || length >= sizeof(dinput_path)) goto failed;
-    proxy_initialization_stage(0u, "real_dinput_load_begin");
-    real_dinput = LoadLibraryA(dinput_path);
-    failure_reason = "real_dinput_load";
-    if (!real_dinput) {
-        proxy_initialization_stage(1u, "real_dinput_load_failure");
-        goto failed;
-    }
-    proxy_initialization_stage(1u, "real_dinput_load_success");
-    real_direct_input_create = (DirectInputCreateAFunction)(ULONG_PTR)
-        GetProcAddress(real_dinput, "DirectInputCreateA");
-    failure_reason = "real_dinput_export";
-    if (!real_direct_input_create) goto failed;
     /* Cc.dll may not be loaded yet on first call. Don't signal failure -
        just return FALSE. The bootstrap thread and DirectInputCreateA will
        retry when Cc.dll becomes available. */

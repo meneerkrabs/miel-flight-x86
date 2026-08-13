@@ -66,14 +66,15 @@ class NativeObserverBuildTest(unittest.TestCase):
             '"MVP_INIT thread=%lu stage=%s"', source,
         )
         for stage in (
-            "real_dinput_load_begin",
-            "real_dinput_load_success",
             "observer_load_begin",
             "observer_load_success",
             "observer_initialize_begin",
             "observer_initialize_success",
         ):
             self.assertIn(f'"{stage}"', initialize)
+        self.assertNotIn("MIEL_REAL_DINPUT", initialize)
+        self.assertNotIn("real_dinput", initialize)
+        self.assertNotIn("real_direct_input_create", initialize)
 
     def test_dinput_proxy_registers_one_process_scoped_exception_handler(self):
         source = (
