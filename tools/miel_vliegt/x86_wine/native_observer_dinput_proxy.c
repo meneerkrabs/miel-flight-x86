@@ -1142,6 +1142,21 @@ static HRESULT CALLBACK d3d7_zformat_callback(
     return result;
 }
 
+static void d3d7_supply_headless_zformat(
+    HRESULT hr, D3D7ZFormatCallbackContext *state)
+{
+    DDPIXELFORMAT format;
+    if (hr != S_OK || !state->callback || state->count != 0) return;
+    ZeroMemory(&format, sizeof(format));
+    format.dwSize = sizeof(format);
+    format.dwFlags = DDPF_ZBUFFER;
+    format.dwZBufferBitDepth = 16u;
+    ddraw_trace_detail(
+        "IDirect3D7::EnumZBufferFormats synthetic-zformat "
+        "compatibility-hypothesis z_bits=16");
+    d3d7_zformat_callback(&format, state);
+}
+
 static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
     IDirect3D7 *iface, REFCLSID iid,
     LPD3DENUMPIXELFORMATSCALLBACK callback, void *context)
@@ -1175,6 +1190,7 @@ static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
                   (unsigned)hr, state.count);
         ddraw_trace_detail(detail);
     }
+    d3d7_supply_headless_zformat(hr, &state);
     d3d7_trace_enumz_callsite(caller);
     return hr;
 }

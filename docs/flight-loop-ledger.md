@@ -203,3 +203,27 @@ de geladen proxy als builddiagnostiek. De volgende gedragswijziging volgt pas
 nadat die adressen tegen hetzelfde binaire bestand zijn opgelost; in het
 bijzonder wordt `EnumDevices` niet op basis van vermoeden van een callback
 voorzien.
+
+## iter-34: lege depth-format-enumeratie is de nieuwe renderergrens
+Runs `31709644075`, `31714105998` en `31714618278` bewijzen achtereenvolgens
+dat `IDirect3D7::EnumZBufferFormats` `S_OK` teruggeeft met nul callbacks, dat de
+originele callback via `gtDirect3d+0x2bc0` naar helper `+0x4e60` gaat, en dat de
+helper `DDPF_ZBUFFER`, Z-diepte en stencil-diepte beoordeelt en de volledige
+32-byte `DDPIXELFORMAT` in één van drie interne slots kopieert. De renderer
+verwerpt de initialisatie als alle drie slots leeg blijven. Geen synthetische
+format geïnjecteerd: eerst het downstream gebruik vastleggen.
+
+## iter-35: downstream depth-format-pad volledig begrensd vastgelegd
+Commit `01fc365` vergroot alleen de gededupliceerde caller-code-dump van 256
+naar 768 bytes. Run `31716049818` bereikte die dump niet: de proxy bleef 600 s
+in de ongebruikte `LoadLibraryA(MIEL_REAL_DINPUT)` steken. Commit `e290633`
+verwijdert uitsluitend die dode proxy-afhankelijkheid; de getypeerde fake
+DirectInput-objecten forwarden immers geen enkele call naar Wine dinput.
+
+Run `31718027299` bevestigt de fix binnen 27 s en levert de volledige keten:
+de caller probeert de drie slots van hoog naar laag, bouwt een nul-geïnitiali-
+seerde `DDSURFACEDESC2` met `dwFlags=0x1007` en caps `0x24000`, kopieert de
+gekozen 32-byte `DDPIXELFORMAT` naar de descriptor en roept daarna
+`IDirectDraw7::CreateSurface`. Een eventuele fallback blijft dus expliciet een
+compatibiliteitshypothese die door de echte `CreateSurface`-uitkomst moet worden
+beoordeeld, geen paritybewijs.

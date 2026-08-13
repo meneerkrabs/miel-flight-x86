@@ -142,6 +142,17 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn("result = state->callback(format, state->context)", source)
         self.assertIn("EnumZBufferFormats-result hr=0x%08X", source)
         self.assertIn("callbacks=%u", source)
+        self.assertIn(
+            "if (hr != S_OK || !state->callback || state->count != 0) return;",
+            source,
+        )
+        self.assertIn("ZeroMemory(&format, sizeof(format));", source)
+        self.assertIn("format.dwSize = sizeof(format);", source)
+        self.assertIn("format.dwFlags = DDPF_ZBUFFER;", source)
+        self.assertIn("format.dwZBufferBitDepth = 16u;", source)
+        self.assertIn("synthetic-zformat ", source)
+        self.assertIn("compatibility-hypothesis z_bits=16", source)
+        self.assertIn("d3d7_zformat_callback(&format, state);", source)
         self.assertIn("#define D3D7_ENUMZ_CALLSITE_CODE_CHUNKS 12", source)
         self.assertIn("EnumZBufferFormats-caller return=%p where=%s", source)
         self.assertIn("d3d7_trace_enumz_callsite(caller)", source)
