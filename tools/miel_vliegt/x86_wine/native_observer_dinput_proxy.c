@@ -1134,6 +1134,7 @@ typedef struct D3D7ZFormatCallbackContext {
 } D3D7ZFormatCallbackContext;
 
 static void d3d7_trace_enumz_callsite(void *caller);
+static void d3d7_trace_zformat_callback(void *callback);
 
 static HRESULT CALLBACK d3d7_zformat_callback(
     DDPIXELFORMAT *format, void *opaque)
@@ -1181,6 +1182,7 @@ static HRESULT WINAPI d3d7_EnumZBufferFormats_hook(
                   iid->Data4[6], iid->Data4[7], callback, context);
         ddraw_trace_detail(detail);
     }
+    d3d7_trace_zformat_callback((void *)callback);
     ddraw_trace_enter("IDirect3D7::EnumZBufferFormats");
     hr = d3d7_saved_EnumZBufferFormats(
         iface, iid, callback ? d3d7_zformat_callback : NULL,
@@ -1305,6 +1307,42 @@ static void d3d7_trace_enumz_callsite(void *caller)
         wsprintfA(
             detail,
             "IDirect3D7::EnumZBufferFormats-caller-code "
+            "chunk=%u start=%p bytes=%s",
+            chunk, chunk_start, bytes);
+        ddraw_trace_detail(detail);
+    }
+}
+
+#define D3D7_ZFORMAT_CALLBACK_CODE_CHUNKS 4
+static void *d3d7_zformat_callback_address;
+
+static void d3d7_trace_zformat_callback(void *callback)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    char where[MAX_PATH + 32];
+    char detail[320];
+    char bytes[129];
+    unsigned chunk;
+    unsigned index;
+    if (!callback || callback == d3d7_zformat_callback_address) return;
+    d3d7_zformat_callback_address = callback;
+    describe_address(callback, where, sizeof(where));
+    wsprintfA(detail,
+              "IDirect3D7::EnumZBufferFormats-callback-code "
+              "entry=%p where=%s",
+              callback, where);
+    ddraw_trace_detail(detail);
+    for (chunk = 0; chunk < D3D7_ZFORMAT_CALLBACK_CODE_CHUNKS; chunk++) {
+        BYTE *chunk_start = (BYTE *)callback + chunk * 64u;
+        if (IsBadReadPtr(chunk_start, 64u)) break;
+        for (index = 0; index < 64u; index++) {
+            bytes[index * 2] = hex[chunk_start[index] >> 4];
+            bytes[index * 2 + 1] = hex[chunk_start[index] & 0x0Fu];
+        }
+        bytes[128] = '\0';
+        wsprintfA(
+            detail,
+            "IDirect3D7::EnumZBufferFormats-callback-code "
             "chunk=%u start=%p bytes=%s",
             chunk, chunk_start, bytes);
         ddraw_trace_detail(detail);
