@@ -255,3 +255,16 @@ z-buffer onverenigbaar zijn. De volgende iteratie wijzigt daarom geen gedrag,
 maar registreert het werkelijk gevraagde device-IID, calleradres en de
 gerealiseerde descriptor/caps/pixelformat van de aan `CreateDevice` doorgegeven
 surface via de opgeslagen, onderliggende read-only surface-methoden.
+
+## iter-38: HAL op het gerealiseerde system-memory-target is de grens
+Run `31721402557` op commit `bb262de` bindt iedere mislukte device-call aan
+`IID_IDirect3DHALDevice`, caller `gtDirect3d.dll+0x21dd`, en een gerealiseerd
+640x480 RGB32-target met `DDSCAPS_3DDEVICE | DDSCAPS_SYSTEMMEMORY`. De twee
+waargenomen targetvormen zijn backbuffer/complex/flip (`0x281c`) en
+offscreen-plain (`0x2840`); beide eindigen in `E_OUTOFMEMORY` zonder device.
+
+Daarom probeert de volgende strikt begrensde compatibiliteitshypothese pas na
+de ongewijzigde HAL-call en uitsluitend bij exact deze caller, fout en surface-
+vorm één keer `IID_IDirect3DRGBDevice`. Alleen het IID verandert; surface en
+outputslot blijven identiek. Ook een succesvolle software-device-boot is geen
+native paritybewijs.

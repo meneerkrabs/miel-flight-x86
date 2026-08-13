@@ -920,6 +920,14 @@ static const GUID miel_iid_idirect3d7 = {
     0xf5049e77, 0x4861, 0x11d2,
     {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}
 };
+static const GUID miel_iid_idirect3d_hal_device = {
+    0x84e63de0, 0x46aa, 0x11cf,
+    {0x81, 0x6f, 0x00, 0x00, 0xc0, 0x20, 0x15, 0x6e}
+};
+static const GUID miel_iid_idirect3d_rgb_device = {
+    0xa4665c60, 0x2673, 0x11cf,
+    {0xa3, 0x1a, 0x00, 0xaa, 0x00, 0xb9, 0x33, 0x56}
+};
 
 /* COM QueryInterface logging wrapper. stdcall: this, riid, ppv on stack. The
    riid GUID is {Data1(4 LE), Data2(2 LE), Data3(2 LE), Data4[8]}, so printing
@@ -1078,7 +1086,8 @@ static D3D7CreateVertexBuffer_t d3d7_saved_CreateVertexBuffer;
 static D3D7EnumZBufferFormats_t d3d7_saved_EnumZBufferFormats;
 static D3D7EvictManagedTextures_t d3d7_saved_EvictManagedTextures;
 static BOOL d3d7_startup_patched;
-static void d3d7_trace_create_device_request(
+static BOOL d3d7_synthetic_zformat_supplied;
+static BOOL d3d7_create_device_retry_eligible(
     REFCLSID iid, IDirectDrawSurface7 *surface, void *caller);
 
 #define D3D7_FORWARD(name, declaration, arguments) \
@@ -1110,7 +1119,7 @@ static HRESULT WINAPI d3d7_CreateDevice_hook(
 {
     HRESULT hr;
     IDirect3DDevice7 *result = NULL;
-    d3d7_trace_create_device_request(
+    BOOL retry_eligible = d3d7_create_device_retry_eligible(
         iid, surface, __builtin_return_address(0));
     ddraw_trace_enter("IDirect3D7::CreateDevice");
     hr = d3d7_saved_CreateDevice(iface, iid, surface, device);
@@ -1122,6 +1131,22 @@ static HRESULT WINAPI d3d7_CreateDevice_hook(
                   "IDirect3D7::CreateDevice-result device=%p",
                   result);
         ddraw_trace_detail(detail);
+    }
+    if (retry_eligible && hr == E_OUTOFMEMORY && result == NULL) {
+        ddraw_trace_detail(
+            "IDirect3D7::CreateDevice compatibility-hypothesis rgb-device");
+        ddraw_trace_enter("IDirect3D7::CreateDevice-rgb-retry");
+        hr = d3d7_saved_CreateDevice(
+            iface, &miel_iid_idirect3d_rgb_device, surface, device);
+        ddraw_trace_leave("IDirect3D7::CreateDevice-rgb-retry", hr);
+        if (device && !IsBadReadPtr(device, sizeof(*device))) result = *device;
+        {
+            char detail[128];
+            wsprintfA(detail,
+                      "IDirect3D7::CreateDevice-rgb-result device=%p",
+                      result);
+            ddraw_trace_detail(detail);
+        }
     }
     return hr;
 }
@@ -1161,8 +1186,6 @@ static HRESULT CALLBACK d3d7_zformat_callback(
     state->count++;
     return result;
 }
-
-static BOOL d3d7_synthetic_zformat_supplied;
 
 static void d3d7_supply_headless_zformat(
     HRESULT hr, D3D7ZFormatCallbackContext *state)
@@ -1561,12 +1584,18 @@ static DDSurfaceSetPalette_t dds_saved_SetPalette;
 static DDSurfaceUnlock_t dds_saved_Unlock;
 static BOOL ddraw_surface_startup_patched;
 
-static void d3d7_trace_create_device_request(
+static BOOL d3d7_create_device_retry_eligible(
     REFCLSID iid, IDirectDrawSurface7 *surface, void *caller)
 {
     char where[MAX_PATH + 32];
     char detail[320];
-    if (!iid || IsBadReadPtr(iid, sizeof(*iid))) return;
+    DDSURFACEDESC2 desc;
+    DDSCAPS2 caps;
+    DDPIXELFORMAT format;
+    HRESULT desc_hr;
+    HRESULT caps_hr;
+    HRESULT format_hr;
+    if (!iid || IsBadReadPtr(iid, sizeof(*iid))) return FALSE;
     describe_address(caller, where, sizeof(where));
     wsprintfA(detail,
               "IDirect3D7::CreateDevice-request iid=%08lX-%04X-%04X-"
@@ -1577,43 +1606,48 @@ static void d3d7_trace_create_device_request(
               iid->Data4[4], iid->Data4[5], iid->Data4[6], iid->Data4[7],
               surface, caller, where);
     ddraw_trace_detail(detail);
-    if (!surface || IsBadReadPtr(surface, sizeof(*surface))) return;
-    if (dds_saved_GetSurfaceDesc) {
-        DDSURFACEDESC2 desc;
-        HRESULT hr;
-        ZeroMemory(&desc, sizeof(desc));
-        desc.dwSize = sizeof(desc);
-        hr = dds_saved_GetSurfaceDesc(surface, &desc);
+    if (!surface || IsBadReadPtr(surface, sizeof(*surface)) ||
+        !dds_saved_GetSurfaceDesc || !dds_saved_GetCaps ||
+        !dds_saved_GetPixelFormat) return FALSE;
+    ZeroMemory(&desc, sizeof(desc));
+    desc.dwSize = sizeof(desc);
+    desc_hr = dds_saved_GetSurfaceDesc(surface, &desc);
+    {
         wsprintfA(detail,
                   "IDirect3D7::CreateDevice-surface-desc hr=0x%08X "
                   "flags=0x%08lX width=%lu height=%lu",
-                  (unsigned)hr, desc.dwFlags, desc.dwWidth, desc.dwHeight);
+                  (unsigned)desc_hr, desc.dwFlags,
+                  desc.dwWidth, desc.dwHeight);
         ddraw_trace_detail(detail);
     }
-    if (dds_saved_GetCaps) {
-        DDSCAPS2 caps;
-        HRESULT hr;
-        ZeroMemory(&caps, sizeof(caps));
-        hr = dds_saved_GetCaps(surface, &caps);
+    ZeroMemory(&caps, sizeof(caps));
+    caps_hr = dds_saved_GetCaps(surface, &caps);
+    {
         wsprintfA(detail,
                   "IDirect3D7::CreateDevice-surface-caps hr=0x%08X "
                   "caps=0x%08lX caps2=0x%08lX",
-                  (unsigned)hr, caps.dwCaps, caps.dwCaps2);
+                  (unsigned)caps_hr, caps.dwCaps, caps.dwCaps2);
         ddraw_trace_detail(detail);
     }
-    if (dds_saved_GetPixelFormat) {
-        DDPIXELFORMAT format;
-        HRESULT hr;
-        ZeroMemory(&format, sizeof(format));
-        format.dwSize = sizeof(format);
-        hr = dds_saved_GetPixelFormat(surface, &format);
+    ZeroMemory(&format, sizeof(format));
+    format.dwSize = sizeof(format);
+    format_hr = dds_saved_GetPixelFormat(surface, &format);
+    {
         wsprintfA(detail,
                   "IDirect3D7::CreateDevice-surface-format hr=0x%08X "
                   "flags=0x%08lX rgb_bits=%lu z_bits=%lu stencil_bits=%lu",
-                  (unsigned)hr, format.dwFlags, format.dwRGBBitCount,
+                  (unsigned)format_hr, format.dwFlags, format.dwRGBBitCount,
                   format.dwZBufferBitDepth, format.dwStencilBitDepth);
         ddraw_trace_detail(detail);
     }
+    return d3d7_synthetic_zformat_supplied &&
+           memcmp(iid, &miel_iid_idirect3d_hal_device,
+                  sizeof(miel_iid_idirect3d_hal_device)) == 0 &&
+           lstrcmpiA(where, "gtDirect3d.dll+0x21DD") == 0 &&
+           desc_hr == S_OK && caps_hr == S_OK && format_hr == S_OK &&
+           desc.dwWidth == 640u && desc.dwHeight == 480u &&
+           (caps.dwCaps == 0x0000281Cu || caps.dwCaps == 0x00002840u) &&
+           format.dwFlags == DDPF_RGB && format.dwRGBBitCount == 32u;
 }
 
 #define DDS_FORWARD(name, declaration, arguments) \

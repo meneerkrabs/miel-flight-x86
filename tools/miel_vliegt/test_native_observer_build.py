@@ -151,6 +151,25 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn("dds_saved_GetCaps(surface, &caps)", source)
         self.assertIn("dds_saved_GetPixelFormat(surface, &format)", source)
         self.assertIn("IDirect3D7::CreateDevice-result device=%p", source)
+        self.assertIn("d3d7_create_device_retry_eligible", source)
+        self.assertIn("memcmp(iid, &miel_iid_idirect3d_hal_device", source)
+        self.assertIn('lstrcmpiA(where, "gtDirect3d.dll+0x21DD") == 0', source)
+        self.assertIn("caps.dwCaps == 0x0000281Cu", source)
+        self.assertIn("caps.dwCaps == 0x00002840u", source)
+        self.assertIn("format.dwFlags == DDPF_RGB", source)
+        self.assertIn("format.dwRGBBitCount == 32u", source)
+        self.assertIn("hr == E_OUTOFMEMORY", source)
+        self.assertIn("result == NULL", source)
+        self.assertIn("&miel_iid_idirect3d_rgb_device, surface, device", source)
+        self.assertIn("CreateDevice compatibility-hypothesis rgb-device", source)
+        create_device = source[
+            source.index("static HRESULT WINAPI d3d7_CreateDevice_hook"):
+            source.index("typedef struct D3D7ZFormatCallbackContext")
+        ]
+        self.assertLess(
+            create_device.index("d3d7_saved_CreateDevice(iface, iid"),
+            create_device.index("&miel_iid_idirect3d_rgb_device"),
+        )
         self.assertIn(
             "if (hr != S_OK || !state->callback || state->count != 0) return;",
             source,
