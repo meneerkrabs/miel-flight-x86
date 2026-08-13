@@ -268,3 +268,16 @@ de ongewijzigde HAL-call en uitsluitend bij exact deze caller, fout en surface-
 vorm één keer `IID_IDirect3DRGBDevice`. Alleen het IID verandert; surface en
 outputslot blijven identiek. Ook een succesvolle software-device-boot is geen
 native paritybewijs.
+
+## iter-39: ook software-devicecreatie faalt gesloten
+Run `31722535874` op commit `9b57a48` voert de exacte gate uit voor beide
+waargenomen targetvormen. De oorspronkelijke HAL-call blijft zichtbaar als
+`E_OUTOFMEMORY` met een null device; de enige RGB-device-retry retourneert
+vervolgens eveneens telkens `E_OUTOFMEMORY` met een null device. Application en
+manager worden niet geïnitialiseerd en de suite stopt fail-closed met exit 5.
+
+Hier eindigt de begrensde adapterlijn. Verdere voortgang vraagt een materieel
+andere uitvoeromgeving met werkende Direct3D7-devicecreatie, of een volledige
+alternatieve/fake renderer. Dat laatste zou geen native paritybewijs leveren en
+valt buiten deze capture-lane; er worden daarom geen extra device-IID's of
+renderer-stubs geprobeerd.
