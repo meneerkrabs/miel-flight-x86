@@ -1314,6 +1314,7 @@ static void d3d7_trace_enumz_callsite(void *caller)
 }
 
 #define D3D7_ZFORMAT_CALLBACK_CODE_CHUNKS 4
+#define D3D7_ZFORMAT_HELPER_CODE_CHUNKS 4
 static void *d3d7_zformat_callback_address;
 
 static void d3d7_trace_zformat_callback(void *callback)
@@ -1324,6 +1325,7 @@ static void d3d7_trace_zformat_callback(void *callback)
     char bytes[129];
     unsigned chunk;
     unsigned index;
+    BYTE *entry;
     if (!callback || callback == d3d7_zformat_callback_address) return;
     d3d7_zformat_callback_address = callback;
     describe_address(callback, where, sizeof(where));
@@ -1346,6 +1348,36 @@ static void d3d7_trace_zformat_callback(void *callback)
             "chunk=%u start=%p bytes=%s",
             chunk, chunk_start, bytes);
         ddraw_trace_detail(detail);
+    }
+    entry = (BYTE *)callback;
+    if (!IsBadReadPtr(entry, 14u) && entry[9] == 0xE8) {
+        LONG displacement = (LONG)(
+            (DWORD)entry[10] |
+            ((DWORD)entry[11] << 8) |
+            ((DWORD)entry[12] << 16) |
+            ((DWORD)entry[13] << 24));
+        BYTE *helper = entry + 14 + displacement;
+        describe_address(helper, where, sizeof(where));
+        wsprintfA(detail,
+                  "IDirect3D7::EnumZBufferFormats-callback-helper "
+                  "entry=%p where=%s",
+                  helper, where);
+        ddraw_trace_detail(detail);
+        for (chunk = 0; chunk < D3D7_ZFORMAT_HELPER_CODE_CHUNKS; chunk++) {
+            BYTE *chunk_start = helper + chunk * 64u;
+            if (IsBadReadPtr(chunk_start, 64u)) break;
+            for (index = 0; index < 64u; index++) {
+                bytes[index * 2] = hex[chunk_start[index] >> 4];
+                bytes[index * 2 + 1] = hex[chunk_start[index] & 0x0Fu];
+            }
+            bytes[128] = '\0';
+            wsprintfA(
+                detail,
+                "IDirect3D7::EnumZBufferFormats-callback-helper "
+                "chunk=%u start=%p bytes=%s",
+                chunk, chunk_start, bytes);
+            ddraw_trace_detail(detail);
+        }
     }
 }
 
