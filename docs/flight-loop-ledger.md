@@ -227,3 +227,17 @@ gekozen 32-byte `DDPIXELFORMAT` naar de descriptor en roept daarna
 `IDirectDraw7::CreateSurface`. Een eventuele fallback blijft dus expliciet een
 compatibiliteitshypothese die door de echte `CreateSurface`-uitkomst moet worden
 beoordeeld, geen paritybewijs.
+
+## iter-36: Z16 bereikt de video-memory-surfacegrens
+Commit `d9dc7a2` injecteert uitsluitend wanneer de echte enumeratie `S_OK` met
+nul callbacks oplevert één gelabeld synthetisch Z16-format. Run `31719908527`
+toont dat de originele callback dit format accepteert (`result=1`) en vervolgens
+de eerder gereconstrueerde z-surface aanvraagt. De ongewijzigde eerste
+`CreateSurface`-call voor `DDSCAPS_ZBUFFER | DDSCAPS_VIDEOMEMORY` faalt
+herhaaldelijk met `0x88760233`; de lokale DirectDraw-header bindt die waarde aan
+`DDERR_NODIRECTDRAWHW`. Gewone niet-z-surfaces slagen in dezelfde run nog wel.
+
+De volgende proef behoudt de originele call en fout zichtbaar en probeert
+alleen na exact deze fout/request-combinatie een lokale descriptor-kopie zonder
+`DDSCAPS_VIDEOMEMORY`. Ook dit is uitsluitend een compatibiliteitshypothese:
+succes kan de headless Wine-boot ontsluiten, maar bewijst geen native parity.

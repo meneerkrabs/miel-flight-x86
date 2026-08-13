@@ -1142,6 +1142,8 @@ static HRESULT CALLBACK d3d7_zformat_callback(
     return result;
 }
 
+static BOOL d3d7_synthetic_zformat_supplied;
+
 static void d3d7_supply_headless_zformat(
     HRESULT hr, D3D7ZFormatCallbackContext *state)
 {
@@ -1154,6 +1156,7 @@ static void d3d7_supply_headless_zformat(
     ddraw_trace_detail(
         "IDirect3D7::EnumZBufferFormats synthetic-zformat "
         "compatibility-hypothesis z_bits=16");
+    d3d7_synthetic_zformat_supplied = TRUE;
     d3d7_zformat_callback(&format, state);
 }
 
@@ -1421,6 +1424,24 @@ static HRESULT WINAPI ddraw_CreateSurface_hook(
     ddraw_trace_enter("CreateSurface");
     hr = ddraw_saved_CreateSurface(iface, desc, surface, outer);
     ddraw_trace_leave("CreateSurface", hr);
+    if (d3d7_synthetic_zformat_supplied &&
+        hr == DDERR_NODIRECTDRAWHW && desc &&
+        !IsBadReadPtr(desc, sizeof(*desc)) &&
+        desc->dwFlags == (DDSD_CAPS | DDSD_HEIGHT |
+                          DDSD_WIDTH | DDSD_PIXELFORMAT) &&
+        desc->dwWidth == 640u && desc->dwHeight == 480u &&
+        desc->dwBackBufferCount == 0u &&
+        desc->ddsCaps.dwCaps == (DDSCAPS_ZBUFFER | DDSCAPS_VIDEOMEMORY) &&
+        desc->ddpfPixelFormat.dwFlags == DDPF_ZBUFFER &&
+        desc->ddpfPixelFormat.dwZBufferBitDepth == 16u) {
+        DDSURFACEDESC2 retry_desc = *desc;
+        retry_desc.ddsCaps.dwCaps &= ~DDSCAPS_VIDEOMEMORY;
+        ddraw_trace_detail(
+            "CreateSurface compatibility-hypothesis no-videomemory");
+        ddraw_trace_enter("CreateSurface-no-videomemory-retry");
+        hr = ddraw_saved_CreateSurface(iface, &retry_desc, surface, outer);
+        ddraw_trace_leave("CreateSurface-no-videomemory-retry", hr);
+    }
     if (SUCCEEDED(hr) && surface && *surface) {
         patch_ddraw_surface_startup_methods(*surface);
     }

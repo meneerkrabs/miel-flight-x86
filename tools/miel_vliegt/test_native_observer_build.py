@@ -242,6 +242,26 @@ class NativeObserverBuildTest(unittest.TestCase):
             source.index("static HRESULT WINAPI ddraw_CreateSurface_hook"):
             source.index("static HRESULT WINAPI ddraw_EnumDisplayModes_hook")
         ]
+        self.assertIn("hr == DDERR_NODIRECTDRAWHW", create_surface)
+        self.assertIn(
+            "desc->dwFlags == (DDSD_CAPS | DDSD_HEIGHT |", create_surface,
+        )
+        self.assertIn("DDSD_WIDTH | DDSD_PIXELFORMAT)", create_surface)
+        self.assertIn("desc->dwWidth == 640u", create_surface)
+        self.assertIn("desc->dwHeight == 480u", create_surface)
+        self.assertIn("desc->dwBackBufferCount == 0u", create_surface)
+        self.assertIn(
+            "desc->ddsCaps.dwCaps == (DDSCAPS_ZBUFFER | DDSCAPS_VIDEOMEMORY)",
+            create_surface,
+        )
+        self.assertIn("desc->ddpfPixelFormat.dwFlags == DDPF_ZBUFFER",
+                      create_surface)
+        self.assertIn("desc->ddpfPixelFormat.dwZBufferBitDepth == 16u",
+                      create_surface)
+        self.assertIn("DDSURFACEDESC2 retry_desc = *desc", create_surface)
+        self.assertIn("retry_desc.ddsCaps.dwCaps &= ~DDSCAPS_VIDEOMEMORY",
+                      create_surface)
+        self.assertIn("compatibility-hypothesis no-videomemory", create_surface)
         self.assertIn("patch_ddraw_surface_startup_methods(*surface)",
                       create_surface)
 
