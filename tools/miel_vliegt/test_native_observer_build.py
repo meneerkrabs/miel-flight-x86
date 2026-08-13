@@ -142,6 +142,15 @@ class NativeObserverBuildTest(unittest.TestCase):
         self.assertIn("result = state->callback(format, state->context)", source)
         self.assertIn("EnumZBufferFormats-result hr=0x%08X", source)
         self.assertIn("callbacks=%u", source)
+        self.assertIn("IDirect3D7::CreateDevice-request iid=%08lX", source)
+        self.assertIn("surface=%p caller=%p where=%s", source)
+        self.assertIn("IDirect3D7::CreateDevice-surface-desc hr=0x%08X", source)
+        self.assertIn("IDirect3D7::CreateDevice-surface-caps hr=0x%08X", source)
+        self.assertIn("IDirect3D7::CreateDevice-surface-format hr=0x%08X", source)
+        self.assertIn("dds_saved_GetSurfaceDesc(surface, &desc)", source)
+        self.assertIn("dds_saved_GetCaps(surface, &caps)", source)
+        self.assertIn("dds_saved_GetPixelFormat(surface, &format)", source)
+        self.assertIn("IDirect3D7::CreateDevice-result device=%p", source)
         self.assertIn(
             "if (hr != S_OK || !state->callback || state->count != 0) return;",
             source,

@@ -241,3 +241,17 @@ De volgende proef behoudt de originele call en fout zichtbaar en probeert
 alleen na exact deze fout/request-combinatie een lokale descriptor-kopie zonder
 `DDSCAPS_VIDEOMEMORY`. Ook dit is uitsluitend een compatibiliteitshypothese:
 succes kan de headless Wine-boot ontsluiten, maar bewijst geen native parity.
+
+## iter-37: system-memory-z-surface slaagt, device-creatie niet
+Run `31720694527` op commit `85b4d8e` bevestigt de hypothese zonder de eerste
+request te verbergen: de originele video-memory-z-surface blijft falen met
+`DDERR_NODIRECTDRAWHW`, de exact begrensde lokale retry zonder
+`DDSCAPS_VIDEOMEMORY` retourneert telkens `S_OK`, en `AddAttachedSurface`
+retourneert daarna eveneens `S_OK`. De eerstvolgende fout is
+`IDirect3D7::CreateDevice -> 0x8007000E` (`E_OUTOFMEMORY`).
+
+Die generieke HRESULT bewijst nog niet dat een HAL-device en system-memory
+z-buffer onverenigbaar zijn. De volgende iteratie wijzigt daarom geen gedrag,
+maar registreert het werkelijk gevraagde device-IID, calleradres en de
+gerealiseerde descriptor/caps/pixelformat van de aan `CreateDevice` doorgegeven
+surface via de opgeslagen, onderliggende read-only surface-methoden.

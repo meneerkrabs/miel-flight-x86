@@ -1078,6 +1078,8 @@ static D3D7CreateVertexBuffer_t d3d7_saved_CreateVertexBuffer;
 static D3D7EnumZBufferFormats_t d3d7_saved_EnumZBufferFormats;
 static D3D7EvictManagedTextures_t d3d7_saved_EvictManagedTextures;
 static BOOL d3d7_startup_patched;
+static void d3d7_trace_create_device_request(
+    REFCLSID iid, IDirectDrawSurface7 *surface, void *caller);
 
 #define D3D7_FORWARD(name, declaration, arguments) \
     static HRESULT WINAPI d3d7_##name##_hook declaration \
@@ -1093,10 +1095,6 @@ D3D7_FORWARD(EnumDevices,
              (IDirect3D7 *iface, LPD3DENUMDEVICESCALLBACK7 callback,
               void *context),
              (iface, callback, context))
-D3D7_FORWARD(CreateDevice,
-             (IDirect3D7 *iface, REFCLSID iid,
-              IDirectDrawSurface7 *surface, IDirect3DDevice7 **device),
-             (iface, iid, surface, device))
 D3D7_FORWARD(CreateVertexBuffer,
              (IDirect3D7 *iface, D3DVERTEXBUFFERDESC *desc,
               IDirect3DVertexBuffer7 **buffer, DWORD flags),
@@ -1105,6 +1103,28 @@ D3D7_FORWARD(EvictManagedTextures,
              (IDirect3D7 *iface), (iface))
 
 #undef D3D7_FORWARD
+
+static HRESULT WINAPI d3d7_CreateDevice_hook(
+    IDirect3D7 *iface, REFCLSID iid,
+    IDirectDrawSurface7 *surface, IDirect3DDevice7 **device)
+{
+    HRESULT hr;
+    IDirect3DDevice7 *result = NULL;
+    d3d7_trace_create_device_request(
+        iid, surface, __builtin_return_address(0));
+    ddraw_trace_enter("IDirect3D7::CreateDevice");
+    hr = d3d7_saved_CreateDevice(iface, iid, surface, device);
+    ddraw_trace_leave("IDirect3D7::CreateDevice", hr);
+    if (device && !IsBadReadPtr(device, sizeof(*device))) result = *device;
+    {
+        char detail[128];
+        wsprintfA(detail,
+                  "IDirect3D7::CreateDevice-result device=%p",
+                  result);
+        ddraw_trace_detail(detail);
+    }
+    return hr;
+}
 
 typedef struct D3D7ZFormatCallbackContext {
     LPD3DENUMPIXELFORMATSCALLBACK callback;
@@ -1540,6 +1560,61 @@ static DDSurfaceSetClipper_t dds_saved_SetClipper;
 static DDSurfaceSetPalette_t dds_saved_SetPalette;
 static DDSurfaceUnlock_t dds_saved_Unlock;
 static BOOL ddraw_surface_startup_patched;
+
+static void d3d7_trace_create_device_request(
+    REFCLSID iid, IDirectDrawSurface7 *surface, void *caller)
+{
+    char where[MAX_PATH + 32];
+    char detail[320];
+    if (!iid || IsBadReadPtr(iid, sizeof(*iid))) return;
+    describe_address(caller, where, sizeof(where));
+    wsprintfA(detail,
+              "IDirect3D7::CreateDevice-request iid=%08lX-%04X-%04X-"
+              "%02X%02X-%02X%02X%02X%02X%02X%02X "
+              "surface=%p caller=%p where=%s",
+              iid->Data1, iid->Data2, iid->Data3,
+              iid->Data4[0], iid->Data4[1], iid->Data4[2], iid->Data4[3],
+              iid->Data4[4], iid->Data4[5], iid->Data4[6], iid->Data4[7],
+              surface, caller, where);
+    ddraw_trace_detail(detail);
+    if (!surface || IsBadReadPtr(surface, sizeof(*surface))) return;
+    if (dds_saved_GetSurfaceDesc) {
+        DDSURFACEDESC2 desc;
+        HRESULT hr;
+        ZeroMemory(&desc, sizeof(desc));
+        desc.dwSize = sizeof(desc);
+        hr = dds_saved_GetSurfaceDesc(surface, &desc);
+        wsprintfA(detail,
+                  "IDirect3D7::CreateDevice-surface-desc hr=0x%08X "
+                  "flags=0x%08lX width=%lu height=%lu",
+                  (unsigned)hr, desc.dwFlags, desc.dwWidth, desc.dwHeight);
+        ddraw_trace_detail(detail);
+    }
+    if (dds_saved_GetCaps) {
+        DDSCAPS2 caps;
+        HRESULT hr;
+        ZeroMemory(&caps, sizeof(caps));
+        hr = dds_saved_GetCaps(surface, &caps);
+        wsprintfA(detail,
+                  "IDirect3D7::CreateDevice-surface-caps hr=0x%08X "
+                  "caps=0x%08lX caps2=0x%08lX",
+                  (unsigned)hr, caps.dwCaps, caps.dwCaps2);
+        ddraw_trace_detail(detail);
+    }
+    if (dds_saved_GetPixelFormat) {
+        DDPIXELFORMAT format;
+        HRESULT hr;
+        ZeroMemory(&format, sizeof(format));
+        format.dwSize = sizeof(format);
+        hr = dds_saved_GetPixelFormat(surface, &format);
+        wsprintfA(detail,
+                  "IDirect3D7::CreateDevice-surface-format hr=0x%08X "
+                  "flags=0x%08lX rgb_bits=%lu z_bits=%lu stencil_bits=%lu",
+                  (unsigned)hr, format.dwFlags, format.dwRGBBitCount,
+                  format.dwZBufferBitDepth, format.dwStencilBitDepth);
+        ddraw_trace_detail(detail);
+    }
+}
 
 #define DDS_FORWARD(name, declaration, arguments) \
     static HRESULT WINAPI dds_##name##_hook declaration \
