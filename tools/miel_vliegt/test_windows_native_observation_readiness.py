@@ -20,13 +20,13 @@ from tools.miel_vliegt.windows_native_observation_readiness import (
 RUN_ID = 36233389765
 HEAD_SHA = "56c9ff39cf2020e333745fbde5a10e355187ec16"
 TESTED_TREE_SHA = "59e7ac3f0a7f8fde16f40085288183b3113e76e4"
-PROBE_SOURCE_SHA = "b2e6464a5fb75e11f3f7fc2589d42df0e6cb6731"
+PROBE_SOURCE_BLOB = "b2e6464a5fb75e11f3f7fc2589d42df0e6cb6731"
 PROBE_EXE_SHA = "359d65e1b7e42f5d99b8e272fb4fb6b304b9b748585556760c65f28d04a9b3fa"
 HEAD_BRANCH = "codex/flight-native-observer-20260926"
 SELECTOR_RUN_ID = 36234230567
 SELECTOR_HEAD_SHA = "2f033a0e5143452457ff09bd580744b16007137e"
 SELECTOR_TREE_SHA = "d33a302507af6a49a05d89544a3778b3ea57cfe7"
-SELECTOR_PROBE_SOURCE_SHA = (
+SELECTOR_PROBE_SOURCE_BLOB = (
     "18992874a7973ebfc6045a502f8dfdbf7051c603"
 )
 SELECTOR_PROBE_EXE_SHA = (
@@ -35,7 +35,7 @@ SELECTOR_PROBE_EXE_SHA = (
 HARDWARE_RUN_ID = 36234420812
 HARDWARE_HEAD_SHA = "5fe9219bdd784c8b26c4d124cd877435710f79f5"
 HARDWARE_TREE_SHA = "519c94b7c7e5c695d9684bd6bef6959f11bd8e93"
-HARDWARE_PROBE_SOURCE_SHA = (
+HARDWARE_PROBE_SOURCE_BLOB = (
     "324712b7d990abdd055ca1839e64cb2c15eb0a21"
 )
 HARDWARE_PROBE_EXE_SHA = (
@@ -44,7 +44,7 @@ HARDWARE_PROBE_EXE_SHA = (
 FATAL_RUN_ID = 36234614734
 FATAL_HEAD_SHA = "e4c125232789e3b073619350ac3747b4e9a0add6"
 FATAL_TREE_SHA = "d4b8b7210b3fada0b06ec7e3dc4534ad31c1fb7a"
-FATAL_PROBE_SOURCE_SHA = (
+FATAL_PROBE_SOURCE_BLOB = (
     "99f60c2bcd495976168add94a50a96aa0fb1ac06"
 )
 FATAL_PROBE_EXE_SHA = (
@@ -53,7 +53,7 @@ FATAL_PROBE_EXE_SHA = (
 CONTEXT_RUN_ID = 36235197653
 CONTEXT_HEAD_SHA = "7ebb3fbdc57399a920a2d47ea8fc7db1d626443e"
 CONTEXT_TREE_SHA = "347327f59b92e53b9f386e3bcd27b6fcc111e3f0"
-CONTEXT_PROBE_SOURCE_SHA = (
+CONTEXT_PROBE_SOURCE_BLOB = (
     "44cdb58d3b6469ff5040a9fffd8cb02cf738e628"
 )
 CONTEXT_PROBE_EXE_SHA = (
@@ -62,12 +62,83 @@ CONTEXT_PROBE_EXE_SHA = (
 ENTRY_RUN_ID = 36235520637
 ENTRY_HEAD_SHA = "607edf474fe9b5ab7774638d26a36e0289857434"
 ENTRY_TREE_SHA = "016cedb2243dd9f010e36c2f53ab526bb283565a"
-ENTRY_PROBE_SOURCE_SHA = (
+ENTRY_PROBE_SOURCE_BLOB = (
     "91bf37634830ba8048b08cd0a72ffbf6e045bec3"
 )
 ENTRY_PROBE_EXE_SHA = (
     "f3ec7723b57cbbf661b21df3bb15744c60cf8b2d8d54a67a64d7fc490552b241"
 )
+
+
+def assert_source_identity_schema(test, receipt, blob, executable_sha256):
+    identities = receipt["source_identities"]
+    test.assertEqual(
+        set(identities),
+        {
+            "probe_source_path",
+            "probe_source_blob_id",
+            "probe_executable_sha256",
+        },
+    )
+    test.assertEqual(identities["probe_source_blob_id"], blob)
+    test.assertRegex(identities["probe_source_blob_id"], r"^[0-9a-f]{40}$")
+    test.assertEqual(identities["probe_executable_sha256"], executable_sha256)
+
+
+class WindowsNativeObservationSourceIdentityTests(unittest.TestCase):
+    def test_all_receipts_distinguish_git_blobs_from_sha256(self):
+        cases = (
+            (
+                WindowsNativeObservationReadinessTests,
+                "test_static_dialog_observation_is_diagnostic_only",
+                PROBE_SOURCE_BLOB,
+                PROBE_EXE_SHA,
+            ),
+            (
+                WindowsNativeRendererSelectorTests,
+                "test_passive_renderer_selector_labels_are_diagnostic_only",
+                SELECTOR_PROBE_SOURCE_BLOB,
+                SELECTOR_PROBE_EXE_SHA,
+            ),
+            (
+                WindowsNativeHardwareProgressTests,
+                "test_hardware_progress_and_fatal_exit_remain_diagnostic_only",
+                HARDWARE_PROBE_SOURCE_BLOB,
+                HARDWARE_PROBE_EXE_SHA,
+            ),
+            (
+                WindowsNativeFatalExceptionTests,
+                "test_located_fatal_exception_is_diagnostic_only",
+                FATAL_PROBE_SOURCE_BLOB,
+                FATAL_PROBE_EXE_SHA,
+            ),
+            (
+                WindowsNativeFatalContextTests,
+                "test_fatal_context_is_diagnostic_only",
+                CONTEXT_PROBE_SOURCE_BLOB,
+                CONTEXT_PROBE_EXE_SHA,
+            ),
+            (
+                WindowsNativeEntryTransitionTests,
+                "test_entry_to_fault_esi_transition_is_diagnostic_only",
+                ENTRY_PROBE_SOURCE_BLOB,
+                ENTRY_PROBE_EXE_SHA,
+            ),
+        )
+        for testcase_class, anchor, blob, executable_sha256 in cases:
+            with self.subTest(class_name=testcase_class.__name__):
+                testcase = testcase_class(anchor)
+                testcase.setUp()
+                with tempfile.TemporaryDirectory() as raw:
+                    manifest_path, log_path = testcase.write_evidence(
+                        Path(raw)
+                    )
+                    receipt = testcase.classify_evidence(
+                        manifest_path, log_path
+                    )
+                assert_source_identity_schema(
+                    self, receipt, blob, executable_sha256
+                )
 
 
 class WindowsNativeObservationReadinessTests(unittest.TestCase):
@@ -144,7 +215,7 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
             return_value=TESTED_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=PROBE_SOURCE_SHA,
+            return_value=PROBE_SOURCE_BLOB,
         ):
             return classify(
                 manifest_path,
@@ -153,7 +224,7 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
                 expected_head_sha=HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=TESTED_TREE_SHA,
-                expected_probe_source_sha256=PROBE_SOURCE_SHA,
+                expected_probe_source_blob=PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=PROBE_EXE_SHA,
             )
 
@@ -435,7 +506,7 @@ class WindowsNativeRendererSelectorTests(unittest.TestCase):
             return_value=SELECTOR_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=SELECTOR_PROBE_SOURCE_SHA,
+            return_value=SELECTOR_PROBE_SOURCE_BLOB,
         ):
             return classify_renderer_selector(
                 manifest_path,
@@ -444,7 +515,7 @@ class WindowsNativeRendererSelectorTests(unittest.TestCase):
                 expected_head_sha=SELECTOR_HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=SELECTOR_TREE_SHA,
-                expected_probe_source_sha256=SELECTOR_PROBE_SOURCE_SHA,
+                expected_probe_source_blob=SELECTOR_PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=SELECTOR_PROBE_EXE_SHA,
             )
 
@@ -624,7 +695,7 @@ class WindowsNativeHardwareProgressTests(unittest.TestCase):
             return_value=HARDWARE_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=HARDWARE_PROBE_SOURCE_SHA,
+            return_value=HARDWARE_PROBE_SOURCE_BLOB,
         ):
             return classify_hardware_progress(
                 manifest_path,
@@ -633,7 +704,7 @@ class WindowsNativeHardwareProgressTests(unittest.TestCase):
                 expected_head_sha=HARDWARE_HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=HARDWARE_TREE_SHA,
-                expected_probe_source_sha256=HARDWARE_PROBE_SOURCE_SHA,
+                expected_probe_source_blob=HARDWARE_PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=HARDWARE_PROBE_EXE_SHA,
             )
 
@@ -807,7 +878,7 @@ class WindowsNativeFatalExceptionTests(unittest.TestCase):
             return_value=FATAL_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=FATAL_PROBE_SOURCE_SHA,
+            return_value=FATAL_PROBE_SOURCE_BLOB,
         ):
             return classify_fatal_exception(
                 manifest_path,
@@ -816,7 +887,7 @@ class WindowsNativeFatalExceptionTests(unittest.TestCase):
                 expected_head_sha=FATAL_HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=FATAL_TREE_SHA,
-                expected_probe_source_sha256=FATAL_PROBE_SOURCE_SHA,
+                expected_probe_source_blob=FATAL_PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=FATAL_PROBE_EXE_SHA,
             )
 
@@ -1026,7 +1097,7 @@ class WindowsNativeFatalContextTests(unittest.TestCase):
             return_value=CONTEXT_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=CONTEXT_PROBE_SOURCE_SHA,
+            return_value=CONTEXT_PROBE_SOURCE_BLOB,
         ):
             return classify_fatal_context(
                 manifest_path,
@@ -1035,7 +1106,7 @@ class WindowsNativeFatalContextTests(unittest.TestCase):
                 expected_head_sha=CONTEXT_HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=CONTEXT_TREE_SHA,
-                expected_probe_source_sha256=CONTEXT_PROBE_SOURCE_SHA,
+                expected_probe_source_blob=CONTEXT_PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=CONTEXT_PROBE_EXE_SHA,
             )
 
@@ -1258,7 +1329,7 @@ class WindowsNativeEntryTransitionTests(unittest.TestCase):
             return_value=ENTRY_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=ENTRY_PROBE_SOURCE_SHA,
+            return_value=ENTRY_PROBE_SOURCE_BLOB,
         ):
             return classify_entry_transition(
                 manifest_path,
@@ -1267,7 +1338,7 @@ class WindowsNativeEntryTransitionTests(unittest.TestCase):
                 expected_head_sha=ENTRY_HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=ENTRY_TREE_SHA,
-                expected_probe_source_sha256=ENTRY_PROBE_SOURCE_SHA,
+                expected_probe_source_blob=ENTRY_PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=ENTRY_PROBE_EXE_SHA,
             )
 

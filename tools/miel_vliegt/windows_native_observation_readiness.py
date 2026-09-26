@@ -267,7 +267,7 @@ def classify(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -282,8 +282,8 @@ def classify(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -312,10 +312,10 @@ def classify(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -419,7 +419,7 @@ def classify(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -454,7 +454,7 @@ def classify_renderer_selector(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -467,8 +467,8 @@ def classify_renderer_selector(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -495,10 +495,10 @@ def classify_renderer_selector(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -621,7 +621,7 @@ def classify_renderer_selector(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -660,7 +660,7 @@ def classify_hardware_progress(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -673,8 +673,8 @@ def classify_hardware_progress(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -701,10 +701,10 @@ def classify_hardware_progress(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -826,7 +826,7 @@ def classify_hardware_progress(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -870,7 +870,7 @@ def classify_fatal_exception(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -883,8 +883,8 @@ def classify_fatal_exception(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -911,10 +911,10 @@ def classify_fatal_exception(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -1056,7 +1056,7 @@ def classify_fatal_exception(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -1103,7 +1103,7 @@ def classify_fatal_context(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -1116,8 +1116,8 @@ def classify_fatal_context(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -1144,10 +1144,10 @@ def classify_fatal_context(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -1336,7 +1336,7 @@ def classify_fatal_context(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -1393,7 +1393,7 @@ def classify_entry_transition(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -1406,8 +1406,8 @@ def classify_entry_transition(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -1434,10 +1434,10 @@ def classify_entry_transition(
         raise WindowsNativeObservationReadinessError("run metadata differs")
 
     tested_tree_sha = _commit_tree(head_sha)
-    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
-    if probe_source_sha256 != expected_probe_source_sha256:
+    if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
@@ -1641,7 +1641,7 @@ def classify_entry_transition(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_source_blob_id": probe_source_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -1707,7 +1707,7 @@ def main() -> int:
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--head-branch", required=True)
     parser.add_argument("--tested-tree-sha", required=True)
-    parser.add_argument("--probe-source-sha256", required=True)
+    parser.add_argument("--probe-source-blob", required=True)
     parser.add_argument("--probe-executable-sha256", required=True)
     parser.add_argument(
         "--receipt-type",
@@ -1734,7 +1734,7 @@ def main() -> int:
         expected_head_sha=arguments.head_sha,
         expected_head_branch=arguments.head_branch,
         expected_tested_tree_sha=arguments.tested_tree_sha,
-        expected_probe_source_sha256=arguments.probe_source_sha256,
+        expected_probe_source_blob=arguments.probe_source_blob,
         expected_probe_executable_sha256=arguments.probe_executable_sha256,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True))
