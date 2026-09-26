@@ -40,12 +40,15 @@ jobs:
             if (-not (Test-Path $encrypted)) { throw 'downloaded ISO absent' }
             $stage = 'decrypt'
             $iso = Join-Path $private 'Mielvliegt.iso'
+            $gpgHomeWindows = Join-Path $private 'gpg-home'
+            New-Item -ItemType Directory -Path $gpgHomeWindows -Force | Out-Null
             $passFile = Join-Path $private 'gpg-passphrase.txt'
             [System.IO.File]::WriteAllText($passFile, $env:ISO_GPG_PASSPHRASE,
               [System.Text.UTF8Encoding]::new($false))
             $gpgInput = $encrypted
             $gpgOutput = $iso
             $gpgPassFile = $passFile
+            $gpgHome = $gpgHomeWindows
             if ($gpg.StartsWith('C:\msys64\', [StringComparison]::OrdinalIgnoreCase)) {
               $stage = 'path-conversion'
               $cygpath = Join-Path (Split-Path $gpg) 'cygpath.exe'
@@ -53,12 +56,14 @@ jobs:
               $gpgInput = (& $cygpath -u $encrypted 2> (Join-Path $private 'cygpath.log')).Trim()
               $gpgOutput = (& $cygpath -u $iso 2>> (Join-Path $private 'cygpath.log')).Trim()
               $gpgPassFile = (& $cygpath -u $passFile 2>> (Join-Path $private 'cygpath.log')).Trim()
-              if ($LASTEXITCODE -ne 0 -or -not $gpgInput -or -not $gpgOutput -or -not $gpgPassFile) {
+              $gpgHome = (& $cygpath -u $gpgHomeWindows 2>> (Join-Path $private 'cygpath.log')).Trim()
+              if ($LASTEXITCODE -ne 0 -or -not $gpgInput -or -not $gpgOutput -or -not $gpgPassFile -or -not $gpgHome) {
                 throw 'MSYS2 path conversion failed'
               }
               $stage = 'decrypt'
             }
-            & $gpg --batch --yes --quiet --no-tty --pinentry-mode loopback `
+            $env:PATH = (Split-Path $gpg) + ';' + $env:PATH
+            & $gpg --homedir $gpgHome --batch --yes --quiet --no-tty --pinentry-mode loopback `
               --passphrase-file $gpgPassFile --output $gpgOutput --decrypt $gpgInput `
               2> (Join-Path $private 'gpg.log')
             $gpgExitCode = $LASTEXITCODE
@@ -77,6 +82,8 @@ jobs:
                 $gpgErrorCategory = 'ENCRYPTED_INPUT'
               } elseif ($gpgMessage -match 'Mielvliegt.iso') {
                 $gpgErrorCategory = 'DECRYPTED_OUTPUT'
+              } elseif ($gpgMessage -match 'homedir|keyring|pubring|socket') {
+                $gpgErrorCategory = 'GPG_HOME'
               } elseif ($gpgMessage -match 'No such file|can.t open') {
                 $gpgErrorCategory = 'PATH_OR_INPUT'
               } elseif ($gpgMessage -match 'No valid OpenPGP data|invalid packet|bad armor') {
