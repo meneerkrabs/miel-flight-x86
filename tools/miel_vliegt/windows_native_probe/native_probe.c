@@ -767,8 +767,24 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                     have_last_audio_return = remote_read((uintptr_t)context.Esp, &ret, 4) &&
                         ret >= 0x00400006u && ret < 0x00460000u && plausible_return(ret);
                     if (have_last_audio_return) last_audio_return_rva = ret - 0x00400000u;
-                }
-                else if (strcmp(b->name, "create_enter") == 0) {
+                } else if (strcmp(b->name, "esi_block") == 0) {
+                    unsigned block_index;
+                    const char *category = pointer_category(context.Esi);
+                    for (block_index = 0; block_index < ESI_BLOCK_COUNT; block_index++)
+                        if (b->address == esi_block_addresses[block_index]) break;
+                    if (block_index < ESI_BLOCK_COUNT) {
+                        state->block_hits[block_index]++;
+                        state->block_esi[block_index] = context.Esi;
+                        state->block_categories[block_index] = category;
+                        if (!state->transition_seen && state->previous_esi_category &&
+                            strcmp(state->previous_esi_category, "private") == 0 &&
+                            strcmp(category, "unmapped") == 0) {
+                            state->transition_seen = 1;
+                            state->transition_index = block_index;
+                        }
+                        state->previous_esi_category = category;
+                    }
+                } else if (strcmp(b->name, "create_enter") == 0) {
                     DWORD out = 0;
                     if (remote_read((uintptr_t)context.Esp + 12, &out, 4)) {
                         state->create_out = out;
