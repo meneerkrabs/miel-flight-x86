@@ -36,10 +36,25 @@ jobs:
             & gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 `
               --pattern 'Mielvliegt.iso.gpg' --dir $private --clobber *> (Join-Path $private 'download.log')
             if ($LASTEXITCODE -ne 0) { throw 'release download failed' }
+            $encrypted = Join-Path $private 'Mielvliegt.iso.gpg'
+            if (-not (Test-Path $encrypted)) { throw 'downloaded ISO absent' }
             $stage = 'decrypt'
             $iso = Join-Path $private 'Mielvliegt.iso'
+            $gpgInput = $encrypted
+            $gpgOutput = $iso
+            if ($gpg.StartsWith('C:\msys64\', [StringComparison]::OrdinalIgnoreCase)) {
+              $stage = 'path-conversion'
+              $cygpath = Join-Path (Split-Path $gpg) 'cygpath.exe'
+              if (-not (Test-Path $cygpath)) { throw 'MSYS2 path helper absent' }
+              $gpgInput = (& $cygpath -u $encrypted 2> (Join-Path $private 'cygpath.log')).Trim()
+              $gpgOutput = (& $cygpath -u $iso 2>> (Join-Path $private 'cygpath.log')).Trim()
+              if ($LASTEXITCODE -ne 0 -or -not $gpgInput -or -not $gpgOutput) {
+                throw 'MSYS2 path conversion failed'
+              }
+              $stage = 'decrypt'
+            }
             $env:ISO_GPG_PASSPHRASE | & $gpg --batch --yes --quiet --pinentry-mode loopback `
-              --passphrase-fd 0 --output $iso --decrypt (Join-Path $private 'Mielvliegt.iso.gpg') `
+              --passphrase-fd 0 --output $gpgOutput --decrypt $gpgInput `
               2> (Join-Path $private 'gpg.log')
             $gpgExitCode = $LASTEXITCODE
             if ($gpgExitCode -ne 0) {
