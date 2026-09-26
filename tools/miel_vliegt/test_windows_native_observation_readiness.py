@@ -8,6 +8,7 @@ from unittest import mock
 
 from tools.miel_vliegt.windows_native_observation_readiness import (
     WindowsNativeObservationReadinessError,
+    classify_fatal_exception,
     classify,
     classify_hardware_progress,
     classify_renderer_selector,
@@ -37,6 +38,15 @@ HARDWARE_PROBE_SOURCE_SHA = (
 )
 HARDWARE_PROBE_EXE_SHA = (
     "e10db1874c0821a2d3457d08217a774b4913aef5d0f05ce128db0e35d2b103b3"
+)
+FATAL_RUN_ID = 36234614734
+FATAL_HEAD_SHA = "e4c125232789e3b073619350ac3747b4e9a0add6"
+FATAL_TREE_SHA = "d4b8b7210b3fada0b06ec7e3dc4534ad31c1fb7a"
+FATAL_PROBE_SOURCE_SHA = (
+    "99f60c2bcd495976168add94a50a96aa0fb1ac06"
+)
+FATAL_PROBE_EXE_SHA = (
+    "ce654f023ef5894e493d506bf55e9036b7fc191883cd134c62a35a592dd9e7dc"
 )
 
 
@@ -607,6 +617,204 @@ class WindowsNativeHardwareProgressTests(unittest.TestCase):
                 self.classify_evidence(manifest_path, log_path)
 
     def test_hardware_identity_and_log_drift_fail_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(
+                directory, output={"probe_sha256": "1" * 64}
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "observer probe identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["head_sha"] = "0" * 40
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "run identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            log_path.write_bytes(log_path.read_bytes() + b"drift\n")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError, "log bytes differ"
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+
+class WindowsNativeFatalExceptionTests(unittest.TestCase):
+    def setUp(self):
+        self.maxDiff = None
+        self.output = {
+            "hardware_selection_guard": "HARDWARE_CLICK_SENT",
+            "fatal_access_type": "read",
+            "window_present": False,
+            "process_exit_code": 3221225477,
+            "probe_sha256": FATAL_PROBE_EXE_SHA,
+            "cd_mounted": True,
+            "process_alive_after_15s": False,
+            "gt_loaded": True,
+            "pixel_changes": 5,
+            "fatal_exception_rva": "0x00009B22",
+            "captured_height": 457,
+            "create_callsite_verified": True,
+            "device_nonnull": False,
+            "artifact_count": 0,
+            "fatal_fault_category": "unmapped",
+            "child_static_count": 0,
+            "captured_width": 640,
+            "child_button_count": 0,
+            "create_hr": None,
+            "pixel_samples": 8,
+            "create_calls": 0,
+            "dialog_reason": "none",
+            "status": "FAIL",
+            "nonblack_pixels_max": 290688,
+            "create_success": 0,
+            "hardware_selection_sent": True,
+            "hardware_selection_requested": True,
+            "stage": "native-observation",
+            "manager_renders": 124,
+            "child_edit_count": 0,
+            "fatal_exception_code": "0xC0000005",
+            "window_title_safe": "",
+            "first_chance_av_count": 1,
+            "process_cpu_ms": 2296,
+            "hardware_selection_attempted": True,
+            "fatal_exception_module": "MulleMeck.exe",
+            "manager_ticks": 125,
+            "manager_slots_verified": True,
+            "hardware_dialog_closed": True,
+            "create_returns": 0,
+            "button_labels_safe": ["", ""],
+            "window_class": "none",
+        }
+
+    def write_evidence(self, directory: Path, *, output=None):
+        public_output = dict(self.output)
+        public_output.update(output or {})
+        rendered = json.dumps(
+            public_output, sort_keys=True, separators=(",", ":")
+        )
+        log = (
+            "checkout prefix\n"
+            f"Run actions/checkout\ttimestamp {FATAL_HEAD_SHA}\n"
+            "runner middle\n"
+            "extract-in-one-job\tProbe private game extraction without an artifact\t"
+            f"timestamp {rendered}\n"
+            "runner cleanup\n"
+            "Post Run actions/checkout\tcleanup\n"
+        ).encode("utf-8")
+        log_path = directory / "run.log"
+        log_path.write_bytes(log)
+        manifest = {
+            "run_id": FATAL_RUN_ID,
+            "head_branch": HEAD_BRANCH,
+            "head_sha": FATAL_HEAD_SHA,
+            "status": "completed",
+            "conclusion": "failure",
+            "workflow_name": "Native Flight Windows extraction readiness",
+            "created_at": "2026-09-26T10:03:17Z",
+            "updated_at": "2026-09-26T10:04:16Z",
+            "log_sha256": hashlib.sha256(log).hexdigest(),
+            "log_bytes": len(log),
+        }
+        manifest_path = directory / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest_path, log_path
+
+    def classify_evidence(self, manifest_path: Path, log_path: Path):
+        with mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._commit_tree",
+            return_value=FATAL_TREE_SHA,
+        ), mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
+            return_value=FATAL_PROBE_SOURCE_SHA,
+        ):
+            return classify_fatal_exception(
+                manifest_path,
+                log_path,
+                expected_run_id=FATAL_RUN_ID,
+                expected_head_sha=FATAL_HEAD_SHA,
+                expected_head_branch=HEAD_BRANCH,
+                expected_tested_tree_sha=FATAL_TREE_SHA,
+                expected_probe_source_sha256=FATAL_PROBE_SOURCE_SHA,
+                expected_probe_executable_sha256=FATAL_PROBE_EXE_SHA,
+            )
+
+    def test_located_fatal_exception_is_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        self.assertEqual(
+            receipt["status"], "NATIVE_FATAL_EXCEPTION_LOCATED_DIAGNOSTIC_ONLY"
+        )
+        located = receipt["fatal_exception"]
+        self.assertEqual(located["code"], "0xC0000005")
+        self.assertEqual(located["module"], "MulleMeck.exe")
+        self.assertEqual(located["rva"], "0x00009B22")
+        self.assertEqual(located["access_type"], "read")
+        self.assertEqual(located["fault_category"], "unmapped")
+        self.assertEqual(located["first_chance_av_count"], 1)
+        progress = receipt["runtime_progress"]
+        self.assertEqual(progress["manager_ticks"], 125)
+        self.assertEqual(progress["manager_renders"], 124)
+        self.assertEqual(progress["pixel_changes"], 5)
+        limits = receipt["proof_limits"]
+        self.assertFalse(limits["direct3d_device_creation_called"])
+        self.assertFalse(limits["direct3d_device_created"])
+        self.assertFalse(limits["fatal_root_cause_proven"])
+        self.assertFalse(limits["fatal_fault_target_address_proven"])
+        self.assertFalse(limits["fatal_call_stack_proven"])
+        self.assertFalse(limits["complete_native_gameplay_progress"])
+        self.assertFalse(limits["native_parity_evidence"])
+
+    def test_unavailable_exception_fields_cannot_substitute_for_location(self):
+        unavailable = {
+            "fatal_exception_code": None,
+            "fatal_exception_module": "unknown",
+            "fatal_exception_rva": None,
+            "fatal_access_type": "unavailable",
+            "fatal_fault_category": "unavailable",
+            "first_chance_av_count": 0,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=unavailable
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "located fatal exception boundary differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+    def test_fatal_location_cannot_become_device_or_parity_proof(self):
+        overclaim = {
+            "status": "NATIVE_RENDER_DIAGNOSTIC_ONLY",
+            "create_calls": 1,
+            "create_returns": 1,
+            "create_success": 1,
+            "device_nonnull": True,
+            "process_alive_after_15s": True,
+            "window_present": True,
+            "process_exit_code": 0,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=overclaim
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "located fatal exception boundary differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+    def test_fatal_identity_and_log_drift_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
             manifest_path, log_path = self.write_evidence(
