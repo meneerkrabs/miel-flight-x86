@@ -138,6 +138,10 @@ def _activation_pattern(clsid: str) -> re.Pattern[str]:
     )
 
 
+def _standalone_sentinel(text: str, sentinel: str) -> bool:
+    return any(line.strip() == sentinel for line in text.splitlines())
+
+
 def _registry_proven(text: str, clsid: str) -> bool:
     expected_path = f"CLSID\\{clsid}\\InprocServer32".lower()
     lines = text.splitlines()
@@ -253,7 +257,9 @@ def validate_observation(
         "wineboot_process_completed": _phase_ok(indexed["wineboot"]),
         "transport_roundtrip": (
             _phase_ok(indexed["transport"])
-            and requirements["transportSentinel"] in texts["transport"]
+            and _standalone_sentinel(
+                texts["transport"], requirements["transportSentinel"],
+            )
         ),
         "rpcss_service_running": (
             _phase_ok(indexed["rpcss-service"])
@@ -267,7 +273,9 @@ def validate_observation(
         ),
         "wineserver_clean_shutdown": (
             _phase_ok(indexed["wineserver-shutdown"])
-            and "MIEL_WINESERVER_STOPPED" in texts["wineserver-shutdown"]
+            and _standalone_sentinel(
+                texts["wineserver-shutdown"], "MIEL_WINESERVER_STOPPED",
+            )
         ),
         "fatal_diagnostics_absent": not fatal_diagnostics,
     }

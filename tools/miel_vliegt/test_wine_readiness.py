@@ -201,6 +201,39 @@ class WineReadinessTests(unittest.TestCase):
             receipt["com"]["registry"][DIRECTSOUND]
         )
 
+    def test_transport_and_shutdown_sentinels_must_be_standalone_lines(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            for phase_id, prose in (
+                (
+                    "transport",
+                    "diagnostic considered but did not emit "
+                    "MIEL_WINE_TRANSPORT_OK here\n",
+                ),
+                (
+                    "wineserver-shutdown",
+                    "cleanup note mentions MIEL_WINESERVER_STOPPED "
+                    "but it is not the record\n",
+                ),
+            ):
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(prose, encoding="utf-8")
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["transport_roundtrip"])
+        self.assertFalse(receipt["checks"]["wineserver_clean_shutdown"])
+
     def test_backend_identity_must_be_a_nonempty_string_mapping(self):
         invalid_backends = (
             None,
