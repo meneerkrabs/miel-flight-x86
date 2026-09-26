@@ -140,11 +140,12 @@ def _phase_ok(phase: dict[str, Any]) -> bool:
     return phase["exitCode"] == 0 and phase["timedOut"] is False
 
 
-def _activation_pattern(clsid: str) -> re.Pattern[str]:
-    return re.compile(
-        rf"MIEL_COM_ACTIVATION\s+clsid={re.escape(clsid)}\s+"
-        rf"hresult=0x00000000(?:\s|$)",
-        re.IGNORECASE,
+def _activation_proven(text: str, clsid: str) -> bool:
+    expected = (
+        f"MIEL_COM_ACTIVATION clsid={clsid} hresult=0x00000000"
+    ).lower()
+    return any(
+        line.strip().lower() == expected for line in text.splitlines()
     )
 
 
@@ -278,9 +279,7 @@ def validate_observation(
     activation_checks = {
         clsid: (
             _phase_ok(indexed[f"com-activation:{clsid}"])
-            and _activation_pattern(clsid).search(
-                texts[f"com-activation:{clsid}"]
-            ) is not None
+            and _activation_proven(texts[f"com-activation:{clsid}"], clsid)
         )
         for clsid in classes
     }
