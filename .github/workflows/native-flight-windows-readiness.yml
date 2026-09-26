@@ -235,6 +235,7 @@ jobs:
               button_labels_safe=$probeResult.button_labels_safe;
               hardware_selection_guard=$probeResult.hardware_selection_guard;
               hardware_selection_sent=$probeResult.hardware_selection_sent;
+              first_chance_av_count=$probeResult.first_chance_av_count;
               process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
           } catch {
@@ -257,7 +258,10 @@ jobs:
                     'child_button_count', 'child_edit_count', 'process_cpu_ms',
                     'hardware_selection_requested', 'hardware_selection_attempted',
                     'hardware_selection_sent', 'hardware_dialog_closed',
-                    'hardware_selection_guard')) {
+                    'hardware_selection_guard', 'first_chance_av_count',
+                    'fatal_exception_code', 'fatal_exception_module',
+                    'fatal_exception_rva', 'fatal_access_type',
+                    'fatal_fault_category')) {
                   $finalResult[$key] = $probeResult.$key
                 }
               }

@@ -35,6 +35,10 @@ static int hardware_selection_sent, hardware_dialog_closed;
 static HWND hardware_dialog;
 static const char *hardware_selection_guard = "not_requested";
 static char window_title_safe[65], button_labels_safe[2][21];
+static unsigned long first_chance_av_count, fatal_exception_code, fatal_exception_rva;
+static int have_fatal_exception, have_fatal_rva;
+static const char *fatal_exception_module = "unknown";
+static const char *fatal_access_type = "unavailable", *fatal_fault_category = "unavailable";
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -422,6 +426,66 @@ static void observe_gt_callsite(uintptr_t module)
     if (call && add_bp(call, "create_enter") && add_bp(ret, "create_return"))
         callsite_verified = 1;
 }
+static void classify_exception_module(uintptr_t address)
+{
+    HANDLE snapshot;
+    MODULEENTRY32 entry;
+    char windows[512];
+    DWORD windows_length = GetWindowsDirectoryA(windows, sizeof windows);
+    int attempt;
+    for (attempt = 0; attempt < 3; attempt++) {
+        snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, child_pid);
+        if (snapshot != INVALID_HANDLE_VALUE || GetLastError() != ERROR_BAD_LENGTH) break;
+    }
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    memset(&entry, 0, sizeof entry);
+    entry.dwSize = sizeof entry;
+    if (Module32First(snapshot, &entry)) do {
+        uintptr_t base = (uintptr_t)entry.modBaseAddr;
+        if (address < base || address - base >= entry.modBaseSize) continue;
+        if (_stricmp(entry.szModule, "MulleMeck.exe") == 0)
+            fatal_exception_module = "MulleMeck.exe";
+        else if (_stricmp(entry.szModule, "gtDirect3d.dll") == 0)
+            fatal_exception_module = "gtDirect3d.dll";
+        else if (_stricmp(entry.szModule, "Cc.dll") == 0)
+            fatal_exception_module = "Cc.dll";
+        else if (windows_length > 0 && windows_length < sizeof windows &&
+                 _strnicmp(entry.szExePath, windows, windows_length) == 0 &&
+                 (entry.szExePath[windows_length] == '\\' || entry.szExePath[windows_length] == '/'))
+            fatal_exception_module = "system";
+        if (strcmp(fatal_exception_module, "unknown") != 0) {
+            fatal_exception_rva = (unsigned long)(address - base);
+            have_fatal_rva = 1;
+        }
+        break;
+    } while (Module32Next(snapshot, &entry));
+    CloseHandle(snapshot);
+}
+static void record_fatal_exception(const EXCEPTION_RECORD *exception)
+{
+    uintptr_t address;
+    MEMORY_BASIC_INFORMATION memory;
+    fatal_exception_code = exception->ExceptionCode;
+    have_fatal_exception = 1;
+    address = (uintptr_t)exception->ExceptionAddress;
+    classify_exception_module(address);
+    if ((exception->ExceptionCode != EXCEPTION_ACCESS_VIOLATION &&
+         exception->ExceptionCode != EXCEPTION_IN_PAGE_ERROR) ||
+        exception->NumberParameters < 2) return;
+    if (exception->ExceptionInformation[0] == 0) fatal_access_type = "read";
+    else if (exception->ExceptionInformation[0] == 1) fatal_access_type = "write";
+    else if (exception->ExceptionInformation[0] == 8) fatal_access_type = "execute";
+    else fatal_access_type = "other";
+    address = (uintptr_t)exception->ExceptionInformation[1];
+    if (address == 0) fatal_fault_category = "null";
+    else if (address < 0x10000u) fatal_fault_category = "near_null";
+    else if (!VirtualQueryEx(child, (LPCVOID)address, &memory, sizeof memory) ||
+             memory.State != MEM_COMMIT) fatal_fault_category = "unmapped";
+    else if (memory.Type == MEM_IMAGE) fatal_fault_category = "image";
+    else if (memory.Type == MEM_PRIVATE) fatal_fault_category = "private";
+    else if (memory.Type == MEM_MAPPED) fatal_fault_category = "mapped";
+    else fatal_fault_category = "other";
+}
 static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status)
 {
     if (event->dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT) {
@@ -451,6 +515,10 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
         CONTEXT context;
         int i;
         *continue_status = DBG_EXCEPTION_NOT_HANDLED;
+        if (code == EXCEPTION_ACCESS_VIOLATION && ex->dwFirstChance)
+            first_chance_av_count++;
+        if (!ex->dwFirstChance && !have_fatal_exception)
+            record_fatal_exception(&ex->ExceptionRecord);
         if (!state || (code != EXCEPTION_BREAKPOINT && code != EXCEPTION_SINGLE_STEP)) return;
         handle = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, event->dwThreadId);
         if (!handle) return;
@@ -608,7 +676,8 @@ int main(int argc, char **argv)
         "\"hardware_selection_sent\":%s,\"hardware_dialog_closed\":%s,"
         "\"hardware_selection_guard\":\"%s\","
         "\"first_pixel_hash\":\"%08lX\",\"last_pixel_hash\":\"%08lX\","
-        "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s,",
+        "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s,"
+        "\"first_chance_av_count\":%lu,",
         last_device ? "true" : "false", ticks, renders, pixel_samples, pixel_changes,
         nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false",
         window_class, child_static_count, child_button_count, child_edit_count, dialog_reason, process_cpu_ms,
@@ -616,8 +685,21 @@ int main(int argc, char **argv)
         hardware_selection_sent ? "true" : "false", hardware_dialog_closed ? "true" : "false",
         hardware_selection_guard,
         first_pixel, last_pixel, alive ? "false" : "true", exit_code,
-        process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false");
-    fputs("\"window_title_safe\":", log);
+        process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false",
+        first_chance_av_count);
+    fputs("\"fatal_exception_code\":", log);
+    if (have_fatal_exception) fprintf(log, "\"0x%08lX\"", fatal_exception_code);
+    else fputs("null", log);
+    fputs(",\"fatal_exception_module\":", log);
+    print_json_string(log, fatal_exception_module);
+    fputs(",\"fatal_exception_rva\":", log);
+    if (have_fatal_rva) fprintf(log, "\"0x%08lX\"", fatal_exception_rva);
+    else fputs("null", log);
+    fputs(",\"fatal_access_type\":", log);
+    print_json_string(log, fatal_access_type);
+    fputs(",\"fatal_fault_category\":", log);
+    print_json_string(log, fatal_fault_category);
+    fputs(",\"window_title_safe\":", log);
     print_json_string(log, window_title_safe);
     fputs(",\"button_labels_safe\":[", log);
     print_json_string(log, button_labels_safe[0]);
