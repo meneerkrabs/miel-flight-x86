@@ -240,7 +240,9 @@ def _checkout_line_number(text: str, head_sha: str) -> int | None:
 
 def _post_checkout_line_number(text: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
-        if "Post Run actions/checkout" in line:
+        fields = line.rstrip().split("\t")
+        if len(fields) >= 3 \
+                and fields[1].startswith("Post Run actions/checkout@"):
             return line_number
     return None
 
