@@ -28,7 +28,10 @@ typedef struct {
     const char *block_categories[ESI_BLOCK_COUNT], *previous_esi_category;
     int transition_seen;
     unsigned transition_index;
-    uint64_t last_audio_sequence, last_b1c_sequence;
+    uint64_t last_audio_sequence, last_b1c_sequence, b1c_post_sequence;
+    uintptr_t b1c_post_esi;
+    const char *b1c_post_category;
+    int b1c_post_seen, b1c_changed_esi;
 } ThreadState;
 static Breakpoint bp[BP_MAX];
 static ThreadState threads[THREAD_MAX];
@@ -80,6 +83,8 @@ static int esi_block_verified[ESI_BLOCK_COUNT], have_esi_transition;
 static unsigned esi_transition_index;
 static uint64_t measurement_sequence;
 static int have_last_b1c_after_audio, last_b1c_after_audio;
+static int b1c_single_step_seen, b1c_changed_esi, b1c_post_matches_fatal;
+static const char *b1c_post_esi_category = "unavailable";
 static int instruction_shape_verified, fault_instruction_esi_plus_620;
 static const char *pre_fault_instruction_shape = "UNAVAILABLE";
 static const char *fault_instruction_shape = "UNAVAILABLE";
@@ -666,6 +671,14 @@ static void capture_fatal_context(DWORD thread_id, uintptr_t fault_address)
                 have_last_b1c_after_audio = 1;
                 last_b1c_after_audio =
                     state->last_b1c_sequence > state->last_audio_sequence;
+                if (last_b1c_after_audio && state->b1c_post_seen &&
+                    state->b1c_post_sequence == state->last_b1c_sequence) {
+                    b1c_single_step_seen = 1;
+                    b1c_post_esi_category = state->b1c_post_category;
+                    b1c_changed_esi = state->b1c_changed_esi;
+                    b1c_post_matches_fatal =
+                        state->b1c_post_esi == (uintptr_t)context.Esi;
+                }
             }
         }
     }
@@ -794,6 +807,14 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
         context.ContextFlags = CONTEXT_FULL;
         if (!GetThreadContext(handle, &context)) { CloseHandle(handle); return; }
         if (code == EXCEPTION_SINGLE_STEP && state->rearm) {
+            if (state->rearm == esi_block_addresses[2] && state->last_b1c_sequence) {
+                state->b1c_post_seen = 1;
+                state->b1c_post_sequence = state->last_b1c_sequence;
+                state->b1c_post_esi = context.Esi;
+                state->b1c_post_category = pointer_category(context.Esi);
+                state->b1c_changed_esi =
+                    state->block_esi[2] != (uintptr_t)context.Esi;
+            }
             for (i = 0; i < BP_MAX; i++) if (bp[i].address == state->rearm) {
                 if (!arm(&bp[i])) probe_error = 1;
                 break;
@@ -832,7 +853,10 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                         if (b->address == esi_block_addresses[block_index]) break;
                     if (block_index < ESI_BLOCK_COUNT) {
                         state->block_hits[block_index]++;
-                        if (block_index == 2) state->last_b1c_sequence = ++measurement_sequence;
+                        if (block_index == 2) {
+                            state->last_b1c_sequence = ++measurement_sequence;
+                            state->b1c_post_seen = 0;
+                        }
                         state->block_esi[block_index] = context.Esi;
                         state->block_categories[block_index] = category;
                         if (!state->transition_seen && state->previous_esi_category &&
@@ -1107,6 +1131,15 @@ int main(int argc, char **argv)
     fprintf(log, ",\"fault_instruction_esi_plus_620\":%s,\"last_b1c_after_audio_entry\":",
             fault_instruction_esi_plus_620 ? "true" : "false");
     if (have_last_b1c_after_audio) fputs(last_b1c_after_audio ? "true" : "false", log);
+    else fputs("null", log);
+    fprintf(log, ",\"b1c_single_step_seen\":%s,\"b1c_post_esi_category\":",
+            b1c_single_step_seen ? "true" : "false");
+    print_json_string(log, b1c_post_esi_category);
+    fputs(",\"b1c_changed_esi\":", log);
+    if (b1c_single_step_seen) fputs(b1c_changed_esi ? "true" : "false", log);
+    else fputs("null", log);
+    fputs(",\"b1c_post_matches_fatal\":", log);
+    if (b1c_single_step_seen) fputs(b1c_post_matches_fatal ? "true" : "false", log);
     else fputs("null", log);
     fputs(",\"window_title_safe\":", log);
     print_json_string(log, window_title_safe);

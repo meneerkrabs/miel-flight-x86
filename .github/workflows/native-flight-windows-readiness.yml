@@ -333,6 +333,8 @@ jobs:
                     'fault_instruction_shape',
                     'fault_instruction_esi_plus_620',
                     'last_b1c_after_audio_entry',
+                    'b1c_single_step_seen', 'b1c_post_esi_category',
+                    'b1c_changed_esi', 'b1c_post_matches_fatal',
                     'fatal_exception_code', 'fatal_exception_module',
                     'fatal_exception_rva', 'fatal_access_type',
                     'fatal_fault_category', 'fatal_context_available',
