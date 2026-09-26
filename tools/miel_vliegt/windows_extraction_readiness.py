@@ -12,6 +12,7 @@ from typing import Any
 
 
 PROTOCOL = "miel-vliegt-windows-extraction-readiness"
+MAIN_JOB_STEP = "Probe private game extraction without an artifact"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 MANIFEST_FIELDS = {
@@ -85,8 +86,8 @@ def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
     return value
 
 
-def _public_output(text: str) -> dict[str, Any]:
-    candidates: list[dict[str, Any]] = []
+def _public_output(text: str) -> tuple[dict[str, Any], str]:
+    candidates: list[tuple[dict[str, Any], str]] = []
     for line in text.splitlines():
         stripped = line.strip()
         start = stripped.find("{")
@@ -100,10 +101,11 @@ def _public_output(text: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict) and "status" in value:
-            candidates.append(value)
+            candidates.append((value, line))
     if len(candidates) != 1:
         raise WindowsExtractionReadinessError("public output occurrences differ")
-    return _fields(candidates[0], PUBLIC_OUTPUT_FIELDS, "public output")
+    output, line = candidates[0]
+    return _fields(output, PUBLIC_OUTPUT_FIELDS, "public output"), line
 
 
 def _checkout_identity_proven(text: str, head_sha: str) -> bool:
@@ -164,7 +166,11 @@ def classify(
     if not _checkout_identity_proven(text, expected_head_sha):
         raise WindowsExtractionReadinessError("checkout identity differs")
 
-    output = _public_output(text)
+    output, output_line = _public_output(text)
+    output_fields = output_line.rstrip().split("\t")
+    if len(output_fields) < 3 \
+            or output_fields[1] != MAIN_JOB_STEP:
+        raise WindowsExtractionReadinessError("public output job step differs")
     if not isinstance(output["status"], str) \
             or type(output["artifact_count"]) is not int \
             or type(output["iso_sha256_matched"]) is not bool \
