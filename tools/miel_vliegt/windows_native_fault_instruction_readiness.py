@@ -14,6 +14,7 @@ from typing import Any
 
 PROTOCOL = "miel-vliegt-windows-native-fault-instruction-readiness"
 ROOT = Path(__file__).resolve().parents[2]
+MAIN_JOB_NAME = "extract-in-one-job"
 MAIN_JOB_STEP = "Probe private game extraction without an artifact"
 PROBE_SOURCE_PATH = "tools/miel_vliegt/windows_native_probe/native_probe.c"
 WORKFLOW_SOURCE_PATH = ".github/workflows/native-flight-windows-readiness.yml"
@@ -232,6 +233,7 @@ def _checkout_line_number(text: str, head_sha: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
         fields = line.rstrip().split("\t")
         if len(fields) >= 3 \
+                and fields[0] == MAIN_JOB_NAME \
                 and fields[1].startswith("Run actions/checkout@") \
                 and line.rstrip().endswith(head_sha):
             return line_number
@@ -242,6 +244,7 @@ def _post_checkout_line_number(text: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
         fields = line.rstrip().split("\t")
         if len(fields) >= 3 \
+                and fields[0] == MAIN_JOB_NAME \
                 and fields[1].startswith("Post Run actions/checkout@"):
             return line_number
     return None
@@ -346,6 +349,7 @@ def classify(
     output, output_line_number, output_line = _public_output(text)
     output_fields = output_line.rstrip().split("\t")
     if len(output_fields) < 3 \
+            or output_fields[0] != MAIN_JOB_NAME \
             or output_fields[1] != MAIN_JOB_STEP:
         raise WindowsNativeFaultInstructionReadinessError(
             "public output job step differs"
