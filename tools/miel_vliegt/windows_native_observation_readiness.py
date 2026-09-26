@@ -27,6 +27,8 @@ FATAL_CREATED_AT = "2026-09-26T10:03:17Z"
 FATAL_UPDATED_AT = "2026-09-26T10:04:16Z"
 CONTEXT_CREATED_AT = "2026-09-26T10:14:43Z"
 CONTEXT_UPDATED_AT = "2026-09-26T10:15:28Z"
+ENTRY_CREATED_AT = "2026-09-26T10:21:03Z"
+ENTRY_UPDATED_AT = "2026-09-26T10:21:59Z"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_ID = re.compile(r"^[0-9a-f]{40}$")
 MANIFEST_FIELDS = {
@@ -91,6 +93,16 @@ CONTEXT_BOOLEAN_FIELDS = HARDWARE_BOOLEAN_FIELDS | {
 }
 CONTEXT_REGISTER_NAMES = {
     "EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP",
+}
+ENTRY_OUTPUT_FIELDS = CONTEXT_OUTPUT_FIELDS | {
+    "audio_entry_count", "audio_entry_esi_unchanged",
+    "audio_entry_same_thread", "audio_entry_verified",
+    "last_audio_arg_category", "last_audio_ecx_category",
+    "last_audio_esi_category", "last_audio_return_rva",
+}
+ENTRY_BOOLEAN_FIELDS = CONTEXT_BOOLEAN_FIELDS | {
+    "audio_entry_esi_unchanged", "audio_entry_same_thread",
+    "audio_entry_verified",
 }
 
 
@@ -1363,6 +1375,320 @@ def classify_fatal_context(
     }
 
 
+def classify_entry_transition(
+    manifest_path: Path,
+    log_path: Path,
+    *,
+    expected_run_id: int,
+    expected_head_sha: str,
+    expected_head_branch: str,
+    expected_tested_tree_sha: str,
+    expected_probe_source_sha256: str,
+    expected_probe_executable_sha256: str,
+) -> dict[str, Any]:
+    manifest = _fields(
+        _load(manifest_path, "manifest"), MANIFEST_FIELDS, "manifest"
+    )
+    run_id = _integer(manifest["run_id"], "run id", minimum=1)
+    head_sha = _git_id(manifest["head_sha"], "run head")
+    expected_run_id = _integer(expected_run_id, "expected run id", minimum=1)
+    expected_head_sha = _git_id(expected_head_sha, "expected run head")
+    expected_tested_tree_sha = _git_id(
+        expected_tested_tree_sha, "expected tested tree"
+    )
+    expected_probe_source_sha256 = _git_id(
+        expected_probe_source_sha256, "expected probe source blob"
+    )
+    expected_probe_executable_sha256 = _hash(
+        expected_probe_executable_sha256, "expected observer probe executable"
+    )
+    for name, value in (
+        ("head branch", manifest["head_branch"]),
+        ("run status", manifest["status"]),
+        ("run conclusion", manifest["conclusion"]),
+        ("workflow name", manifest["workflow_name"]),
+        ("created timestamp", manifest["created_at"]),
+        ("updated timestamp", manifest["updated_at"]),
+        ("expected head branch", expected_head_branch),
+    ):
+        if not isinstance(value, str) or not value:
+            raise WindowsNativeObservationReadinessError(f"{name} is invalid")
+    if run_id != expected_run_id or head_sha != expected_head_sha \
+            or manifest["head_branch"] != expected_head_branch:
+        raise WindowsNativeObservationReadinessError("run identity differs")
+    if manifest["status"] != "completed" \
+            or manifest["conclusion"] != "failure" \
+            or manifest["workflow_name"] != EXPECTED_WORKFLOW \
+            or manifest["created_at"] != ENTRY_CREATED_AT \
+            or manifest["updated_at"] != ENTRY_UPDATED_AT:
+        raise WindowsNativeObservationReadinessError("run metadata differs")
+
+    tested_tree_sha = _commit_tree(head_sha)
+    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    if tested_tree_sha != expected_tested_tree_sha:
+        raise WindowsNativeObservationReadinessError("tested tree differs")
+    if probe_source_sha256 != expected_probe_source_sha256:
+        raise WindowsNativeObservationReadinessError("probe source differs")
+
+    expected_log_hash = _hash(manifest["log_sha256"], "run log")
+    expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
+    try:
+        raw_log = log_path.read_bytes()
+        text = raw_log.decode("utf-8", errors="replace")
+    except OSError as error:
+        raise WindowsNativeObservationReadinessError(
+            "run log is unavailable"
+        ) from error
+    if len(raw_log) != expected_log_bytes:
+        raise WindowsNativeObservationReadinessError("log bytes differ")
+    if hashlib.sha256(raw_log).hexdigest() != expected_log_hash:
+        raise WindowsNativeObservationReadinessError("log hash differs")
+
+    checkout_line_number = _checkout_line_number(text, expected_head_sha)
+    if checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError("checkout identity differs")
+    output, output_line_number, output_line = _public_output(
+        text, ENTRY_OUTPUT_FIELDS
+    )
+    if MAIN_JOB_STEP not in output_line:
+        raise WindowsNativeObservationReadinessError(
+            "public output job step differs"
+        )
+    if output_line_number < checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output precedes checkout"
+        )
+    post_checkout_line_number = _post_checkout_line_number(text)
+    if post_checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError(
+            "post-checkout cleanup is missing"
+        )
+    if output_line_number > post_checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output follows post-checkout cleanup"
+        )
+
+    labels = output["button_labels_safe"]
+    register_categories = output["register_categories"]
+    stack_returns = output["stack_return_rvas"]
+    if any(type(output[name]) is not bool for name in ENTRY_BOOLEAN_FIELDS) \
+            or any(
+                type(output[name]) is not int
+                for name in FATAL_INTEGER_FIELDS | {"audio_entry_count"}
+            ) \
+            or any(
+                not isinstance(output[name], str)
+                for name in (
+                    "dialog_reason", "hardware_selection_guard", "stage",
+                    "status", "window_class", "window_title_safe",
+                    "fatal_access_type", "fatal_exception_module",
+                    "fatal_fault_category", "last_audio_arg_category",
+                    "last_audio_ecx_category", "last_audio_esi_category",
+                )
+            ) \
+            or not isinstance(output["probe_sha256"], str) \
+            or SHA256.fullmatch(output["probe_sha256"]) is None \
+            or output["create_hr"] is not None \
+            or not isinstance(
+                output["fatal_exception_code"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["fatal_exception_rva"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["fault_register"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["fault_offset"], (int, type(None))
+            ) \
+            or not isinstance(
+                output["fault_register_category"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["last_audio_return_rva"], (str, type(None))
+            ) \
+            or not isinstance(labels, list) \
+            or len(labels) != 2 \
+            or any(not isinstance(label, str) for label in labels) \
+            or not isinstance(register_categories, dict) \
+            or set(register_categories) != CONTEXT_REGISTER_NAMES \
+            or any(
+                not isinstance(value, str)
+                for value in register_categories.values()
+            ) \
+            or not isinstance(stack_returns, list) \
+            or any(
+                not isinstance(row, dict) or set(row) != {"module", "rva"}
+                or not isinstance(row.get("module"), str)
+                or not isinstance(row.get("rva"), str)
+                for row in stack_returns
+            ):
+        raise WindowsNativeObservationReadinessError("public output types differ")
+    if _integer(output["artifact_count"], "artifact count") != 0:
+        raise WindowsNativeObservationReadinessError("artifact count differs")
+    if _hash(output["probe_sha256"], "observer probe executable") \
+            != expected_probe_executable_sha256:
+        raise WindowsNativeObservationReadinessError(
+            "observer probe identity differs"
+        )
+
+    expected_stack_returns = [
+        {"module": "MulleMeck.exe", "rva": "0x00009942"},
+        {"module": "MulleMeck.exe", "rva": "0x000086F3"},
+        {"module": "MulleMeck.exe", "rva": "0x0000E0F5"},
+        {"module": "MulleMeck.exe", "rva": "0x000058AC"},
+    ]
+    expected_register_categories = {
+        "EAX": "near_null",
+        "EBX": "private",
+        "ECX": "near_null",
+        "EDX": "private",
+        "ESI": "unmapped",
+        "EDI": "module",
+        "EBP": "near_null",
+        "ESP": "private",
+    }
+    progress_boundary = (
+        output["status"] == "FAIL"
+        and output["stage"] == "native-observation"
+        and output["cd_mounted"]
+        and output["hardware_selection_requested"]
+        and output["hardware_selection_attempted"]
+        and output["hardware_selection_sent"]
+        and output["hardware_dialog_closed"]
+        and output["hardware_selection_guard"] == "HARDWARE_CLICK_SENT"
+        and output["gt_loaded"]
+        and output["create_callsite_verified"]
+        and output["manager_slots_verified"]
+        and output["manager_ticks"] == 121
+        and output["manager_renders"] == 120
+        and output["pixel_samples"] == 9
+        and output["pixel_changes"] == 6
+        and output["nonblack_pixels_max"] == 290688
+        and output["captured_width"] == 640
+        and output["captured_height"] == 457
+        and output["process_cpu_ms"] == 2437
+    )
+    entry_boundary = (
+        output["audio_entry_verified"]
+        and output["audio_entry_count"] == 38
+        and output["audio_entry_same_thread"]
+        and not output["audio_entry_esi_unchanged"]
+        and output["last_audio_esi_category"] == "private"
+        and output["last_audio_ecx_category"] == "private"
+        and output["last_audio_arg_category"] == "module"
+        and output["last_audio_return_rva"] == "0x00009942"
+    )
+    context_boundary = (
+        output["debugger_attached"]
+        and output["fatal_context_available"]
+        and output["fatal_exception_code"] == "0xC0000005"
+        and output["fatal_exception_module"] == "MulleMeck.exe"
+        and output["fatal_exception_rva"] == "0x00009B22"
+        and output["fatal_access_type"] == "read"
+        and output["fatal_fault_category"] == "unmapped"
+        and output["first_chance_av_count"] == 1
+        and output["fault_register"] == "ESI"
+        and output["fault_offset"] == 620
+        and output["fault_register_category"] == "unmapped"
+        and output["register_categories"] == expected_register_categories
+        and output["stack_return_rvas"] == expected_stack_returns
+    )
+    crash_boundary = (
+        not output["process_alive_after_15s"]
+        and not output["window_present"]
+        and output["window_class"] == "none"
+        and output["dialog_reason"] == "none"
+        and output["window_title_safe"] == ""
+        and output["button_labels_safe"] == ["", ""]
+        and output["child_static_count"] == 0
+        and output["child_button_count"] == 0
+        and output["child_edit_count"] == 0
+        and output["process_exit_code"] == 0xC0000005
+    )
+    device_boundary = (
+        output["create_calls"] == 0
+        and output["create_returns"] == 0
+        and output["create_success"] == 0
+        and not output["device_nonnull"]
+    )
+    if not progress_boundary or not entry_boundary \
+            or not context_boundary or not crash_boundary \
+            or not device_boundary:
+        raise WindowsNativeObservationReadinessError(
+            "entry transition boundary differs"
+        )
+
+    return {
+        "schema": 1,
+        "protocol": PROTOCOL,
+        "run_id": run_id,
+        "head_sha": head_sha,
+        "status": "NATIVE_ENTRY_TRANSITION_DIAGNOSTIC_ONLY",
+        "source_revision": {
+            "head_sha": head_sha,
+            "tested_tree_sha": tested_tree_sha,
+        },
+        "source_identities": {
+            "probe_source_path": PROBE_SOURCE_PATH,
+            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_executable_sha256": output["probe_sha256"],
+        },
+        "source_log": {
+            "path": log_path.name,
+            "sha256": expected_log_hash,
+            "bytes": expected_log_bytes,
+        },
+        "runtime_progress": {
+            "hardware_selection_sent": output["hardware_selection_sent"],
+            "direct3d_module_loaded": output["gt_loaded"],
+            "manager_ticks": output["manager_ticks"],
+            "manager_renders": output["manager_renders"],
+            "pixel_samples": output["pixel_samples"],
+            "pixel_changes": output["pixel_changes"],
+            "captured_width": output["captured_width"],
+            "captured_height": output["captured_height"],
+        },
+        "entry_observation": {
+            "verified": output["audio_entry_verified"],
+            "count": output["audio_entry_count"],
+            "same_thread_as_fatal": output["audio_entry_same_thread"],
+            "esi_category": output["last_audio_esi_category"],
+            "ecx_category": output["last_audio_ecx_category"],
+            "argument_category": output["last_audio_arg_category"],
+            "return_rva": output["last_audio_return_rva"],
+        },
+        "fatal_exception": {
+            "code": output["fatal_exception_code"],
+            "module": output["fatal_exception_module"],
+            "rva": output["fatal_exception_rva"],
+            "access_type": output["fatal_access_type"],
+            "fault_category": output["fatal_fault_category"],
+            "first_chance_av_count": output["first_chance_av_count"],
+            "process_exit_code": output["process_exit_code"],
+        },
+        "esi_transition": {
+            "at_entry": output["last_audio_esi_category"],
+            "at_fault": output["fault_register_category"],
+            "changed_inside_function": not output[
+                "audio_entry_esi_unchanged"
+            ],
+        },
+        "raw_register_values_published": False,
+        "proof_limits": {
+            "invalid_entry_esi_proven": False,
+            "mutation_instruction_proven": False,
+            "fatal_root_cause_proven": False,
+            "fatal_fault_target_address_proven": False,
+            "fatal_call_stack_proven": False,
+            "direct3d_device_creation_called": False,
+            "direct3d_device_created": False,
+            "complete_native_gameplay_progress": False,
+            "native_parity_evidence": False,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -1377,7 +1703,7 @@ def main() -> int:
         "--receipt-type",
         choices=(
             "static-dialog", "renderer-selector", "hardware-progress",
-            "fatal-exception", "fatal-context",
+            "fatal-exception", "fatal-context", "entry-transition",
         ),
         default="static-dialog",
     )
@@ -1388,6 +1714,7 @@ def main() -> int:
         "hardware-progress": classify_hardware_progress,
         "fatal-exception": classify_fatal_exception,
         "fatal-context": classify_fatal_context,
+        "entry-transition": classify_entry_transition,
     }
     classifier = classifiers[arguments.receipt_type]
     receipt = classifier(

@@ -8,6 +8,7 @@ from unittest import mock
 
 from tools.miel_vliegt.windows_native_observation_readiness import (
     WindowsNativeObservationReadinessError,
+    classify_entry_transition,
     classify_fatal_context,
     classify_fatal_exception,
     classify,
@@ -57,6 +58,15 @@ CONTEXT_PROBE_SOURCE_SHA = (
 )
 CONTEXT_PROBE_EXE_SHA = (
     "58e3e6fd7716c525b30f8dc43b5c9c17fcb4a1a6eb34093abd0ff42d14a980b2"
+)
+ENTRY_RUN_ID = 36235520637
+ENTRY_HEAD_SHA = "607edf474fe9b5ab7774638d26a36e0289857434"
+ENTRY_TREE_SHA = "016cedb2243dd9f010e36c2f53ab526bb283565a"
+ENTRY_PROBE_SOURCE_SHA = (
+    "91bf37634830ba8048b08cd0a72ffbf6e045bec3"
+)
+ENTRY_PROBE_EXE_SHA = (
+    "f3ec7723b57cbbf661b21df3bb15744c60cf8b2d8d54a67a64d7fc490552b241"
 )
 
 
@@ -1049,6 +1059,237 @@ class WindowsNativeFatalContextTests(unittest.TestCase):
                 self.classify_evidence(manifest_path, log_path)
 
     def test_fatal_context_identity_and_log_drift_fail_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(
+                directory, output={"probe_sha256": "1" * 64}
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "observer probe identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["head_sha"] = "0" * 40
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "run identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            log_path.write_bytes(log_path.read_bytes() + b"drift\n")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError, "log bytes differ"
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+
+class WindowsNativeEntryTransitionTests(unittest.TestCase):
+    def setUp(self):
+        self.maxDiff = None
+        self.output = {
+            "child_static_count": 0,
+            "fault_register": "ESI",
+            "window_class": "none",
+            "audio_entry_count": 38,
+            "last_audio_arg_category": "module",
+            "manager_slots_verified": True,
+            "pixel_samples": 9,
+            "first_chance_av_count": 1,
+            "pixel_changes": 6,
+            "fatal_exception_module": "MulleMeck.exe",
+            "hardware_selection_guard": "HARDWARE_CLICK_SENT",
+            "child_edit_count": 0,
+            "process_cpu_ms": 2437,
+            "last_audio_ecx_category": "private",
+            "button_labels_safe": ["", ""],
+            "process_exit_code": 3221225477,
+            "hardware_selection_requested": True,
+            "create_callsite_verified": True,
+            "fault_register_category": "unmapped",
+            "audio_entry_same_thread": True,
+            "stack_return_rvas": [
+                {"module": "MulleMeck.exe", "rva": "0x00009942"},
+                {"module": "MulleMeck.exe", "rva": "0x000086F3"},
+                {"module": "MulleMeck.exe", "rva": "0x0000E0F5"},
+                {"module": "MulleMeck.exe", "rva": "0x000058AC"},
+            ],
+            "captured_width": 640,
+            "fatal_access_type": "read",
+            "manager_renders": 120,
+            "fault_offset": 620,
+            "create_hr": None,
+            "process_alive_after_15s": False,
+            "nonblack_pixels_max": 290688,
+            "debugger_attached": True,
+            "create_returns": 0,
+            "window_present": False,
+            "create_success": 0,
+            "fatal_context_available": True,
+            "artifact_count": 0,
+            "fatal_fault_category": "unmapped",
+            "last_audio_esi_category": "private",
+            "fatal_exception_rva": "0x00009B22",
+            "gt_loaded": True,
+            "hardware_selection_attempted": True,
+            "register_categories": {
+                "EAX": "near_null",
+                "EBX": "private",
+                "ECX": "near_null",
+                "EDX": "private",
+                "ESI": "unmapped",
+                "EDI": "module",
+                "EBP": "near_null",
+                "ESP": "private",
+            },
+            "stage": "native-observation",
+            "child_button_count": 0,
+            "create_calls": 0,
+            "dialog_reason": "none",
+            "manager_ticks": 121,
+            "status": "FAIL",
+            "last_audio_return_rva": "0x00009942",
+            "hardware_dialog_closed": True,
+            "fatal_exception_code": "0xC0000005",
+            "device_nonnull": False,
+            "captured_height": 457,
+            "audio_entry_esi_unchanged": False,
+            "audio_entry_verified": True,
+            "cd_mounted": True,
+            "hardware_selection_sent": True,
+            "window_title_safe": "",
+            "probe_sha256": ENTRY_PROBE_EXE_SHA,
+        }
+
+    def write_evidence(self, directory: Path, *, output=None):
+        public_output = dict(self.output)
+        public_output.update(output or {})
+        rendered = json.dumps(
+            public_output, sort_keys=True, separators=(",", ":")
+        )
+        log = (
+            "checkout prefix\n"
+            f"Run actions/checkout\ttimestamp {ENTRY_HEAD_SHA}\n"
+            "runner middle\n"
+            "extract-in-one-job\tProbe private game extraction without an artifact\t"
+            f"timestamp {rendered}\n"
+            "runner cleanup\n"
+            "Post Run actions/checkout\tcleanup\n"
+        ).encode("utf-8")
+        log_path = directory / "run.log"
+        log_path.write_bytes(log)
+        manifest = {
+            "run_id": ENTRY_RUN_ID,
+            "head_branch": HEAD_BRANCH,
+            "head_sha": ENTRY_HEAD_SHA,
+            "status": "completed",
+            "conclusion": "failure",
+            "workflow_name": "Native Flight Windows extraction readiness",
+            "created_at": "2026-09-26T10:21:03Z",
+            "updated_at": "2026-09-26T10:21:59Z",
+            "log_sha256": hashlib.sha256(log).hexdigest(),
+            "log_bytes": len(log),
+        }
+        manifest_path = directory / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest_path, log_path
+
+    def classify_evidence(self, manifest_path: Path, log_path: Path):
+        with mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._commit_tree",
+            return_value=ENTRY_TREE_SHA,
+        ), mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
+            return_value=ENTRY_PROBE_SOURCE_SHA,
+        ):
+            return classify_entry_transition(
+                manifest_path,
+                log_path,
+                expected_run_id=ENTRY_RUN_ID,
+                expected_head_sha=ENTRY_HEAD_SHA,
+                expected_head_branch=HEAD_BRANCH,
+                expected_tested_tree_sha=ENTRY_TREE_SHA,
+                expected_probe_source_sha256=ENTRY_PROBE_SOURCE_SHA,
+                expected_probe_executable_sha256=ENTRY_PROBE_EXE_SHA,
+            )
+
+    def test_entry_to_fault_esi_transition_is_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        self.assertEqual(
+            receipt["status"], "NATIVE_ENTRY_TRANSITION_DIAGNOSTIC_ONLY"
+        )
+        entry = receipt["entry_observation"]
+        self.assertTrue(entry["verified"])
+        self.assertEqual(entry["count"], 38)
+        self.assertTrue(entry["same_thread_as_fatal"])
+        self.assertEqual(entry["esi_category"], "private")
+        self.assertEqual(entry["ecx_category"], "private")
+        self.assertEqual(entry["argument_category"], "module")
+        self.assertEqual(entry["return_rva"], "0x00009942")
+        transition = receipt["esi_transition"]
+        self.assertEqual(transition["at_entry"], "private")
+        self.assertEqual(transition["at_fault"], "unmapped")
+        self.assertTrue(transition["changed_inside_function"])
+        self.assertFalse(receipt["raw_register_values_published"])
+        limits = receipt["proof_limits"]
+        self.assertFalse(limits["invalid_entry_esi_proven"])
+        self.assertFalse(limits["mutation_instruction_proven"])
+        self.assertFalse(limits["fatal_root_cause_proven"])
+        self.assertFalse(limits["direct3d_device_creation_called"])
+        self.assertFalse(limits["complete_native_gameplay_progress"])
+        self.assertFalse(limits["native_parity_evidence"])
+
+    def test_missing_entry_observation_cannot_substitute_for_transition(self):
+        missing = {
+            "audio_entry_verified": False,
+            "audio_entry_count": 0,
+            "last_audio_esi_category": "unavailable",
+            "last_audio_ecx_category": "unavailable",
+            "last_audio_arg_category": "unavailable",
+            "last_audio_return_rva": None,
+            "audio_entry_same_thread": False,
+            "audio_entry_esi_unchanged": False,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=missing
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "entry transition boundary differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+    def test_esi_change_cannot_become_invalid_input_or_device_proof(self):
+        overclaim = {
+            "status": "NATIVE_RENDER_DIAGNOSTIC_ONLY",
+            "audio_entry_esi_unchanged": True,
+            "create_calls": 1,
+            "create_returns": 1,
+            "create_success": 1,
+            "device_nonnull": True,
+            "process_alive_after_15s": True,
+            "window_present": True,
+            "process_exit_code": 0,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=overclaim
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "entry transition boundary differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+    def test_entry_identity_and_log_drift_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
             manifest_path, log_path = self.write_evidence(
