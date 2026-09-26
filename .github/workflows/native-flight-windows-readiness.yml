@@ -105,10 +105,25 @@ jobs:
             $cab = Get-ChildItem $installer -File -Recurse -Filter 'data1.cab' |
               Select-Object -First 1
             if (-not $cab) { throw 'installer CAB missing' }
+            $stage = 'unshield-tool'
+            $unshieldArchive = Join-Path $private 'unshield.7z'
+            Invoke-WebRequest `
+              'https://raw.githubusercontent.com/ScoopInstaller/Binary/master/unshield/unshield-1.6.2-x64.7z' `
+              -OutFile $unshieldArchive | Out-Null
+            if ((Get-FileHash $unshieldArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+              '662fefefc6988a3744ddc6b5b8d2e96ac21876d532f7d23a597c4ca797764a6b') {
+              throw 'pinned unshield identity differs'
+            }
+            $unshieldRoot = Join-Path $private 'unshield'
+            & 7z x -y "-o$unshieldRoot" $unshieldArchive *> (Join-Path $private 'unshield-extract.log')
+            if ($LASTEXITCODE -ne 0) { throw 'unshield tool extraction failed' }
+            $unshield = Join-Path $unshieldRoot 'unshield.exe'
+            if (-not (Test-Path $unshield)) { throw 'unshield tool unavailable' }
             $stage = 'cab-extract'
             $system = Join-Path $private 'system'
-            & 7z x -y "-o$system" $cab.FullName *> (Join-Path $private 'cab-extract.log')
-            if ($LASTEXITCODE -ne 0) { throw 'CAB extraction unsupported' }
+            & $unshield -g 'System Files' -d $system x $cab.FullName `
+              *> (Join-Path $private 'cab-extract.log')
+            if ($LASTEXITCODE -ne 0) { throw 'InstallShield CAB extraction failed' }
             $game = Get-ChildItem $system -File -Recurse -Filter 'MulleMeck.exe' |
               Select-Object -First 1
             if (-not $game -or (Get-FileHash $game.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.executable.sha256) {
