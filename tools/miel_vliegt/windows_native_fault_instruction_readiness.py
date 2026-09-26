@@ -230,7 +230,10 @@ def _public_output(text: str) -> tuple[dict[str, Any], int, str]:
 
 def _checkout_line_number(text: str, head_sha: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
-        if "Run actions/checkout" in line and line.rstrip().endswith(head_sha):
+        fields = line.rstrip().split("\t")
+        if len(fields) >= 3 \
+                and fields[1].startswith("Run actions/checkout@") \
+                and line.rstrip().endswith(head_sha):
             return line_number
     return None
 
