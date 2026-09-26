@@ -187,7 +187,7 @@ jobs:
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
-            & $probeExe $game.FullName $probeLog 60 --select-hardware `
+            & $probeExe $game.FullName $probeLog 60 --select-hardware --no-debug `
               *> (Join-Path $private 'native-probe-stdout.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
               throw 'native observer failed'
@@ -235,6 +235,7 @@ jobs:
               button_labels_safe=$probeResult.button_labels_safe;
               hardware_selection_guard=$probeResult.hardware_selection_guard;
               hardware_selection_sent=$probeResult.hardware_selection_sent;
+              debugger_attached=$probeResult.debugger_attached;
               first_chance_av_count=$probeResult.first_chance_av_count;
               process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
@@ -247,7 +248,7 @@ jobs:
               $finalResult.process_exit_code = $nativeExitCode
               $finalResult.probe_sha256 = $probeSha256
               if ($probeResult) {
-                foreach ($key in @('gt_loaded', 'create_callsite_verified',
+                foreach ($key in @('debugger_attached', 'gt_loaded', 'create_callsite_verified',
                     'manager_slots_verified',
                     'create_calls', 'create_returns', 'create_success',
                     'create_hr', 'device_nonnull', 'manager_ticks',

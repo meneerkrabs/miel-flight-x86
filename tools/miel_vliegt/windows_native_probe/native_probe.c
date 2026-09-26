@@ -30,7 +30,7 @@ static HWND game_window;
 static unsigned long child_static_count, child_button_count, child_edit_count, process_cpu_ms;
 static unsigned dialog_flags;
 static const char *window_class = "none", *dialog_reason = "none";
-static int select_hardware, selection_decided, hardware_selection_attempted;
+static int select_hardware, no_debug, selection_decided, hardware_selection_attempted;
 static int hardware_selection_sent, hardware_dialog_closed;
 static HWND hardware_dialog;
 static const char *hardware_selection_guard = "not_requested";
@@ -426,6 +426,23 @@ static void observe_gt_callsite(uintptr_t module)
     if (call && add_bp(call, "create_enter") && add_bp(ret, "create_return"))
         callsite_verified = 1;
 }
+static void poll_gt_module(void)
+{
+    HANDLE snapshot;
+    MODULEENTRY32 entry;
+    if (gt_loaded) return;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, child_pid);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    memset(&entry, 0, sizeof entry);
+    entry.dwSize = sizeof entry;
+    if (Module32First(snapshot, &entry)) do {
+        if (_stricmp(entry.szModule, "gtDirect3d.dll") == 0) {
+            gt_loaded = 1;
+            break;
+        }
+    } while (Module32Next(snapshot, &entry));
+    CloseHandle(snapshot);
+}
 static void classify_exception_module(uintptr_t address)
 {
     HANDLE snapshot;
@@ -586,11 +603,13 @@ int main(int argc, char **argv)
     ULONGLONG cpu_start, cpu_end;
     int alive = 1, duration_set = 0, arg;
     FILE *log;
-    if (argc < 3 || argc > 5) { fprintf(stderr, "usage: native_probe.exe MulleMeck.exe result.json [seconds] [--select-hardware]\n"); return 2; }
+    if (argc < 3 || argc > 6) { fprintf(stderr, "usage: native_probe.exe MulleMeck.exe result.json [seconds] [--select-hardware] [--no-debug]\n"); return 2; }
     for (arg = 3; arg < argc; arg++) {
         if (strcmp(argv[arg], "--select-hardware") == 0 && !select_hardware) {
             select_hardware = 1;
             hardware_selection_guard = "WAITING_FOR_DIALOG";
+        } else if (strcmp(argv[arg], "--no-debug") == 0 && !no_debug) {
+            no_debug = 1;
         } else if (!duration_set) {
             char *end;
             unsigned long value = strtoul(argv[arg], &end, 10);
@@ -611,7 +630,7 @@ int main(int argc, char **argv)
     memset(&process, 0, sizeof process);
     start.cb = sizeof start;
     if (!CreateProcessA(argv[1], command, NULL, NULL, FALSE,
-                        DEBUG_ONLY_THIS_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                        CREATE_NEW_PROCESS_GROUP | (no_debug ? 0 : DEBUG_ONLY_THIS_PROCESS),
                         NULL, directory, &start, &process)) {
         fprintf(stderr, "CreateProcess failed: %lu\n", GetLastError());
         return 4;
@@ -634,6 +653,16 @@ int main(int argc, char **argv)
         if (elapsed / 500u != last_sample) {
             last_sample = elapsed / 500u;
             sample_pixels();
+            if (no_debug) poll_gt_module();
+        }
+        if (no_debug) {
+            DWORD wait_result = WaitForSingleObject(child, 100);
+            if (wait_result == WAIT_OBJECT_0) {
+                alive = 0;
+                if (!GetExitCodeProcess(child, &exit_code)) probe_error = 1;
+            } else if (wait_result != WAIT_TIMEOUT) probe_error = 1;
+            if (probe_error) break;
+            continue;
         }
         if (!WaitForDebugEvent(&event, 100)) {
             if (GetLastError() == ERROR_SEM_TIMEOUT) continue;
@@ -661,9 +690,10 @@ int main(int argc, char **argv)
     if (!log) { fprintf(stderr, "result log open failed: %lu\n", GetLastError()); return 5; }
     fprintf(log,
         "{\"schema\":\"native-flight-probe-v1\",\"exe_sha256\":\"%s\","
-        "\"gt_loaded\":%s,\"create_callsite_verified\":%s,\"manager_slots_verified\":%s,\"create_calls\":%lu,"
+        "\"debugger_attached\":%s,\"gt_loaded\":%s,\"create_callsite_verified\":%s,\"manager_slots_verified\":%s,\"create_calls\":%lu,"
         "\"create_returns\":%lu,\"create_success\":%lu,\"create_hr\":",
-        EXPECTED_EXE_SHA256, gt_loaded ? "true" : "false", callsite_verified ? "true" : "false",
+        EXPECTED_EXE_SHA256, no_debug ? "false" : "true", gt_loaded ? "true" : "false",
+        callsite_verified ? "true" : "false",
         manager_slots_verified ? "true" : "false", create_calls, create_returns, create_success);
     if (have_hr) fprintf(log, "\"0x%08lX\"", last_hr); else fputs("null", log);
     fprintf(log,
