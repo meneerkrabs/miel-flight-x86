@@ -15,10 +15,10 @@ from tools.miel_vliegt.windows_native_fault_instruction_readiness import (
 RUN_ID = 36236736674
 HEAD_SHA = "4df908285fb82cc417b10f34915aee0c13d313b9"
 TESTED_TREE_SHA = "c0e7e0fc55a9122a4098eb626eeb18cfa054bf34"
-PROBE_SOURCE_SHA = "492edb55564777b0a8978ea0544a9f7767d8fd8b"
+PROBE_SOURCE_BLOB = "492edb55564777b0a8978ea0544a9f7767d8fd8b"
 PROBE_EXE_SHA = "c410512ced447ac68895630a5785fb56f84c91b9cd5cbaec7ebc7fff31f7b71a"
-WORKFLOW_SOURCE_SHA = "ae88b3556e02d5083dd515e53db38567292d7792"
-SOURCE_IDENTITY_SHA = "81c38cc97d3b2dc153b8c65933784a85061dd3e5"
+WORKFLOW_SOURCE_BLOB = "ae88b3556e02d5083dd515e53db38567292d7792"
+SOURCE_IDENTITY_BLOB = "81c38cc97d3b2dc153b8c65933784a85061dd3e5"
 HEAD_BRANCH = "codex/flight-native-observer-20260926"
 
 
@@ -170,9 +170,9 @@ class WindowsNativeFaultInstructionTests(unittest.TestCase):
     def classify_evidence(self, manifest_path: Path, log_path: Path):
         def source_blob(revision: str, path: str):
             return {
-                "tools/miel_vliegt/windows_native_probe/native_probe.c": PROBE_SOURCE_SHA,
-                ".github/workflows/native-flight-windows-readiness.yml": WORKFLOW_SOURCE_SHA,
-                "content/miel_vliegt/source_identity.json": SOURCE_IDENTITY_SHA,
+                "tools/miel_vliegt/windows_native_probe/native_probe.c": PROBE_SOURCE_BLOB,
+                ".github/workflows/native-flight-windows-readiness.yml": WORKFLOW_SOURCE_BLOB,
+                "content/miel_vliegt/source_identity.json": SOURCE_IDENTITY_BLOB,
             }[path]
 
         with mock.patch(
@@ -189,10 +189,10 @@ class WindowsNativeFaultInstructionTests(unittest.TestCase):
                 expected_head_sha=HEAD_SHA,
                 expected_head_branch=HEAD_BRANCH,
                 expected_tested_tree_sha=TESTED_TREE_SHA,
-                expected_probe_source_sha256=PROBE_SOURCE_SHA,
+                expected_probe_source_blob=PROBE_SOURCE_BLOB,
                 expected_probe_executable_sha256=PROBE_EXE_SHA,
-                expected_workflow_source_sha256=WORKFLOW_SOURCE_SHA,
-                expected_source_identity_sha256=SOURCE_IDENTITY_SHA,
+                expected_workflow_source_blob=WORKFLOW_SOURCE_BLOB,
+                expected_source_identity_blob=SOURCE_IDENTITY_BLOB,
             )
 
     def test_fault_instruction_is_diagnostic_only(self):
@@ -221,6 +221,32 @@ class WindowsNativeFaultInstructionTests(unittest.TestCase):
         self.assertFalse(limits["direct3d_device_creation_called"])
         self.assertFalse(limits["complete_native_gameplay_progress"])
         self.assertFalse(limits["native_parity_evidence"])
+
+    def test_source_identities_distinguish_git_blobs_from_sha256(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        identities = receipt["source_identities"]
+        self.assertEqual(
+            set(identities),
+            {
+                "probe_source_path",
+                "probe_source_blob_id",
+                "probe_executable_sha256",
+                "workflow_source_path",
+                "workflow_source_blob_id",
+                "source_identity_path",
+                "source_identity_blob_id",
+            },
+        )
+        for name in (
+            "probe_source_blob_id",
+            "workflow_source_blob_id",
+            "source_identity_blob_id",
+        ):
+            self.assertRegex(identities[name], r"^[0-9a-f]{40}$")
+        self.assertEqual(identities["probe_executable_sha256"], PROBE_EXE_SHA)
 
     def test_unavailable_instruction_shape_cannot_substitute(self):
         unavailable = {

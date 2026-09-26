@@ -258,10 +258,10 @@ def classify(
     expected_head_sha: str,
     expected_head_branch: str,
     expected_tested_tree_sha: str,
-    expected_probe_source_sha256: str,
+    expected_probe_source_blob: str,
     expected_probe_executable_sha256: str,
-    expected_workflow_source_sha256: str,
-    expected_source_identity_sha256: str,
+    expected_workflow_source_blob: str,
+    expected_source_identity_blob: str,
 ) -> dict[str, Any]:
     manifest = _fields(
         _load(manifest_path, "manifest"), MANIFEST_FIELDS, "manifest"
@@ -273,17 +273,17 @@ def classify(
     expected_tested_tree_sha = _git_id(
         expected_tested_tree_sha, "expected tested tree"
     )
-    expected_probe_source_sha256 = _git_id(
-        expected_probe_source_sha256, "expected probe source blob"
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
     )
-    expected_workflow_source_sha256 = _git_id(
-        expected_workflow_source_sha256, "expected workflow source blob"
+    expected_workflow_source_blob = _git_id(
+        expected_workflow_source_blob, "expected workflow source blob"
     )
-    expected_source_identity_sha256 = _git_id(
-        expected_source_identity_sha256, "expected source identity blob"
+    expected_source_identity_blob = _git_id(
+        expected_source_identity_blob, "expected source identity blob"
     )
     for name, value in (
         ("head branch", manifest["head_branch"]),
@@ -320,9 +320,9 @@ def classify(
         raise WindowsNativeFaultInstructionReadinessError(
             "tested tree differs"
         )
-    if probe_source_sha != expected_probe_source_sha256 \
-            or workflow_source_sha != expected_workflow_source_sha256 \
-            or source_identity_sha != expected_source_identity_sha256:
+    if probe_source_sha != expected_probe_source_blob \
+            or workflow_source_sha != expected_workflow_source_blob \
+            or source_identity_sha != expected_source_identity_blob:
         raise WindowsNativeFaultInstructionReadinessError(
             "reviewed source identity differs"
         )
@@ -570,12 +570,12 @@ def classify(
         },
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
-            "probe_source_blob_sha256": probe_source_sha,
+            "probe_source_blob_id": probe_source_sha,
             "probe_executable_sha256": output["probe_sha256"],
             "workflow_source_path": WORKFLOW_SOURCE_PATH,
-            "workflow_source_blob_sha256": workflow_source_sha,
+            "workflow_source_blob_id": workflow_source_sha,
             "source_identity_path": SOURCE_IDENTITY_PATH,
-            "source_identity_blob_sha256": source_identity_sha,
+            "source_identity_blob_id": source_identity_sha,
         },
         "source_log": {
             "path": log_path.name,
@@ -634,10 +634,10 @@ def main() -> int:
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--head-branch", required=True)
     parser.add_argument("--tested-tree-sha", required=True)
-    parser.add_argument("--probe-source-sha256", required=True)
+    parser.add_argument("--probe-source-blob", required=True)
     parser.add_argument("--probe-executable-sha256", required=True)
-    parser.add_argument("--workflow-source-sha256", required=True)
-    parser.add_argument("--source-identity-sha256", required=True)
+    parser.add_argument("--workflow-source-blob", required=True)
+    parser.add_argument("--source-identity-blob", required=True)
     arguments = parser.parse_args()
     receipt = classify(
         arguments.manifest,
@@ -646,10 +646,10 @@ def main() -> int:
         expected_head_sha=arguments.head_sha,
         expected_head_branch=arguments.head_branch,
         expected_tested_tree_sha=arguments.tested_tree_sha,
-        expected_probe_source_sha256=arguments.probe_source_sha256,
+        expected_probe_source_blob=arguments.probe_source_blob,
         expected_probe_executable_sha256=arguments.probe_executable_sha256,
-        expected_workflow_source_sha256=arguments.workflow_source_sha256,
-        expected_source_identity_sha256=arguments.source_identity_sha256,
+        expected_workflow_source_blob=arguments.workflow_source_blob,
+        expected_source_identity_blob=arguments.source_identity_blob,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
