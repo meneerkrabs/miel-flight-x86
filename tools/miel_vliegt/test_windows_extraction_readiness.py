@@ -308,6 +308,26 @@ class WindowsExtractionReadinessTests(unittest.TestCase):
                     ):
                         self.classify_evidence(manifest_path, log_path)
 
+    def test_cross_job_records_cannot_substitute_for_extraction_chronology(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(directory)
+            raw_log = log_path.read_bytes().replace(
+                b"extract-in-one-job\t", b"unrelated-job\t"
+            )
+            self.assertNotEqual(raw_log, log_path.read_bytes())
+            log_path.write_bytes(raw_log)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["log_sha256"] = hashlib.sha256(raw_log).hexdigest()
+            manifest["log_bytes"] = len(raw_log)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                WindowsExtractionReadinessError,
+                "checkout identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
     def test_duplicate_json_keys_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
