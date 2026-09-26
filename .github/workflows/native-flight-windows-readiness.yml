@@ -237,6 +237,7 @@ jobs:
               hardware_selection_sent=$probeResult.hardware_selection_sent;
               debugger_attached=$probeResult.debugger_attached;
               first_chance_av_count=$probeResult.first_chance_av_count;
+              audio_entry_count=$probeResult.audio_entry_count;
               process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
           } catch {
@@ -260,6 +261,10 @@ jobs:
                     'hardware_selection_requested', 'hardware_selection_attempted',
                     'hardware_selection_sent', 'hardware_dialog_closed',
                     'hardware_selection_guard', 'first_chance_av_count',
+                    'audio_entry_verified', 'audio_entry_count',
+                    'last_audio_esi_category', 'last_audio_ecx_category',
+                    'last_audio_arg_category', 'last_audio_return_rva',
+                    'audio_entry_same_thread', 'audio_entry_esi_unchanged',
                     'fatal_exception_code', 'fatal_exception_module',
                     'fatal_exception_rva', 'fatal_access_type',
                     'fatal_fault_category', 'fatal_context_available',

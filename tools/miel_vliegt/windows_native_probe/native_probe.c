@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define BP_MAX 4
+#define BP_MAX 5
 #define THREAD_MAX 64
 #define EXPECTED_EXE_SHA256 "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
 #define MANAGER_TICK_SLOT 0x0044cc14u
@@ -15,6 +15,7 @@
 #define GT_CREATE_RETURN_RVA 0x21ddu
 #define EXPECTED_TICK 0x0041d990u
 #define EXPECTED_RENDER 0x0041dbc0u
+#define AUDIO_DIAGNOSTIC_ENTRY 0x00409ab0u
 
 typedef struct { uintptr_t address; BYTE original; int armed; const char *name; } Breakpoint;
 typedef struct { DWORD id; uintptr_t rearm; uintptr_t create_out; int create_pending; } ThreadState;
@@ -47,6 +48,14 @@ static int fatal_context_available, have_fault_register;
 typedef struct { const char *module; unsigned long rva; } ReturnRva;
 static ReturnRva stack_return_rvas[5];
 static unsigned stack_return_count;
+static unsigned long audio_entry_count, last_audio_return_rva;
+static int audio_entry_verified, have_last_audio_return, have_first_audio_arg;
+static const char *last_audio_esi_category = "unavailable";
+static const char *last_audio_ecx_category = "unavailable";
+static const char *last_audio_arg_category = "unavailable";
+static DWORD last_audio_thread;
+static uintptr_t last_audio_esi;
+static int audio_entry_same_thread, audio_entry_esi_unchanged;
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -573,6 +582,10 @@ static void capture_fatal_context(DWORD thread_id, uintptr_t fault_address)
     if (!GetThreadContext(thread, &context)) { CloseHandle(thread); return; }
     CloseHandle(thread);
     fatal_context_available = 1;
+    if (audio_entry_count && last_audio_thread == thread_id) {
+        audio_entry_same_thread = 1;
+        if (last_audio_esi == (uintptr_t)context.Esi) audio_entry_esi_unchanged = 1;
+    }
     values[0] = context.Eax; values[1] = context.Ebx;
     values[2] = context.Ecx; values[3] = context.Edx;
     values[4] = context.Esi; values[5] = context.Edi;
@@ -620,11 +633,25 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
 {
     if (event->dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT) {
         uintptr_t tick = 0, render = 0;
+        MEMORY_BASIC_INFORMATION memory;
+        DWORD protection;
         if (event->u.CreateProcessInfo.hFile) CloseHandle(event->u.CreateProcessInfo.hFile);
         if (remote_read(MANAGER_TICK_SLOT, &tick, 4) && remote_read(MANAGER_RENDER_SLOT, &render, 4) &&
             tick == EXPECTED_TICK && render == EXPECTED_RENDER) {
             manager_slots_verified = 1;
             if (!add_bp(tick, "manager_tick") || !add_bp(render, "manager_render")) probe_error = 1;
+        } else probe_error = 1;
+        /* The pinned executable hash fixes these code bytes and image base. */
+        if ((uintptr_t)event->u.CreateProcessInfo.lpBaseOfImage == 0x00400000u &&
+            VirtualQueryEx(child, (LPCVOID)(uintptr_t)AUDIO_DIAGNOSTIC_ENTRY,
+                           &memory, sizeof memory) && memory.State == MEM_COMMIT &&
+            memory.Type == MEM_IMAGE) {
+            protection = memory.Protect & 0xffu;
+            if (protection == PAGE_EXECUTE || protection == PAGE_EXECUTE_READ ||
+                protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY) {
+                if (add_bp(AUDIO_DIAGNOSTIC_ENTRY, "audio_entry")) audio_entry_verified = 1;
+                else probe_error = 1;
+            } else probe_error = 1;
         } else probe_error = 1;
         if (event->u.CreateProcessInfo.hThread) CloseHandle(event->u.CreateProcessInfo.hThread);
     } else if (event->dwDebugEventCode == LOAD_DLL_DEBUG_EVENT) {
@@ -671,6 +698,20 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                 Breakpoint *b = &bp[i];
                 if (strcmp(b->name, "manager_tick") == 0) ticks++;
                 else if (strcmp(b->name, "manager_render") == 0) renders++;
+                else if (strcmp(b->name, "audio_entry") == 0) {
+                    DWORD argument = 0, ret = 0;
+                    audio_entry_count++;
+                    last_audio_thread = event->dwThreadId;
+                    last_audio_esi = context.Esi;
+                    last_audio_esi_category = pointer_category(context.Esi);
+                    last_audio_ecx_category = pointer_category(context.Ecx);
+                    have_first_audio_arg = remote_read((uintptr_t)context.Esp + 4, &argument, 4);
+                    last_audio_arg_category = have_first_audio_arg ?
+                        pointer_category(argument) : "unavailable";
+                    have_last_audio_return = remote_read((uintptr_t)context.Esp, &ret, 4) &&
+                        ret >= 0x00400006u && ret < 0x00460000u && plausible_return(ret);
+                    if (have_last_audio_return) last_audio_return_rva = ret - 0x00400000u;
+                }
                 else if (strcmp(b->name, "create_enter") == 0) {
                     DWORD out = 0;
                     if (remote_read((uintptr_t)context.Esp + 12, &out, 4)) {
@@ -820,7 +861,7 @@ int main(int argc, char **argv)
         "\"hardware_selection_guard\":\"%s\","
         "\"first_pixel_hash\":\"%08lX\",\"last_pixel_hash\":\"%08lX\","
         "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s,"
-        "\"first_chance_av_count\":%lu,",
+        "\"first_chance_av_count\":%lu,\"audio_entry_verified\":%s,\"audio_entry_count\":%lu,",
         last_device ? "true" : "false", ticks, renders, pixel_samples, pixel_changes,
         nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false",
         window_class, child_static_count, child_button_count, child_edit_count, dialog_reason, process_cpu_ms,
@@ -829,7 +870,19 @@ int main(int argc, char **argv)
         hardware_selection_guard,
         first_pixel, last_pixel, alive ? "false" : "true", exit_code,
         process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false",
-        first_chance_av_count);
+        first_chance_av_count, audio_entry_verified ? "true" : "false", audio_entry_count);
+    fputs("\"last_audio_esi_category\":", log);
+    print_json_string(log, last_audio_esi_category);
+    fputs(",\"last_audio_ecx_category\":", log);
+    print_json_string(log, last_audio_ecx_category);
+    fputs(",\"last_audio_arg_category\":", log);
+    print_json_string(log, last_audio_arg_category);
+    fputs(",\"last_audio_return_rva\":", log);
+    if (have_last_audio_return) fprintf(log, "\"0x%08lX\"", last_audio_return_rva);
+    else fputs("null", log);
+    fprintf(log, ",\"audio_entry_same_thread\":%s,\"audio_entry_esi_unchanged\":%s,",
+            audio_entry_same_thread ? "true" : "false",
+            audio_entry_esi_unchanged ? "true" : "false");
     fputs("\"fatal_exception_code\":", log);
     if (have_fatal_exception) fprintf(log, "\"0x%08lX\"", fatal_exception_code);
     else fputs("null", log);
