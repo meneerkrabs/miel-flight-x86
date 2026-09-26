@@ -155,6 +155,11 @@ def _post_checkout_line_number(text: str) -> int | None:
     return None
 
 
+def _reviewed_job_step(output_line: str) -> bool:
+    fields = output_line.rstrip().split("\t")
+    return len(fields) >= 3 and fields[1] == MAIN_JOB_STEP
+
+
 def classify(
     manifest_path: Path,
     log_path: Path,
@@ -229,7 +234,7 @@ def classify(
         raise WindowsNativeStartupReadinessError("checkout identity differs")
 
     output, output_line_number, output_line = _public_output(text)
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeStartupReadinessError("public output job step differs")
     if output_line_number < checkout_line_number:
         raise WindowsNativeStartupReadinessError("public output precedes checkout")

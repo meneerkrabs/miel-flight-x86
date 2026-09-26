@@ -284,7 +284,10 @@ class WindowsNativeStartupReadinessTests(unittest.TestCase):
             reviewed_step = (
                 "Probe private game extraction without an artifact"
             ).encode("ascii")
-            unreviewed_step = b"unrelated setup step"
+            unreviewed_step = (
+                b"unrelated setup step mentions "
+                b"Probe private game extraction without an artifact"
+            )
             raw_log = log_path.read_bytes().replace(reviewed_step, unreviewed_step, 1)
             self.assertNotEqual(raw_log, log_path.read_bytes())
             log_path.write_bytes(raw_log)
