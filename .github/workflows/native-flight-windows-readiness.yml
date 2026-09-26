@@ -187,7 +187,7 @@ jobs:
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
-            & $probeExe $game.FullName $probeLog 60 --select-hardware --no-debug `
+            & $probeExe $game.FullName $probeLog 60 --select-hardware `
               *> (Join-Path $private 'native-probe-stdout.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
               throw 'native observer failed'
@@ -262,7 +262,10 @@ jobs:
                     'hardware_selection_guard', 'first_chance_av_count',
                     'fatal_exception_code', 'fatal_exception_module',
                     'fatal_exception_rva', 'fatal_access_type',
-                    'fatal_fault_category')) {
+                    'fatal_fault_category', 'fatal_context_available',
+                    'fault_register', 'fault_offset',
+                    'fault_register_category', 'register_categories',
+                    'stack_return_rvas')) {
                   $finalResult[$key] = $probeResult.$key
                 }
               }
@@ -303,5 +306,5 @@ jobs:
           if ($cleanupFailed) {
             $finalResult = @{status='FAIL'; stage='cleanup'; artifact_count=0}
           }
-          $finalResult | ConvertTo-Json -Compress | Write-Output
+          $finalResult | ConvertTo-Json -Depth 6 -Compress | Write-Output
           if ($finalResult.status -eq 'FAIL') { exit 1 }

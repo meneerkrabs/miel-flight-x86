@@ -39,6 +39,14 @@ static unsigned long first_chance_av_count, fatal_exception_code, fatal_exceptio
 static int have_fatal_exception, have_fatal_rva;
 static const char *fatal_exception_module = "unknown";
 static const char *fatal_access_type = "unavailable", *fatal_fault_category = "unavailable";
+static const char *register_names[8] = {"EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP"};
+static const char *register_categories[8];
+static const char *fault_register;
+static long fault_offset;
+static int fatal_context_available, have_fault_register;
+typedef struct { const char *module; unsigned long rva; } ReturnRva;
+static ReturnRva stack_return_rvas[5];
+static unsigned stack_return_count;
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -478,7 +486,111 @@ static void classify_exception_module(uintptr_t address)
     } while (Module32Next(snapshot, &entry));
     CloseHandle(snapshot);
 }
-static void record_fatal_exception(const EXCEPTION_RECORD *exception)
+static const char *pointer_category(uintptr_t address)
+{
+    MEMORY_BASIC_INFORMATION memory;
+    if (address == 0) return "null";
+    if (address < 0x10000u) return "near_null";
+    if (!VirtualQueryEx(child, (LPCVOID)address, &memory, sizeof memory) ||
+        memory.State != MEM_COMMIT) return "unmapped";
+    if (memory.Type == MEM_IMAGE) return "module";
+    if (memory.Type == MEM_PRIVATE) return "private";
+    if (memory.Type == MEM_MAPPED) return "mapped";
+    return "unmapped";
+}
+static int plausible_return(uintptr_t address)
+{
+    BYTE bytes[6];
+    MEMORY_BASIC_INFORMATION memory;
+    DWORD protection;
+    if (!VirtualQueryEx(child, (LPCVOID)address, &memory, sizeof memory) ||
+        memory.State != MEM_COMMIT || memory.Type != MEM_IMAGE) return 0;
+    protection = memory.Protect & 0xffu;
+    if (protection != PAGE_EXECUTE && protection != PAGE_EXECUTE_READ &&
+        protection != PAGE_EXECUTE_READWRITE && protection != PAGE_EXECUTE_WRITECOPY) return 0;
+    if (!remote_read(address - 6, bytes, sizeof bytes)) return 0;
+    if (bytes[1] == 0xe8) return 1;
+    if (bytes[3] == 0xff && (bytes[4] & 0xf8u) == 0x50u) return 1;
+    if (bytes[0] == 0xff &&
+        (bytes[1] == 0x15u ||
+         ((bytes[1] & 0xf8u) == 0x90u))) return 1;
+    return 0;
+}
+static void collect_return_rvas(uintptr_t stack)
+{
+    HANDLE snapshot;
+    MODULEENTRY32 entry;
+    uintptr_t exe_base = 0, gt_base = 0;
+    DWORD exe_size = 0, gt_size = 0;
+    unsigned i;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, child_pid);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    memset(&entry, 0, sizeof entry);
+    entry.dwSize = sizeof entry;
+    if (Module32First(snapshot, &entry)) do {
+        if (_stricmp(entry.szModule, "MulleMeck.exe") == 0) {
+            exe_base = (uintptr_t)entry.modBaseAddr;
+            exe_size = entry.modBaseSize;
+        } else if (_stricmp(entry.szModule, "gtDirect3d.dll") == 0) {
+            gt_base = (uintptr_t)entry.modBaseAddr;
+            gt_size = entry.modBaseSize;
+        }
+    } while (Module32Next(snapshot, &entry));
+    CloseHandle(snapshot);
+    for (i = 0; i < 64 && stack_return_count < 5; i++) {
+        DWORD candidate;
+        uintptr_t value, base = 0;
+        DWORD size = 0;
+        const char *module = NULL;
+        unsigned j;
+        if (!remote_read(stack + 4u * i, &candidate, sizeof candidate)) continue;
+        value = (uintptr_t)candidate;
+        if (exe_base && value >= exe_base && value - exe_base < exe_size) {
+            base = exe_base; size = exe_size; module = "MulleMeck.exe";
+        } else if (gt_base && value >= gt_base && value - gt_base < gt_size) {
+            base = gt_base; size = gt_size; module = "gtDirect3d.dll";
+        }
+        if (!module || value < base + 6 || value - base >= size || !plausible_return(value)) continue;
+        for (j = 0; j < stack_return_count; j++)
+            if (stack_return_rvas[j].module == module &&
+                stack_return_rvas[j].rva == (unsigned long)(value - base)) break;
+        if (j < stack_return_count) continue;
+        stack_return_rvas[stack_return_count].module = module;
+        stack_return_rvas[stack_return_count].rva = (unsigned long)(value - base);
+        stack_return_count++;
+    }
+}
+static void capture_fatal_context(DWORD thread_id, uintptr_t fault_address)
+{
+    HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, thread_id);
+    CONTEXT context;
+    uintptr_t values[8];
+    unsigned i;
+    int64_t best = 4097;
+    if (!thread) return;
+    memset(&context, 0, sizeof context);
+    context.ContextFlags = CONTEXT_FULL;
+    if (!GetThreadContext(thread, &context)) { CloseHandle(thread); return; }
+    CloseHandle(thread);
+    fatal_context_available = 1;
+    values[0] = context.Eax; values[1] = context.Ebx;
+    values[2] = context.Ecx; values[3] = context.Edx;
+    values[4] = context.Esi; values[5] = context.Edi;
+    values[6] = context.Ebp; values[7] = context.Esp;
+    for (i = 0; i < 8; i++) {
+        int64_t delta = (int64_t)fault_address - (int64_t)values[i];
+        register_categories[i] = pointer_category(values[i]);
+        if (delta >= -4096 && delta <= 4096 &&
+            (delta < 0 ? -delta : delta) < best) {
+            best = delta < 0 ? -delta : delta;
+            fault_register = register_names[i];
+            fault_offset = (long)delta;
+            have_fault_register = 1;
+        }
+    }
+    collect_return_rvas((uintptr_t)context.Esp);
+}
+static void record_fatal_exception(const EXCEPTION_RECORD *exception, DWORD thread_id)
 {
     uintptr_t address;
     MEMORY_BASIC_INFORMATION memory;
@@ -494,6 +606,7 @@ static void record_fatal_exception(const EXCEPTION_RECORD *exception)
     else if (exception->ExceptionInformation[0] == 8) fatal_access_type = "execute";
     else fatal_access_type = "other";
     address = (uintptr_t)exception->ExceptionInformation[1];
+    capture_fatal_context(thread_id, address);
     if (address == 0) fatal_fault_category = "null";
     else if (address < 0x10000u) fatal_fault_category = "near_null";
     else if (!VirtualQueryEx(child, (LPCVOID)address, &memory, sizeof memory) ||
@@ -535,7 +648,7 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
         if (code == EXCEPTION_ACCESS_VIOLATION && ex->dwFirstChance)
             first_chance_av_count++;
         if (!ex->dwFirstChance && !have_fatal_exception)
-            record_fatal_exception(&ex->ExceptionRecord);
+            record_fatal_exception(&ex->ExceptionRecord, event->dwThreadId);
         if (!state || (code != EXCEPTION_BREAKPOINT && code != EXCEPTION_SINGLE_STEP)) return;
         handle = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, event->dwThreadId);
         if (!handle) return;
@@ -729,7 +842,40 @@ int main(int argc, char **argv)
     print_json_string(log, fatal_access_type);
     fputs(",\"fatal_fault_category\":", log);
     print_json_string(log, fatal_fault_category);
-    fputs(",\"window_title_safe\":", log);
+    fprintf(log, ",\"fatal_context_available\":%s,\"fault_register\":",
+            fatal_context_available ? "true" : "false");
+    if (have_fault_register) print_json_string(log, fault_register);
+    else fputs("null", log);
+    fputs(",\"fault_offset\":", log);
+    if (have_fault_register) fprintf(log, "%ld", fault_offset);
+    else fputs("null", log);
+    fputs(",\"fault_register_category\":", log);
+    if (have_fault_register) {
+        unsigned i;
+        for (i = 0; i < 8; i++) if (fault_register == register_names[i]) break;
+        print_json_string(log, i < 8 ? register_categories[i] : "unavailable");
+    } else fputs("null", log);
+    fputs(",\"register_categories\":{", log);
+    {
+        unsigned i;
+        for (i = 0; i < 8; i++) {
+            if (i) fputc(',', log);
+            print_json_string(log, register_names[i]);
+            fputc(':', log);
+            print_json_string(log, fatal_context_available ? register_categories[i] : "unavailable");
+        }
+    }
+    fputs("},\"stack_return_rvas\":[", log);
+    {
+        unsigned i;
+        for (i = 0; i < stack_return_count; i++) {
+            if (i) fputc(',', log);
+            fputs("{\"module\":", log);
+            print_json_string(log, stack_return_rvas[i].module);
+            fprintf(log, ",\"rva\":\"0x%08lX\"}", stack_return_rvas[i].rva);
+        }
+    }
+    fputs("],\"window_title_safe\":", log);
     print_json_string(log, window_title_safe);
     fputs(",\"button_labels_safe\":[", log);
     print_json_string(log, button_labels_safe[0]);
