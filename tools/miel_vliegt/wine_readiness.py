@@ -159,8 +159,18 @@ def _registry_proven(text: str, clsid: str) -> bool:
 
 
 def _process_topology_proven(text: str) -> bool:
-    lowered = text.lower()
-    return all(name in lowered for name in ("wineserver", "services.exe", "rpcss.exe"))
+    process_patterns = (
+        re.compile(r"(?<![A-Za-z0-9_-])wineserver(?:64)?(?![A-Za-z0-9_-])"),
+        re.compile(r"(?<![A-Za-z0-9_-])services\.exe(?![A-Za-z0-9_-])"),
+        re.compile(r"(?<![A-Za-z0-9_-])rpcss\.exe(?![A-Za-z0-9_-])"),
+    )
+    remaining = list(process_patterns)
+    for line in text.splitlines():
+        for pattern in remaining:
+            if pattern.search(line):
+                remaining.remove(pattern)
+                break
+    return not remaining
 
 
 def validate_observation(

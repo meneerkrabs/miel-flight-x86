@@ -234,6 +234,30 @@ class WineReadinessTests(unittest.TestCase):
         self.assertFalse(receipt["checks"]["transport_roundtrip"])
         self.assertFalse(receipt["checks"]["wineserver_clean_shutdown"])
 
+    def test_process_topology_requires_distinct_process_records(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            process = next(
+                row for row in observation["phases"]
+                if row["id"] == "process-snapshot"
+            )
+            process_path = directory / process["log"]["path"]
+            process_path.write_text(
+                "diagnostic expected wineserver, services.exe, and "
+                "rpcss.exe, but no snapshot was taken\n",
+                encoding="utf-8",
+            )
+            process["log"]["sha256"] = hashlib.sha256(
+                process_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["service_process_topology"])
+
     def test_backend_identity_must_be_a_nonempty_string_mapping(self):
         invalid_backends = (
             None,
