@@ -344,7 +344,9 @@ def classify(
             "checkout identity differs"
         )
     output, output_line_number, output_line = _public_output(text)
-    if MAIN_JOB_STEP not in output_line:
+    output_fields = output_line.rstrip().split("\t")
+    if len(output_fields) < 3 \
+            or output_fields[1] != MAIN_JOB_STEP:
         raise WindowsNativeFaultInstructionReadinessError(
             "public output job step differs"
         )
