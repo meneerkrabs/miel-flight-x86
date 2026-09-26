@@ -258,6 +258,36 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["service_process_topology"])
 
+    def test_distinct_lifecycle_phases_cannot_share_one_log(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            shared_path = directory / "shared-lifecycle.log"
+            shared_path.write_text(
+                "MIEL_WINE_TRANSPORT_OK\nMIEL_WINESERVER_STOPPED\n",
+                encoding="utf-8",
+            )
+            shared = {
+                "path": shared_path.name,
+                "sha256": hashlib.sha256(
+                    shared_path.read_bytes()
+                ).hexdigest(),
+            }
+            for phase_id in ("transport", "wineserver-shutdown"):
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase["log"] = dict(shared)
+
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "phase logs are shared",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_backend_identity_must_be_a_nonempty_string_mapping(self):
         invalid_backends = (
             None,

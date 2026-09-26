@@ -98,7 +98,9 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _read_log(root: Path, reference: Any, label: str) -> tuple[str, dict[str, Any]]:
+def _read_log(
+    root: Path, reference: Any, label: str,
+) -> tuple[str, dict[str, Any], Path]:
     if not isinstance(reference, dict) or set(reference) != {"path", "sha256"} \
             or not isinstance(reference.get("path"), str) \
             or not SHA256.fullmatch(str(reference.get("sha256", ""))):
@@ -123,7 +125,7 @@ def _read_log(root: Path, reference: Any, label: str) -> tuple[str, dict[str, An
         "path": reference["path"],
         "sha256": digest,
         "size": len(raw),
-    }
+    }, path
 
 
 def _phase_ok(phase: dict[str, Any]) -> bool:
@@ -211,6 +213,7 @@ def validate_observation(
     indexed: dict[str, dict[str, Any]] = {}
     texts: dict[str, str] = {}
     log_sources: dict[str, dict[str, Any]] = {}
+    log_paths: set[Path] = set()
     for phase in phases:
         if not isinstance(phase, dict) or set(phase) != {
             "id", "command", "exitCode", "timedOut", "log",
@@ -223,9 +226,14 @@ def validate_observation(
                 or phase["id"] in indexed:
             raise WineReadinessError("Wine readiness phase fields differ")
         indexed[phase["id"]] = phase
-        texts[phase["id"]], log_sources[phase["id"]] = _read_log(
+        texts[phase["id"]], log_sources[phase["id"]], log_path = _read_log(
             evidence_root, phase["log"], phase["id"],
         )
+        if log_path in log_paths:
+            raise WineReadinessError(
+                f"Wine readiness phase logs are shared: {phase['id']}"
+            )
+        log_paths.add(log_path)
 
     class_phase_ids = [
         *(f"com-registry:{value}" for value in classes),
