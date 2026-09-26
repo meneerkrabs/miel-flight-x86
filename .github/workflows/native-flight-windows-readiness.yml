@@ -31,6 +31,8 @@ jobs:
           $alive = $false
           $windowPresent = $false
           $nativeExitCode = $null
+          $probeResult = $null
+          $probeSha256 = $null
           $cleanupFailed = $false
           $finalResult = $null
           try {
@@ -107,6 +109,29 @@ jobs:
             if ($env:GH_TOKEN -or $env:ISO_GPG_PASSPHRASE) {
               throw 'credential environment remains'
             }
+            $stage = 'observer-build'
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            if (-not (Test-Path $vswhere)) { throw 'Visual Studio locator unavailable' }
+            $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath |
+              Select-Object -First 1)
+            if (-not $vsroot) { throw 'x86 compiler unavailable' }
+            $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvarsall.bat'
+            if (-not (Test-Path $vcvars)) { throw 'x86 compiler setup unavailable' }
+            $probeSource = (Resolve-Path 'tools/miel_vliegt/windows_native_probe/native_probe.c').Path
+            $probeExe = Join-Path $private 'native-probe.exe'
+            $buildCmd = Join-Path $private 'build-probe.cmd'
+            @(
+              '@echo off'
+              ('call "{0}" x86 >nul' -f $vcvars)
+              'if errorlevel 1 exit /b 1'
+              ('cl /nologo /W4 /O2 /TC "{1}" /link /OUT:"{0}" advapi32.lib gdi32.lib user32.lib' -f $probeExe, $probeSource)
+              'exit /b %errorlevel%'
+            ) | Set-Content -Path $buildCmd -Encoding Ascii
+            & $env:ComSpec /d /c $buildCmd *> (Join-Path $private 'build-probe.log')
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeExe)) {
+              throw 'native x86 probe build failed'
+            }
+            $probeSha256 = (Get-FileHash $probeExe -Algorithm SHA256).Hash.ToLowerInvariant()
             $stage = 'identity'
             $identity = Get-Content 'content/miel_vliegt/source_identity.json' -Raw | ConvertFrom-Json
             if ((Get-FileHash $iso -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.iso.sha256) {
@@ -160,25 +185,67 @@ jobs:
               $cdMounted = $false
             }
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
-            $stage = 'native-startup'
-            $process = Start-Process -FilePath $game.FullName -WorkingDirectory $gameDir `
-              -PassThru -ErrorAction Stop
-            $alive = -not $process.WaitForExit(15000)
-            if ($alive) { $process.Refresh() }
-            $windowPresent = $alive -and ($process.MainWindowHandle -ne 0)
-            $nativeExitCode = if ($alive) { $null } else { $process.ExitCode }
-            if (-not $alive) { throw 'original process exited early' }
-            $finalResult = @{status='NATIVE_STARTUP_DIAGNOSTIC_ONLY';
+            $stage = 'native-observation'
+            $probeLog = Join-Path $private 'native-probe.json'
+            & $probeExe $game.FullName $probeLog 20 `
+              *> (Join-Path $private 'native-probe-stdout.log')
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
+              throw 'native observer failed'
+            }
+            $probeResult = Get-Content $probeLog -Raw | ConvertFrom-Json
+            if ($probeResult.schema -ne 'native-flight-probe-v1' -or
+                $probeResult.exe_sha256 -ne $identity.executable.sha256) {
+              throw 'native observer identity differs'
+            }
+            $alive = [bool]$probeResult.process_alive_after_15s
+            $windowPresent = [bool]$probeResult.window_present
+            $nativeExitCode = $probeResult.child_exit_code
+            if (-not $alive -or -not $windowPresent -or
+                -not $probeResult.create_callsite_verified -or
+                -not $probeResult.manager_slots_verified -or
+                -not $probeResult.create_success -or
+                -not $probeResult.device_nonnull -or
+                $probeResult.manager_ticks -lt 2 -or
+                $probeResult.manager_renders -lt 2 -or
+                $probeResult.pixel_samples -lt 2 -or
+                $probeResult.pixel_changes -lt 1 -or
+                $probeResult.nonblack_pixels_max -lt 1 -or
+                $probeResult.captured_width -lt 1 -or
+                $probeResult.captured_height -lt 1) {
+              throw 'original renderer progress not demonstrated'
+            }
+            $finalResult = @{status='NATIVE_RENDER_DIAGNOSTIC_ONLY';
               iso_sha256_matched=$true; executable_sha256_matched=$true;
               cd_mounted=$cdMounted; process_alive_after_15s=$alive;
-              window_present=$windowPresent; artifact_count=0}
+              window_present=$windowPresent; create_hr=$probeResult.create_hr;
+              create_success=$probeResult.create_success;
+              device_nonnull=$probeResult.device_nonnull;
+              manager_ticks=$probeResult.manager_ticks;
+              manager_renders=$probeResult.manager_renders;
+              pixel_samples=$probeResult.pixel_samples;
+              pixel_changes=$probeResult.pixel_changes;
+              nonblack_pixels_max=$probeResult.nonblack_pixels_max;
+              captured_width=$probeResult.captured_width;
+              captured_height=$probeResult.captured_height;
+              probe_sha256=$probeSha256; artifact_count=0}
           } catch {
             $finalResult = @{status='FAIL'; stage=$stage; artifact_count=0}
-            if ($stage -eq 'native-startup') {
+            if ($stage -eq 'native-observation') {
               $finalResult.cd_mounted = $cdMounted
               $finalResult.process_alive_after_15s = $alive
               $finalResult.window_present = $windowPresent
               $finalResult.process_exit_code = $nativeExitCode
+              $finalResult.probe_sha256 = $probeSha256
+              if ($probeResult) {
+                foreach ($key in @('gt_loaded', 'create_callsite_verified',
+                    'manager_slots_verified',
+                    'create_calls', 'create_returns', 'create_success',
+                    'create_hr', 'device_nonnull', 'manager_ticks',
+                    'manager_renders', 'pixel_samples', 'pixel_changes',
+                    'nonblack_pixels_max', 'captured_width', 'captured_height')) {
+                  $finalResult[$key] = $probeResult.$key
+                }
+              }
             }
             if ($stage -eq 'decrypt') {
               $finalResult.gpg_exit_code = $gpgExitCode
