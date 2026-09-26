@@ -249,6 +249,11 @@ def _post_checkout_line_number(text: str) -> int | None:
     return None
 
 
+def _reviewed_job_step(output_line: str) -> bool:
+    fields = output_line.rstrip().split("\t")
+    return len(fields) >= 3 and fields[1] == MAIN_JOB_STEP
+
+
 def classify(
     manifest_path: Path,
     log_path: Path,
@@ -326,7 +331,7 @@ def classify(
     if checkout_line_number is None:
         raise WindowsNativeObservationReadinessError("checkout identity differs")
     output, output_line_number, output_line = _public_output(text)
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )
@@ -511,7 +516,7 @@ def classify_renderer_selector(
     output, output_line_number, output_line = _public_output(
         text, SELECTOR_OUTPUT_FIELDS
     )
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )
@@ -717,7 +722,7 @@ def classify_hardware_progress(
     output, output_line_number, output_line = _public_output(
         text, HARDWARE_OUTPUT_FIELDS
     )
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )
@@ -927,7 +932,7 @@ def classify_fatal_exception(
     output, output_line_number, output_line = _public_output(
         text, FATAL_OUTPUT_FIELDS
     )
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )
@@ -1160,7 +1165,7 @@ def classify_fatal_context(
     output, output_line_number, output_line = _public_output(
         text, CONTEXT_OUTPUT_FIELDS
     )
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )
@@ -1450,7 +1455,7 @@ def classify_entry_transition(
     output, output_line_number, output_line = _public_output(
         text, ENTRY_OUTPUT_FIELDS
     )
-    if MAIN_JOB_STEP not in output_line:
+    if not _reviewed_job_step(output_line):
         raise WindowsNativeObservationReadinessError(
             "public output job step differs"
         )

@@ -237,7 +237,8 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
             manifest_path, log_path = self.write_evidence(directory)
             raw_log = log_path.read_bytes().replace(
                 b"Probe private game extraction without an artifact",
-                b"unrelated setup step",
+                b"unrelated setup step mentions "
+                b"Probe private game extraction without an artifact",
                 1,
             )
             log_path.write_bytes(raw_log)
