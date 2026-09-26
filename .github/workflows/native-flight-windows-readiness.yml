@@ -24,6 +24,15 @@ jobs:
           $gpgExitCode = $null
           $gpgErrorCategory = 'NONE'
           $private = Join-Path $env:RUNNER_TEMP 'miel-flight-private'
+          $process = $null
+          $iso = $null
+          $mountAttempted = $false
+          $cdMounted = $false
+          $alive = $false
+          $windowPresent = $false
+          $nativeExitCode = $null
+          $cleanupFailed = $false
+          $finalResult = $null
           try {
             New-Item -ItemType Directory -Path $private -Force | Out-Null
             $stage = 'tools'
@@ -93,6 +102,11 @@ jobs:
               }
               throw 'decryption failed'
             }
+            $stage = 'credential-cleanup'
+            Remove-Item Env:GH_TOKEN, Env:ISO_GPG_PASSPHRASE -ErrorAction Stop
+            if ($env:GH_TOKEN -or $env:ISO_GPG_PASSPHRASE) {
+              throw 'credential environment remains'
+            }
             $stage = 'identity'
             $identity = Get-Content 'content/miel_vliegt/source_identity.json' -Raw | ConvertFrom-Json
             if ((Get-FileHash $iso -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.iso.sha256) {
@@ -129,19 +143,78 @@ jobs:
             if (-not $game -or (Get-FileHash $game.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.executable.sha256) {
               throw 'original executable identity unavailable'
             }
-            $stage = 'cleanup'
-            Remove-Item $private -Recurse -Force -ErrorAction Stop
-            @{status='EXTRACTION_READY'; iso_sha256_matched=$true; executable_sha256_matched=$true; artifact_count=0} |
-              ConvertTo-Json -Compress | Write-Output
-          } catch {
-            $result = @{status='FAIL'; stage=$stage; artifact_count=0}
-            if ($stage -eq 'decrypt') {
-              $result.gpg_exit_code = $gpgExitCode
-              $result.gpg_error_category = $gpgErrorCategory
+            $stage = 'game-inputs'
+            $gameDir = Split-Path $game.FullName
+            & 7z e -y "-o$gameDir" $iso data.up map.up sounds.up Miel.ini `
+              *> (Join-Path $private 'game-inputs.log')
+            if ($LASTEXITCODE -ne 0) { throw 'original game inputs unavailable' }
+            foreach ($name in @('data.up', 'map.up', 'sounds.up', 'Miel.ini')) {
+              if (-not (Test-Path (Join-Path $gameDir $name))) { throw 'game input missing' }
             }
-            $result |
-              ConvertTo-Json -Compress | Write-Output
-            exit 1
+            $stage = 'native-startup'
+            $mountAttempted = $true
+            try {
+              Mount-DiskImage -ImagePath $iso -PassThru -ErrorAction Stop | Out-Null
+              $cdMounted = $true
+            } catch {
+              $cdMounted = $false
+            }
+            if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
+            $stage = 'native-startup'
+            $process = Start-Process -FilePath $game.FullName -WorkingDirectory $gameDir `
+              -PassThru -ErrorAction Stop
+            $alive = -not $process.WaitForExit(15000)
+            if ($alive) { $process.Refresh() }
+            $windowPresent = $alive -and ($process.MainWindowHandle -ne 0)
+            $nativeExitCode = if ($alive) { $null } else { $process.ExitCode }
+            if (-not $alive) { throw 'original process exited early' }
+            $finalResult = @{status='NATIVE_STARTUP_DIAGNOSTIC_ONLY';
+              iso_sha256_matched=$true; executable_sha256_matched=$true;
+              cd_mounted=$cdMounted; process_alive_after_15s=$alive;
+              window_present=$windowPresent; artifact_count=0}
+          } catch {
+            $finalResult = @{status='FAIL'; stage=$stage; artifact_count=0}
+            if ($stage -eq 'native-startup') {
+              $finalResult.cd_mounted = $cdMounted
+              $finalResult.process_alive_after_15s = $alive
+              $finalResult.window_present = $windowPresent
+              $finalResult.process_exit_code = $nativeExitCode
+            }
+            if ($stage -eq 'decrypt') {
+              $finalResult.gpg_exit_code = $gpgExitCode
+              $finalResult.gpg_error_category = $gpgErrorCategory
+            }
           } finally {
-            Remove-Item $private -Recurse -Force -ErrorAction SilentlyContinue
+            if ($process) {
+              try {
+                $process.Refresh()
+                if (-not $process.HasExited) {
+                  try { $process.Kill() }
+                  catch {
+                    $process.Refresh()
+                    if (-not $process.HasExited) { throw }
+                  }
+                  if (-not $process.WaitForExit(5000)) { $cleanupFailed = $true }
+                }
+              } catch { $cleanupFailed = $true }
+            }
+            if ($mountAttempted -and $iso) {
+              try {
+                $image = Get-DiskImage -ImagePath $iso -ErrorAction Stop
+                if ($image.Attached) {
+                  Dismount-DiskImage -ImagePath $iso -ErrorAction Stop | Out-Null
+                }
+              } catch { $cleanupFailed = $true }
+            }
+            try {
+              if (Test-Path $private) {
+                Remove-Item $private -Recurse -Force -ErrorAction Stop
+              }
+              if (Test-Path $private) { $cleanupFailed = $true }
+            } catch { $cleanupFailed = $true }
           }
+          if ($cleanupFailed) {
+            $finalResult = @{status='FAIL'; stage='cleanup'; artifact_count=0}
+          }
+          $finalResult | ConvertTo-Json -Compress | Write-Output
+          if ($finalResult.status -eq 'FAIL') { exit 1 }
