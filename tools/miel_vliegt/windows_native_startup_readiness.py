@@ -15,6 +15,7 @@ from typing import Any
 PROTOCOL = "miel-vliegt-windows-native-startup-readiness"
 ROOT = Path(__file__).resolve().parents[2]
 MAIN_JOB_STEP = "Probe private game extraction without an artifact"
+SOURCE_IDENTITY_PATH = ROOT / "content/miel_vliegt/source_identity.json"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_ID = re.compile(r"^[0-9a-f]{40}$")
 MANIFEST_FIELDS = {
@@ -78,6 +79,21 @@ def _git_id(value: Any, label: str) -> str:
     if not isinstance(value, str) or GIT_ID.fullmatch(value) is None:
         raise WindowsNativeStartupReadinessError(f"{label} is not a Git object ID")
     return value
+
+
+def _native_source_identities(identity: dict[str, Any]) -> tuple[str, str]:
+    reviewed = _load(SOURCE_IDENTITY_PATH, "reviewed source identity")
+    if identity.get("schema") != reviewed.get("schema"):
+        raise WindowsNativeStartupReadinessError("source identity differs")
+    values: list[str] = []
+    for section in ("iso", "executable"):
+        record = identity.get(section)
+        if record != reviewed.get(section) \
+                or not isinstance(record, dict) \
+                or set(record) != {"filename", "sha256"}:
+            raise WindowsNativeStartupReadinessError("source identity differs")
+        values.append(_hash(record.get("sha256"), f"source {section}"))
+    return values[0], values[1]
 
 
 def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
@@ -322,10 +338,9 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     identity = _load(arguments.identity, "source identity")
-    if identity.get("schema") != 1 \
-            or not isinstance(identity.get("iso"), dict) \
-            or not isinstance(identity.get("executable"), dict):
-        raise WindowsNativeStartupReadinessError("source identity differs")
+    expected_iso_sha256, expected_executable_sha256 = (
+        _native_source_identities(identity)
+    )
     receipt = classify(
         arguments.manifest,
         arguments.log,
@@ -333,12 +348,8 @@ def main() -> int:
         expected_head_sha=arguments.head_sha,
         expected_merged_sha=arguments.merged_sha,
         expected_tested_tree_sha=arguments.tested_tree_sha,
-        expected_iso_sha256=_hash(
-            identity["iso"].get("sha256"), "source ISO"
-        ),
-        expected_executable_sha256=_hash(
-            identity["executable"].get("sha256"), "source executable"
-        ),
+        expected_iso_sha256=expected_iso_sha256,
+        expected_executable_sha256=expected_executable_sha256,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
