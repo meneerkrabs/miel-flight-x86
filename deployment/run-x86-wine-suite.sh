@@ -205,8 +205,8 @@ else
   echo "=== Suite FAILED (exit ${suite_status}) ==="
 fi
 
-# Preserve proxy/observer/orchestration stderr breadcrumbs into the uploaded
-# artifact. The proxy DLL (MVP_* lines) and game logs land in game/ proxy/ and
+# Preserve proxy/observer/orchestration stderr breadcrumbs locally for a
+# bounded diagnostic summary. The proxy DLL (MVP_* lines) and game logs land in game/ proxy/ and
 # RUN_ROOT itself, never in output/. Scope the search to those subtrees and
 # wine-prefix/drive_c only — NOT the whole prefix, whose dosdevices symlinks
 # (z:/boot/efi) make find/upload fail EACCES.
@@ -226,6 +226,8 @@ for _src in "${RUN_ROOT}/orchestration.log" "${GAME_ROOT}" "${PROXY_ROOT}" \
     cp -f "${_log}" "${COLLECTED_LOGS}/${_safe}" 2>/dev/null || true
   done
 done
-echo "=== Collected $(ls -1 "${COLLECTED_LOGS}" 2>/dev/null | wc -l) log(s) into output/collected-logs ==="
+echo "=== Collected $(ls -1 "${COLLECTED_LOGS}" 2>/dev/null | wc -l) private log(s) ==="
+python3 "${REPOSITORY_ROOT}/tools/miel_vliegt/summarize_collected_logs.py" "${COLLECTED_LOGS}" 2>/dev/null \
+  || echo '{"schema":1,"protocol":"miel-flight-bounded-log-diagnostics","status":"DIAGNOSTIC_UNAVAILABLE"}'
 
 exit "${suite_status}"
