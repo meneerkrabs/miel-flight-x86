@@ -28,6 +28,7 @@ typedef struct {
     const char *block_categories[ESI_BLOCK_COUNT], *previous_esi_category;
     int transition_seen;
     unsigned transition_index;
+    uint64_t last_audio_sequence, last_b1c_sequence;
 } ThreadState;
 static Breakpoint bp[BP_MAX];
 static ThreadState threads[THREAD_MAX];
@@ -77,6 +78,11 @@ static const char *crash_block_categories[ESI_BLOCK_COUNT];
 static int crash_block_matches_fatal[ESI_BLOCK_COUNT];
 static int esi_block_verified[ESI_BLOCK_COUNT], have_esi_transition;
 static unsigned esi_transition_index;
+static uint64_t measurement_sequence;
+static int have_last_b1c_after_audio, last_b1c_after_audio;
+static int instruction_shape_verified, fault_instruction_esi_plus_620;
+static const char *pre_fault_instruction_shape = "UNAVAILABLE";
+static const char *fault_instruction_shape = "UNAVAILABLE";
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -516,6 +522,42 @@ static void classify_exception_module(uintptr_t address)
     } while (Module32Next(snapshot, &entry));
     CloseHandle(snapshot);
 }
+static const char *classify_pre_fault_instruction(const BYTE bytes[6])
+{
+    if (bytes[0] != 0x8b) return "OTHER";
+    if (bytes[1] == 0x35) return "MOV_ESI_FROM_ABSOLUTE";
+    if (bytes[1] == 0xb6) return "MOV_ESI_FROM_ESI_FIELD";
+    if (bytes[1] == 0xb7) return "MOV_ESI_FROM_EDI_FIELD";
+    if (bytes[1] == 0xb0) return "MOV_ESI_FROM_EAX_FIELD";
+    if (bytes[1] == 0xb1) return "MOV_ESI_FROM_ECX_FIELD";
+    if (bytes[1] == 0xb3) return "MOV_ESI_FROM_EBX_FIELD";
+    if (bytes[1] == 0xb5) return "MOV_ESI_FROM_EBP_FIELD";
+    return "OTHER";
+}
+static const char *classify_fault_instruction(const BYTE bytes[6], int *esi_plus_620)
+{
+    unsigned long displacement = (unsigned long)bytes[2] |
+        ((unsigned long)bytes[3] << 8) |
+        ((unsigned long)bytes[4] << 16) |
+        ((unsigned long)bytes[5] << 24);
+    *esi_plus_620 = 0;
+    if ((bytes[1] & 0xc7u) != 0x86u || displacement != 620u) return "OTHER";
+    if (bytes[0] == 0x8b || bytes[0] == 0x8a || bytes[0] == 0x3b ||
+        bytes[0] == 0xff) {
+        *esi_plus_620 = 1;
+        return "READ_ESI_PLUS_620";
+    }
+    if (bytes[0] == 0x89 || bytes[0] == 0x88 || bytes[0] == 0xc7) {
+        *esi_plus_620 = 1;
+        return "WRITE_ESI_PLUS_620";
+    }
+    if (bytes[0] == 0x39 || bytes[0] == 0x85 || bytes[0] == 0x83 ||
+        bytes[0] == 0x81 || bytes[0] == 0xf7) {
+        *esi_plus_620 = 1;
+        return "ACCESS_ESI_PLUS_620";
+    }
+    return "OTHER";
+}
 static const char *pointer_category(uintptr_t address)
 {
     MEMORY_BASIC_INFORMATION memory;
@@ -620,6 +662,11 @@ static void capture_fatal_context(DWORD thread_id, uintptr_t fault_address)
                 have_esi_transition = 1;
                 esi_transition_index = state->transition_index;
             }
+            if (state->last_audio_sequence && state->last_b1c_sequence) {
+                have_last_b1c_after_audio = 1;
+                last_b1c_after_audio =
+                    state->last_b1c_sequence > state->last_audio_sequence;
+            }
         }
     }
     values[0] = context.Eax; values[1] = context.Ebx;
@@ -672,12 +719,22 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
         MEMORY_BASIC_INFORMATION memory;
         DWORD protection;
         unsigned block_index;
+        BYTE pre_fault_bytes[6], fault_bytes[6];
         if (event->u.CreateProcessInfo.hFile) CloseHandle(event->u.CreateProcessInfo.hFile);
         if (remote_read(MANAGER_TICK_SLOT, &tick, 4) && remote_read(MANAGER_RENDER_SLOT, &render, 4) &&
             tick == EXPECTED_TICK && render == EXPECTED_RENDER) {
             manager_slots_verified = 1;
             if (!add_bp(tick, "manager_tick") || !add_bp(render, "manager_render")) probe_error = 1;
         } else probe_error = 1;
+        /* Read original bytes before arming the 0x409B1C breakpoint. */
+        if ((uintptr_t)event->u.CreateProcessInfo.lpBaseOfImage == 0x00400000u &&
+            remote_read(0x00409b1cu, pre_fault_bytes, sizeof pre_fault_bytes) &&
+            remote_read(0x00409b22u, fault_bytes, sizeof fault_bytes)) {
+            pre_fault_instruction_shape = classify_pre_fault_instruction(pre_fault_bytes);
+            fault_instruction_shape = classify_fault_instruction(
+                fault_bytes, &fault_instruction_esi_plus_620);
+            instruction_shape_verified = 1;
+        }
         /* The pinned executable hash fixes these code bytes and image base. */
         if ((uintptr_t)event->u.CreateProcessInfo.lpBaseOfImage == 0x00400000u &&
             VirtualQueryEx(child, (LPCVOID)(uintptr_t)AUDIO_DIAGNOSTIC_ENTRY,
@@ -755,6 +812,7 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                 else if (strcmp(b->name, "audio_entry") == 0) {
                     DWORD argument = 0, ret = 0;
                     audio_entry_count++;
+                    state->last_audio_sequence = ++measurement_sequence;
                     last_audio_thread = event->dwThreadId;
                     last_audio_esi = context.Esi;
                     last_audio_esi_category = pointer_category(context.Esi);
@@ -774,6 +832,7 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                         if (b->address == esi_block_addresses[block_index]) break;
                     if (block_index < ESI_BLOCK_COUNT) {
                         state->block_hits[block_index]++;
+                        if (block_index == 2) state->last_b1c_sequence = ++measurement_sequence;
                         state->block_esi[block_index] = context.Esi;
                         state->block_categories[block_index] = category;
                         if (!state->transition_seen && state->previous_esi_category &&
@@ -1039,6 +1098,15 @@ int main(int argc, char **argv)
     }
     fputs("},\"last_esi_transition_block\":", log);
     if (have_esi_transition) print_json_string(log, esi_block_keys[esi_transition_index]);
+    else fputs("null", log);
+    fprintf(log, ",\"instruction_shape_verified\":%s,\"pre_fault_instruction_shape\":",
+            instruction_shape_verified ? "true" : "false");
+    print_json_string(log, pre_fault_instruction_shape);
+    fputs(",\"fault_instruction_shape\":", log);
+    print_json_string(log, fault_instruction_shape);
+    fprintf(log, ",\"fault_instruction_esi_plus_620\":%s,\"last_b1c_after_audio_entry\":",
+            fault_instruction_esi_plus_620 ? "true" : "false");
+    if (have_last_b1c_after_audio) fputs(last_b1c_after_audio ? "true" : "false", log);
     else fputs("null", log);
     fputs(",\"window_title_safe\":", log);
     print_json_string(log, window_title_safe);
