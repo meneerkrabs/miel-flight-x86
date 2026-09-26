@@ -187,7 +187,7 @@ jobs:
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
-            & $probeExe $game.FullName $probeLog 20 `
+            & $probeExe $game.FullName $probeLog 60 `
               *> (Join-Path $private 'native-probe-stdout.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
               throw 'native observer failed'
@@ -227,6 +227,9 @@ jobs:
               nonblack_pixels_max=$probeResult.nonblack_pixels_max;
               captured_width=$probeResult.captured_width;
               captured_height=$probeResult.captured_height;
+              window_class=$probeResult.window_class;
+              dialog_reason=$probeResult.dialog_reason;
+              process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
           } catch {
             $finalResult = @{status='FAIL'; stage=$stage; artifact_count=0}
@@ -242,7 +245,9 @@ jobs:
                     'create_calls', 'create_returns', 'create_success',
                     'create_hr', 'device_nonnull', 'manager_ticks',
                     'manager_renders', 'pixel_samples', 'pixel_changes',
-                    'nonblack_pixels_max', 'captured_width', 'captured_height')) {
+                    'nonblack_pixels_max', 'captured_width', 'captured_height',
+                    'window_class', 'dialog_reason', 'child_static_count',
+                    'child_button_count', 'child_edit_count', 'process_cpu_ms')) {
                   $finalResult[$key] = $probeResult.$key
                 }
               }

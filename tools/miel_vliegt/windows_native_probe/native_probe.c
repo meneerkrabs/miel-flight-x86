@@ -27,6 +27,12 @@ static unsigned long last_hr, last_device, pixel_samples, pixel_changes;
 static unsigned long first_pixel, last_pixel, nonblack_pixels_max, captured_width, captured_height;
 static int have_hr, have_pixel, gt_loaded, callsite_verified, manager_slots_verified, probe_error, process_alive_after_15s, window_present_after_15s, initial_breakpoint_seen;
 static HWND game_window;
+static unsigned long child_static_count, child_button_count, child_edit_count, process_cpu_ms;
+static unsigned dialog_flags;
+static const char *window_class = "none", *dialog_reason = "none";
+
+enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
+       REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
 
 static int remote_read(uintptr_t address, void *buffer, SIZE_T n)
 {
@@ -121,6 +127,74 @@ static BOOL CALLBACK find_window(HWND window, LPARAM unused)
         return FALSE;
     }
     return TRUE;
+}
+static void classify_text(char *value)
+{
+    char *p;
+    for (p = value; *p; p++) if (*p >= 'A' && *p <= 'Z') *p += 'a' - 'A';
+    if (strstr(value, "cd-rom") || strstr(value, "insert") || strstr(value, "schijf") ||
+        strstr(value, "skiva") || strstr(value, "disc") || strstr(value, "disk")) dialog_flags |= REASON_MEDIA;
+    if (strstr(value, "directx") || strstr(value, "direct3d") || strstr(value, "video") ||
+        strstr(value, "display") || strstr(value, "graphic")) dialog_flags |= REASON_GRAPHICS;
+    if (strstr(value, "memory") || strstr(value, "geheugen") || strstr(value, "minne")) dialog_flags |= REASON_MEMORY;
+    if (strstr(value, "not found") || strstr(value, "missing") ||
+        strstr(value, "niet vinden") || strstr(value, "saknas")) dialog_flags |= REASON_MISSING;
+    if (strstr(value, "install") || strstr(value, "setup")) dialog_flags |= REASON_INSTALL;
+    if (strstr(value, "error") || strstr(value, "fout") || strstr(value, "cannot") ||
+        strstr(value, "kan inte") || strstr(value, "failed")) dialog_flags |= REASON_ERROR;
+}
+static BOOL CALLBACK inspect_control(HWND control, LPARAM count_arg)
+{
+    char class_name[64], value[256];
+    DWORD_PTR result;
+    unsigned long *count = (unsigned long *)count_arg;
+    if (++*count > 64) return FALSE;
+    if (!GetClassNameA(control, class_name, sizeof class_name)) return TRUE;
+    if (_stricmp(class_name, "Static") == 0) child_static_count++;
+    else if (_stricmp(class_name, "Button") == 0) child_button_count++;
+    else if (_stricmp(class_name, "Edit") == 0) child_edit_count++;
+    else return TRUE;
+    if (_stricmp(class_name, "Edit") == 0 || *count > 32) return TRUE;
+    memset(value, 0, sizeof value);
+    if (SendMessageTimeoutA(control, WM_GETTEXT, sizeof value, (LPARAM)value,
+                            SMTO_ABORTIFHUNG | SMTO_BLOCK, 50, &result)) {
+        value[sizeof value - 1] = 0;
+        classify_text(value);
+    }
+    return TRUE;
+}
+static ULONGLONG cpu_ticks(void)
+{
+    FILETIME created, exited, kernel, user;
+    ULARGE_INTEGER k, u;
+    if (!GetProcessTimes(child, &created, &exited, &kernel, &user)) return 0;
+    k.LowPart = kernel.dwLowDateTime; k.HighPart = kernel.dwHighDateTime;
+    u.LowPart = user.dwLowDateTime; u.HighPart = user.dwHighDateTime;
+    return k.QuadPart + u.QuadPart;
+}
+static void inspect_window(void)
+{
+    char name[64], title[256];
+    unsigned long count = 0;
+    if (!game_window || !IsWindow(game_window)) {
+        game_window = NULL;
+        EnumWindows(find_window, 0);
+    }
+    if (!game_window) return;
+    if (GetClassNameA(game_window, name, sizeof name) && strcmp(name, "#32770") == 0)
+        window_class = "#32770";
+    else window_class = "other";
+    memset(title, 0, sizeof title);
+    GetWindowTextA(game_window, title, sizeof title);
+    classify_text(title);
+    EnumChildWindows(game_window, inspect_control, (LPARAM)&count);
+    if (dialog_flags & REASON_MEDIA) dialog_reason = "media_prompt";
+    else if (dialog_flags & REASON_GRAPHICS) dialog_reason = "graphics_error";
+    else if (dialog_flags & REASON_MEMORY) dialog_reason = "memory_error";
+    else if (dialog_flags & REASON_MISSING) dialog_reason = "missing_file";
+    else if (dialog_flags & REASON_INSTALL) dialog_reason = "install_prompt";
+    else if (dialog_flags & REASON_ERROR) dialog_reason = "generic_error";
+    else if (strcmp(window_class, "#32770") == 0) dialog_reason = "unknown_dialog";
 }
 static void sample_pixels(void)
 {
@@ -331,6 +405,7 @@ int main(int argc, char **argv)
     DEBUG_EVENT event;
     char command[2048], directory[1024], *slash;
     DWORD started, duration = 20, last_sample = 0, status, exit_code = 0;
+    ULONGLONG cpu_start, cpu_end;
     int alive = 1;
     FILE *log;
     if (argc < 3 || argc > 4) { fprintf(stderr, "usage: native_probe.exe MulleMeck.exe result.json [seconds]\n"); return 2; }
@@ -360,6 +435,7 @@ int main(int argc, char **argv)
     child = process.hProcess;
     child_pid = process.dwProcessId;
     CloseHandle(process.hThread);
+    cpu_start = cpu_ticks();
     started = GetTickCount();
     while (alive && GetTickCount() - started < duration * 1000u) {
         DWORD elapsed = GetTickCount() - started;
@@ -385,6 +461,9 @@ int main(int argc, char **argv)
         }
         if (probe_error) break;
     }
+    inspect_window();
+    cpu_end = cpu_ticks();
+    if (cpu_end >= cpu_start) process_cpu_ms = (unsigned long)((cpu_end - cpu_start) / 10000u);
     if (alive) { TerminateProcess(child, 0); WaitForSingleObject(child, 5000); }
     CloseHandle(child);
     log = fopen(argv[2], "wb");
@@ -400,10 +479,14 @@ int main(int argc, char **argv)
         ",\"device_nonnull\":%s,\"manager_ticks\":%lu,\"manager_renders\":%lu,"
         "\"pixel_samples\":%lu,\"pixel_changes\":%lu,\"nonblack_pixels_max\":%lu,"
         "\"captured_width\":%lu,\"captured_height\":%lu,\"window_present\":%s,"
+        "\"window_class\":\"%s\",\"child_static_count\":%lu,\"child_button_count\":%lu,"
+        "\"child_edit_count\":%lu,\"dialog_reason\":\"%s\",\"process_cpu_ms\":%lu,"
         "\"first_pixel_hash\":\"%08lX\",\"last_pixel_hash\":\"%08lX\","
         "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s}\n",
         last_device ? "true" : "false", ticks, renders, pixel_samples, pixel_changes,
-        nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false", first_pixel, last_pixel, alive ? "false" : "true", exit_code,
+        nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false",
+        window_class, child_static_count, child_button_count, child_edit_count, dialog_reason, process_cpu_ms,
+        first_pixel, last_pixel, alive ? "false" : "true", exit_code,
         process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false");
     fclose(log);
     return probe_error ? 6 : 0;
