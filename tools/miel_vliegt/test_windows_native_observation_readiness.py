@@ -9,6 +9,7 @@ from unittest import mock
 from tools.miel_vliegt.windows_native_observation_readiness import (
     WindowsNativeObservationReadinessError,
     classify,
+    classify_hardware_progress,
     classify_renderer_selector,
 )
 
@@ -27,6 +28,15 @@ SELECTOR_PROBE_SOURCE_SHA = (
 )
 SELECTOR_PROBE_EXE_SHA = (
     "ab127a09d8d95278aca37033c928c644e6047c5e21c8cf8400738c33cfca3bd7"
+)
+HARDWARE_RUN_ID = 36234420812
+HARDWARE_HEAD_SHA = "5fe9219bdd784c8b26c4d124cd877435710f79f5"
+HARDWARE_TREE_SHA = "519c94b7c7e5c695d9684bd6bef6959f11bd8e93"
+HARDWARE_PROBE_SOURCE_SHA = (
+    "324712b7d990abdd055ca1839e64cb2c15eb0a21"
+)
+HARDWARE_PROBE_EXE_SHA = (
+    "e10db1874c0821a2d3457d08217a774b4913aef5d0f05ce128db0e35d2b103b3"
 )
 
 
@@ -424,6 +434,183 @@ class WindowsNativeRendererSelectorTests(unittest.TestCase):
                     "window_title_safe": "Unreviewed raw title",
                     "probe_sha256": "1" * 64,
                 },
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "observer probe identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["head_sha"] = "0" * 40
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "run identity differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+            manifest_path, log_path = self.write_evidence(directory)
+            log_path.write_bytes(log_path.read_bytes() + b"drift\n")
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError, "log bytes differ"
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+
+class WindowsNativeHardwareProgressTests(unittest.TestCase):
+    def setUp(self):
+        self.maxDiff = None
+        self.output = {
+            "create_success": 0,
+            "window_class": "none",
+            "create_calls": 0,
+            "child_edit_count": 0,
+            "device_nonnull": False,
+            "process_cpu_ms": 2640,
+            "probe_sha256": HARDWARE_PROBE_EXE_SHA,
+            "hardware_selection_requested": True,
+            "hardware_selection_guard": "HARDWARE_CLICK_SENT",
+            "create_returns": 0,
+            "manager_slots_verified": True,
+            "pixel_samples": 8,
+            "gt_loaded": True,
+            "window_title_safe": "",
+            "captured_height": 457,
+            "hardware_dialog_closed": True,
+            "process_alive_after_15s": False,
+            "dialog_reason": "none",
+            "button_labels_safe": ["", ""],
+            "artifact_count": 0,
+            "child_static_count": 0,
+            "manager_ticks": 120,
+            "pixel_changes": 6,
+            "process_exit_code": 3221225477,
+            "create_hr": None,
+            "hardware_selection_sent": True,
+            "manager_renders": 119,
+            "captured_width": 640,
+            "nonblack_pixels_max": 290688,
+            "status": "FAIL",
+            "child_button_count": 0,
+            "window_present": False,
+            "create_callsite_verified": True,
+            "stage": "native-observation",
+            "cd_mounted": True,
+            "hardware_selection_attempted": True,
+        }
+
+    def write_evidence(self, directory: Path, *, output=None):
+        public_output = dict(self.output)
+        public_output.update(output or {})
+        rendered = json.dumps(
+            public_output, sort_keys=True, separators=(",", ":")
+        )
+        log = (
+            "checkout prefix\n"
+            f"Run actions/checkout\ttimestamp {HARDWARE_HEAD_SHA}\n"
+            "runner middle\n"
+            "extract-in-one-job\tProbe private game extraction without an artifact\t"
+            f"timestamp {rendered}\n"
+            "runner cleanup\n"
+            "Post Run actions/checkout\tcleanup\n"
+        ).encode("utf-8")
+        log_path = directory / "run.log"
+        log_path.write_bytes(log)
+        manifest = {
+            "run_id": HARDWARE_RUN_ID,
+            "head_branch": HEAD_BRANCH,
+            "head_sha": HARDWARE_HEAD_SHA,
+            "status": "completed",
+            "conclusion": "failure",
+            "workflow_name": "Native Flight Windows extraction readiness",
+            "created_at": "2026-09-26T09:59:40Z",
+            "updated_at": "2026-09-26T10:00:26Z",
+            "log_sha256": hashlib.sha256(log).hexdigest(),
+            "log_bytes": len(log),
+        }
+        manifest_path = directory / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest_path, log_path
+
+    def classify_evidence(self, manifest_path: Path, log_path: Path):
+        with mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._commit_tree",
+            return_value=HARDWARE_TREE_SHA,
+        ), mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
+            return_value=HARDWARE_PROBE_SOURCE_SHA,
+        ):
+            return classify_hardware_progress(
+                manifest_path,
+                log_path,
+                expected_run_id=HARDWARE_RUN_ID,
+                expected_head_sha=HARDWARE_HEAD_SHA,
+                expected_head_branch=HEAD_BRANCH,
+                expected_tested_tree_sha=HARDWARE_TREE_SHA,
+                expected_probe_source_sha256=HARDWARE_PROBE_SOURCE_SHA,
+                expected_probe_executable_sha256=HARDWARE_PROBE_EXE_SHA,
+            )
+
+    def test_hardware_progress_and_fatal_exit_remain_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        self.assertEqual(
+            receipt["status"], "NATIVE_HARDWARE_PROGRESS_CRASH_DIAGNOSTIC_ONLY"
+        )
+        progress = receipt["runtime_progress"]
+        self.assertTrue(progress["hardware_selection_sent"])
+        self.assertTrue(progress["direct3d_module_loaded"])
+        self.assertEqual(progress["manager_ticks"], 120)
+        self.assertEqual(progress["manager_renders"], 119)
+        self.assertEqual(progress["pixel_samples"], 8)
+        self.assertEqual(progress["pixel_changes"], 6)
+        self.assertEqual(progress["captured_width"], 640)
+        self.assertEqual(progress["captured_height"], 457)
+        failure = receipt["failure_boundary"]
+        self.assertFalse(failure["process_alive_after_15s"])
+        self.assertEqual(failure["process_exit_code"], 3221225477)
+        self.assertEqual(failure["process_exit_code_hex"], "0xC0000005")
+        self.assertTrue(failure["fatal_access_violation_inferred_from_exit_code"])
+        limits = receipt["proof_limits"]
+        self.assertFalse(limits["direct3d_device_creation_called"])
+        self.assertFalse(limits["direct3d_device_created"])
+        self.assertFalse(limits["process_survived_15s"])
+        self.assertFalse(limits["fatal_exception_module_proven"])
+        self.assertFalse(limits["fatal_exception_rva_proven"])
+        self.assertFalse(limits["complete_native_gameplay_progress"])
+        self.assertFalse(limits["native_parity_evidence"])
+
+    def test_hardware_progress_cannot_become_device_or_stable_gameplay(self):
+        overclaim = {
+            "status": "NATIVE_RENDER_DIAGNOSTIC_ONLY",
+            "create_calls": 1,
+            "create_returns": 1,
+            "create_success": 1,
+            "device_nonnull": True,
+            "process_alive_after_15s": True,
+            "window_present": True,
+            "window_class": "NativeGame",
+            "process_exit_code": 0,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=overclaim
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "hardware progress crash boundary differs",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+    def test_hardware_identity_and_log_drift_fail_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(
+                directory, output={"probe_sha256": "1" * 64}
             )
             with self.assertRaisesRegex(
                 WindowsNativeObservationReadinessError,
