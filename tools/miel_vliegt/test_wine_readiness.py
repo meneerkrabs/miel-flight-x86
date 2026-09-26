@@ -230,6 +230,44 @@ class WineReadinessTests(unittest.TestCase):
             receipt["com"]["registry"][DIRECTSOUND]
         )
 
+    def test_registry_record_must_use_the_exact_key_and_default_value(self):
+        valid_value = (
+            "    (Default)    REG_SZ    C:\\windows\\system32\\dsound.dll\n"
+        )
+        records = (
+            (
+                f"HKEY_CLASSES_ROOT\\CLSID\\{DIRECTSOUND}\\Bogus\\"
+                f"CLSID\\{DIRECTSOUND}\\InprocServer32\n",
+                valid_value,
+            ),
+            (
+                f"HKEY_CLASSES_ROOT\\CLSID\\{DIRECTSOUND}\\InprocServer32\n",
+                "    NamedValue    REG_SZ    C:\\windows\\system32\\dsound.dll\n",
+            ),
+        )
+        for header, value in records:
+            with self.subTest(header=header):
+                with tempfile.TemporaryDirectory() as raw:
+                    directory = Path(raw)
+                    observation = self.observation(directory)
+                    registry = next(
+                        row for row in observation["phases"]
+                        if row["id"] == f"com-registry:{DIRECTSOUND}"
+                    )
+                    registry_path = directory / registry["log"]["path"]
+                    registry_path.write_text(header + value, encoding="utf-8")
+                    registry["log"]["sha256"] = hashlib.sha256(
+                        registry_path.read_bytes()
+                    ).hexdigest()
+                    receipt = wine_readiness.validate_observation(
+                        observation, evidence_root=directory,
+                    )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(
+                    receipt["com"]["registry"][DIRECTSOUND]
+                )
+
     def test_transport_and_shutdown_sentinels_must_be_standalone_lines(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

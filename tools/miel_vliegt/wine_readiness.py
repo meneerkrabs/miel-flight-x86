@@ -30,6 +30,10 @@ RPCSS_RUNNING_STATE = re.compile(
     r"^\s*STATE\s*:\s*4\s+RUNNING\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+REGISTRY_DEFAULT_VALUE = re.compile(
+    r"^\s*\(Default\)\s+REG_SZ\s+.+\.dll\s*$",
+    re.IGNORECASE,
+)
 FATAL_PATTERNS = (
     (
         "RPCSS_START_FAILED",
@@ -149,17 +153,14 @@ def _standalone_sentinel(text: str, sentinel: str) -> bool:
 
 
 def _registry_proven(text: str, clsid: str) -> bool:
-    expected_path = f"CLSID\\{clsid}\\InprocServer32".lower()
+    expected_path = (
+        f"HKEY_CLASSES_ROOT\\CLSID\\{clsid}\\InprocServer32".lower()
+    )
     lines = text.splitlines()
     for header, value_line in zip(lines, lines[1:]):
         compact = header.replace("/", "\\")
-        if expected_path in compact.lower() \
-                and re.search(
-                    r"\bREG_SZ\b", value_line, re.IGNORECASE,
-                ) is not None \
-                and re.search(
-                    r"\.dll(?:\s|$)", value_line, re.IGNORECASE,
-                ) is not None:
+        if compact.lower() == expected_path \
+                and REGISTRY_DEFAULT_VALUE.fullmatch(value_line) is not None:
             return True
     return False
 
