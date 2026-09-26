@@ -43,7 +43,7 @@ class WindowsExtractionReadinessTests(unittest.TestCase):
         public_output.update(output or {})
         log = (
             "runner setup\n"
-            f"Run actions/checkout\ttimestamp {HEAD_SHA}\n"
+            f"extract-in-one-job\tRun actions/checkout@v5\ttimestamp {HEAD_SHA}\n"
             "runner timestamp "
             f"{json.dumps(public_output, sort_keys=True, separators=(',', ':'))}\n"
             "runner cleanup\n"
@@ -150,10 +150,10 @@ class WindowsExtractionReadinessTests(unittest.TestCase):
             directory = Path(raw)
             manifest_path, log_path = self.write_evidence(directory)
             checkout_line = (
-                f"Run actions/checkout\ttimestamp {HEAD_SHA}\n"
+                f"extract-in-one-job\tRun actions/checkout@v5\ttimestamp {HEAD_SHA}\n"
             ).encode("ascii")
             incidental_line = (
-                f"unrelated diagnostic mentions {HEAD_SHA}\n"
+                f"unrelated diagnostic mentions Run actions/checkout {HEAD_SHA}\n"
             ).encode("ascii")
             raw_log = log_path.read_bytes().replace(checkout_line, incidental_line)
             self.assertNotEqual(raw_log, log_path.read_bytes())

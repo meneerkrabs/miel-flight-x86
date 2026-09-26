@@ -107,10 +107,13 @@ def _public_output(text: str) -> dict[str, Any]:
 
 
 def _checkout_identity_proven(text: str, head_sha: str) -> bool:
-    return any(
-        "Run actions/checkout" in line and line.rstrip().endswith(head_sha)
-        for line in text.splitlines()
-    )
+    for line in text.splitlines():
+        fields = line.rstrip().split("\t")
+        if len(fields) >= 3 \
+                and fields[1].startswith("Run actions/checkout@") \
+                and line.rstrip().endswith(head_sha):
+            return True
+    return False
 
 
 def classify(
