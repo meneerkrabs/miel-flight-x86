@@ -33,6 +33,7 @@ jobs:
           $nativeExitCode = $null
           $probeResult = $null
           $probeSha256 = $null
+          $waveOutDevices = $null
           $cleanupFailed = $false
           $finalResult = $null
           try {
@@ -185,6 +186,10 @@ jobs:
               $cdMounted = $false
             }
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
+            try {
+              Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class MielWinmm { [DllImport("winmm.dll")] public static extern uint waveOutGetNumDevs(); }' -ErrorAction Stop
+              $waveOutDevices = [MielWinmm]::waveOutGetNumDevs()
+            } catch { $waveOutDevices = $null }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
             & $probeExe $game.FullName $probeLog 60 --select-hardware `
@@ -236,6 +241,7 @@ jobs:
               hardware_selection_guard=$probeResult.hardware_selection_guard;
               hardware_selection_sent=$probeResult.hardware_selection_sent;
               debugger_attached=$probeResult.debugger_attached;
+              wave_out_devices=$waveOutDevices;
               first_chance_av_count=$probeResult.first_chance_av_count;
               audio_entry_count=$probeResult.audio_entry_count;
               process_cpu_ms=$probeResult.process_cpu_ms;
@@ -247,6 +253,7 @@ jobs:
               $finalResult.process_alive_after_15s = $alive
               $finalResult.window_present = $windowPresent
               $finalResult.process_exit_code = $nativeExitCode
+              $finalResult.wave_out_devices = $waveOutDevices
               $finalResult.probe_sha256 = $probeSha256
               if ($probeResult) {
                 foreach ($key in @('debugger_attached', 'gt_loaded', 'create_callsite_verified',
@@ -265,6 +272,9 @@ jobs:
                     'last_audio_esi_category', 'last_audio_ecx_category',
                     'last_audio_arg_category', 'last_audio_return_rva',
                     'audio_entry_same_thread', 'audio_entry_esi_unchanged',
+                    'esi_block_verified', 'esi_block_categories',
+                    'esi_block_hits', 'esi_block_matches_fatal',
+                    'last_esi_transition_block',
                     'fatal_exception_code', 'fatal_exception_module',
                     'fatal_exception_rva', 'fatal_access_type',
                     'fatal_fault_category', 'fatal_context_available',

@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define BP_MAX 5
+#define BP_MAX 8
 #define THREAD_MAX 64
 #define EXPECTED_EXE_SHA256 "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
 #define MANAGER_TICK_SLOT 0x0044cc14u
@@ -16,9 +16,19 @@
 #define EXPECTED_TICK 0x0041d990u
 #define EXPECTED_RENDER 0x0041dbc0u
 #define AUDIO_DIAGNOSTIC_ENTRY 0x00409ab0u
+#define ESI_BLOCK_COUNT 3
 
 typedef struct { uintptr_t address; BYTE original; int armed; const char *name; } Breakpoint;
-typedef struct { DWORD id; uintptr_t rearm; uintptr_t create_out; int create_pending; } ThreadState;
+typedef struct {
+    DWORD id;
+    uintptr_t rearm, create_out;
+    int create_pending;
+    unsigned long block_hits[ESI_BLOCK_COUNT];
+    uintptr_t block_esi[ESI_BLOCK_COUNT];
+    const char *block_categories[ESI_BLOCK_COUNT], *previous_esi_category;
+    int transition_seen;
+    unsigned transition_index;
+} ThreadState;
 static Breakpoint bp[BP_MAX];
 static ThreadState threads[THREAD_MAX];
 static HANDLE child;
@@ -56,6 +66,17 @@ static const char *last_audio_arg_category = "unavailable";
 static DWORD last_audio_thread;
 static uintptr_t last_audio_esi;
 static int audio_entry_same_thread, audio_entry_esi_unchanged;
+static const uintptr_t esi_block_addresses[ESI_BLOCK_COUNT] = {
+    0x00409af1u, 0x00409b10u, 0x00409b1cu
+};
+static const char *esi_block_keys[ESI_BLOCK_COUNT] = {
+    "0x00409AF1", "0x00409B10", "0x00409B1C"
+};
+static unsigned long crash_block_hits[ESI_BLOCK_COUNT];
+static const char *crash_block_categories[ESI_BLOCK_COUNT];
+static int crash_block_matches_fatal[ESI_BLOCK_COUNT];
+static int esi_block_verified[ESI_BLOCK_COUNT], have_esi_transition;
+static unsigned esi_transition_index;
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -586,6 +607,21 @@ static void capture_fatal_context(DWORD thread_id, uintptr_t fault_address)
         audio_entry_same_thread = 1;
         if (last_audio_esi == (uintptr_t)context.Esi) audio_entry_esi_unchanged = 1;
     }
+    {
+        ThreadState *state = thread_state(thread_id);
+        if (state) {
+            for (i = 0; i < ESI_BLOCK_COUNT; i++) {
+                crash_block_hits[i] = state->block_hits[i];
+                crash_block_categories[i] = state->block_categories[i];
+                crash_block_matches_fatal[i] = state->block_hits[i] &&
+                    state->block_esi[i] == (uintptr_t)context.Esi;
+            }
+            if (state->transition_seen) {
+                have_esi_transition = 1;
+                esi_transition_index = state->transition_index;
+            }
+        }
+    }
     values[0] = context.Eax; values[1] = context.Ebx;
     values[2] = context.Ecx; values[3] = context.Edx;
     values[4] = context.Esi; values[5] = context.Edi;
@@ -635,6 +671,7 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
         uintptr_t tick = 0, render = 0;
         MEMORY_BASIC_INFORMATION memory;
         DWORD protection;
+        unsigned block_index;
         if (event->u.CreateProcessInfo.hFile) CloseHandle(event->u.CreateProcessInfo.hFile);
         if (remote_read(MANAGER_TICK_SLOT, &tick, 4) && remote_read(MANAGER_RENDER_SLOT, &render, 4) &&
             tick == EXPECTED_TICK && render == EXPECTED_RENDER) {
@@ -653,6 +690,23 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                 else probe_error = 1;
             } else probe_error = 1;
         } else probe_error = 1;
+        for (block_index = 0; block_index < ESI_BLOCK_COUNT; block_index++) {
+            uintptr_t address = esi_block_addresses[block_index];
+            if ((uintptr_t)event->u.CreateProcessInfo.lpBaseOfImage != 0x00400000u ||
+                !VirtualQueryEx(child, (LPCVOID)address, &memory, sizeof memory) ||
+                memory.State != MEM_COMMIT || memory.Type != MEM_IMAGE) {
+                probe_error = 1;
+                break;
+            }
+            protection = memory.Protect & 0xffu;
+            if (protection != PAGE_EXECUTE && protection != PAGE_EXECUTE_READ &&
+                protection != PAGE_EXECUTE_READWRITE && protection != PAGE_EXECUTE_WRITECOPY) {
+                probe_error = 1;
+                break;
+            }
+            if (!add_bp(address, "esi_block")) { probe_error = 1; break; }
+            esi_block_verified[block_index] = 1;
+        }
         if (event->u.CreateProcessInfo.hThread) CloseHandle(event->u.CreateProcessInfo.hThread);
     } else if (event->dwDebugEventCode == LOAD_DLL_DEBUG_EVENT) {
         HANDLE file = event->u.LoadDll.hFile;
@@ -704,6 +758,8 @@ static void observe_debug_event(const DEBUG_EVENT *event, DWORD *continue_status
                     last_audio_thread = event->dwThreadId;
                     last_audio_esi = context.Esi;
                     last_audio_esi_category = pointer_category(context.Esi);
+                    state->previous_esi_category = last_audio_esi_category;
+                    state->transition_seen = 0;
                     last_audio_ecx_category = pointer_category(context.Ecx);
                     have_first_audio_arg = remote_read((uintptr_t)context.Esp + 4, &argument, 4);
                     last_audio_arg_category = have_first_audio_arg ?
@@ -928,7 +984,47 @@ int main(int argc, char **argv)
             fprintf(log, ",\"rva\":\"0x%08lX\"}", stack_return_rvas[i].rva);
         }
     }
-    fputs("],\"window_title_safe\":", log);
+    fputs("],\"esi_block_verified\":{", log);
+    {
+        unsigned i;
+        for (i = 0; i < ESI_BLOCK_COUNT; i++) {
+            if (i) fputc(',', log);
+            print_json_string(log, esi_block_keys[i]);
+            fprintf(log, ":%s", esi_block_verified[i] ? "true" : "false");
+        }
+    }
+    fputs("},\"esi_block_categories\":{", log);
+    {
+        unsigned i;
+        for (i = 0; i < ESI_BLOCK_COUNT; i++) {
+            if (i) fputc(',', log);
+            print_json_string(log, esi_block_keys[i]);
+            fputc(':', log);
+            print_json_string(log, crash_block_categories[i] ? crash_block_categories[i] : "unavailable");
+        }
+    }
+    fputs("},\"esi_block_hits\":{", log);
+    {
+        unsigned i;
+        for (i = 0; i < ESI_BLOCK_COUNT; i++) {
+            if (i) fputc(',', log);
+            print_json_string(log, esi_block_keys[i]);
+            fprintf(log, ":%lu", crash_block_hits[i]);
+        }
+    }
+    fputs("},\"esi_block_matches_fatal\":{", log);
+    {
+        unsigned i;
+        for (i = 0; i < ESI_BLOCK_COUNT; i++) {
+            if (i) fputc(',', log);
+            print_json_string(log, esi_block_keys[i]);
+            fprintf(log, ":%s", crash_block_matches_fatal[i] ? "true" : "false");
+        }
+    }
+    fputs("},\"last_esi_transition_block\":", log);
+    if (have_esi_transition) print_json_string(log, esi_block_keys[esi_transition_index]);
+    else fputs("null", log);
+    fputs(",\"window_title_safe\":", log);
     print_json_string(log, window_title_safe);
     fputs(",\"button_labels_safe\":[", log);
     print_json_string(log, button_labels_safe[0]);
