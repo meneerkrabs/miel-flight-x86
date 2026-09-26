@@ -22,9 +22,13 @@ OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
 CLSID = re.compile(r"^\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-SERVICE_RUNNING = re.compile(
-    r"SERVICE_NAME\s*:\s*RpcSs.*?STATE\s*:\s*4\s+RUNNING",
-    re.IGNORECASE | re.DOTALL,
+RPCSS_SERVICE_NAME = re.compile(
+    r"^\s*SERVICE_NAME\s*:\s*RpcSs\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+RPCSS_RUNNING_STATE = re.compile(
+    r"^\s*STATE\s*:\s*4\s+RUNNING\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 FATAL_PATTERNS = (
     (
@@ -175,6 +179,14 @@ def _process_topology_proven(text: str) -> bool:
     return not remaining
 
 
+def _rpcss_service_running(text: str) -> bool:
+    return any(
+        RPCSS_SERVICE_NAME.search(block) is not None
+        and RPCSS_RUNNING_STATE.search(block) is not None
+        for block in re.split(r"(?:\r?\n){2,}", text)
+    )
+
+
 def validate_observation(
     observation: dict[str, Any], *, evidence_root: Path,
 ) -> dict[str, Any]:
@@ -281,7 +293,7 @@ def validate_observation(
         ),
         "rpcss_service_running": (
             _phase_ok(indexed["rpcss-service"])
-            and SERVICE_RUNNING.search(texts["rpcss-service"]) is not None
+            and _rpcss_service_running(texts["rpcss-service"])
         ),
         "required_com_registered": all(registry_checks.values()),
         "required_com_activated": all(activation_checks.values()),

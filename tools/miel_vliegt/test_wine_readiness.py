@@ -124,6 +124,35 @@ class WineReadinessTests(unittest.TestCase):
         self.assertIn("PHASE_TIMEOUT", codes)
         self.assertFalse(receipt["checks"]["fatal_diagnostics_absent"])
 
+    def test_rpcss_running_state_must_be_in_the_same_service_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            rpcss = next(
+                row for row in observation["phases"]
+                if row["id"] == "rpcss-service"
+            )
+            rpcss_path = directory / rpcss["log"]["path"]
+            rpcss_path.write_text(
+                "SERVICE_NAME        :  RpcSs\n"
+                "        TYPE               : 10  WIN32_OWN_PROCESS\n"
+                "        STATE              : 1  STOPPED\n"
+                "\n"
+                "SERVICE_NAME        :  unrelated\n"
+                "        TYPE               : 10  WIN32_OWN_PROCESS\n"
+                "        STATE              : 4  RUNNING\n",
+                encoding="utf-8",
+            )
+            rpcss["log"]["sha256"] = hashlib.sha256(
+                rpcss_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["rpcss_service_running"])
+
     def test_log_hash_drift_and_path_escape_are_rejected(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
