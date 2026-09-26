@@ -19,6 +19,8 @@ PROBE_SOURCE_PATH = "tools/miel_vliegt/windows_native_probe/native_probe.c"
 EXPECTED_WORKFLOW = "Native Flight Windows extraction readiness"
 EXPECTED_CREATED_AT = "2026-09-26T09:38:29Z"
 EXPECTED_UPDATED_AT = "2026-09-26T09:40:25Z"
+SELECTOR_CREATED_AT = "2026-09-26T09:55:33Z"
+SELECTOR_UPDATED_AT = "2026-09-26T09:56:40Z"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_ID = re.compile(r"^[0-9a-f]{40}$")
 MANIFEST_FIELDS = {
@@ -45,6 +47,18 @@ INTEGER_FIELDS = {
     "create_calls", "create_returns", "create_success", "manager_renders",
     "manager_ticks", "nonblack_pixels_max", "pixel_changes", "pixel_samples",
     "process_cpu_ms", "process_exit_code",
+}
+SELECTOR_OUTPUT_FIELDS = PUBLIC_OUTPUT_FIELDS | {
+    "button_labels_safe", "profile_dialog_closed",
+    "profile_dialog_identified", "profile_submit_accepted",
+    "profile_submit_attempted", "profile_submit_guard",
+    "profile_submit_requested", "profile_submit_sent",
+    "ui_profile_hint", "window_title_safe",
+}
+SELECTOR_BOOLEAN_FIELDS = BOOLEAN_FIELDS | {
+    "profile_dialog_closed", "profile_dialog_identified",
+    "profile_submit_accepted", "profile_submit_attempted",
+    "profile_submit_requested", "profile_submit_sent", "ui_profile_hint",
 }
 
 
@@ -144,7 +158,10 @@ def _source_blob(revision: str, path: str) -> str:
     )
 
 
-def _public_output(text: str) -> tuple[dict[str, Any], int, str]:
+def _public_output(
+    text: str,
+    expected_fields: set[str] = PUBLIC_OUTPUT_FIELDS,
+) -> tuple[dict[str, Any], int, str]:
     candidates: list[tuple[dict[str, Any], int, str]] = []
     for line_number, line in enumerate(text.splitlines()):
         stripped = line.strip()
@@ -168,7 +185,7 @@ def _public_output(text: str) -> tuple[dict[str, Any], int, str]:
         )
     output, line_number, line = candidates[0]
     return (
-        _fields(output, PUBLIC_OUTPUT_FIELDS, "public output"),
+        _fields(output, expected_fields, "public output"),
         line_number,
         line,
     )
@@ -375,6 +392,212 @@ def classify(
     }
 
 
+def classify_renderer_selector(
+    manifest_path: Path,
+    log_path: Path,
+    *,
+    expected_run_id: int,
+    expected_head_sha: str,
+    expected_head_branch: str,
+    expected_tested_tree_sha: str,
+    expected_probe_source_sha256: str,
+    expected_probe_executable_sha256: str,
+) -> dict[str, Any]:
+    manifest = _fields(
+        _load(manifest_path, "manifest"), MANIFEST_FIELDS, "manifest"
+    )
+    run_id = _integer(manifest["run_id"], "run id", minimum=1)
+    head_sha = _git_id(manifest["head_sha"], "run head")
+    expected_run_id = _integer(expected_run_id, "expected run id", minimum=1)
+    expected_head_sha = _git_id(expected_head_sha, "expected run head")
+    expected_tested_tree_sha = _git_id(
+        expected_tested_tree_sha, "expected tested tree"
+    )
+    expected_probe_source_sha256 = _git_id(
+        expected_probe_source_sha256, "expected probe source blob"
+    )
+    expected_probe_executable_sha256 = _hash(
+        expected_probe_executable_sha256, "expected observer probe executable"
+    )
+    for name, value in (
+        ("head branch", manifest["head_branch"]),
+        ("run status", manifest["status"]),
+        ("run conclusion", manifest["conclusion"]),
+        ("workflow name", manifest["workflow_name"]),
+        ("created timestamp", manifest["created_at"]),
+        ("updated timestamp", manifest["updated_at"]),
+        ("expected head branch", expected_head_branch),
+    ):
+        if not isinstance(value, str) or not value:
+            raise WindowsNativeObservationReadinessError(f"{name} is invalid")
+    if run_id != expected_run_id or head_sha != expected_head_sha \
+            or manifest["head_branch"] != expected_head_branch:
+        raise WindowsNativeObservationReadinessError("run identity differs")
+    if manifest["status"] != "completed" \
+            or manifest["conclusion"] != "failure" \
+            or manifest["workflow_name"] != EXPECTED_WORKFLOW \
+            or manifest["created_at"] != SELECTOR_CREATED_AT \
+            or manifest["updated_at"] != SELECTOR_UPDATED_AT:
+        raise WindowsNativeObservationReadinessError("run metadata differs")
+
+    tested_tree_sha = _commit_tree(head_sha)
+    probe_source_sha256 = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    if tested_tree_sha != expected_tested_tree_sha:
+        raise WindowsNativeObservationReadinessError("tested tree differs")
+    if probe_source_sha256 != expected_probe_source_sha256:
+        raise WindowsNativeObservationReadinessError("probe source differs")
+
+    expected_log_hash = _hash(manifest["log_sha256"], "run log")
+    expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
+    try:
+        raw_log = log_path.read_bytes()
+        text = raw_log.decode("utf-8", errors="replace")
+    except OSError as error:
+        raise WindowsNativeObservationReadinessError(
+            "run log is unavailable"
+        ) from error
+    if len(raw_log) != expected_log_bytes:
+        raise WindowsNativeObservationReadinessError("log bytes differ")
+    if hashlib.sha256(raw_log).hexdigest() != expected_log_hash:
+        raise WindowsNativeObservationReadinessError("log hash differs")
+
+    checkout_line_number = _checkout_line_number(text, expected_head_sha)
+    if checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError("checkout identity differs")
+    output, output_line_number, output_line = _public_output(
+        text, SELECTOR_OUTPUT_FIELDS
+    )
+    if MAIN_JOB_STEP not in output_line:
+        raise WindowsNativeObservationReadinessError(
+            "public output job step differs"
+        )
+    if output_line_number < checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output precedes checkout"
+        )
+    post_checkout_line_number = _post_checkout_line_number(text)
+    if post_checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError(
+            "post-checkout cleanup is missing"
+        )
+    if output_line_number > post_checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output follows post-checkout cleanup"
+        )
+
+    labels = output["button_labels_safe"]
+    if any(type(output[name]) is not bool for name in SELECTOR_BOOLEAN_FIELDS) \
+            or any(type(output[name]) is not int for name in INTEGER_FIELDS) \
+            or any(
+                not isinstance(output[name], str) or not output[name]
+                for name in (
+                    "dialog_reason", "profile_submit_guard", "stage",
+                    "status", "window_class", "window_title_safe",
+                )
+            ) \
+            or not isinstance(output["probe_sha256"], str) \
+            or SHA256.fullmatch(output["probe_sha256"]) is None \
+            or output["create_hr"] is not None \
+            or not isinstance(labels, list) \
+            or len(labels) != 2 \
+            or any(not isinstance(label, str) for label in labels):
+        raise WindowsNativeObservationReadinessError("public output types differ")
+    if _integer(output["artifact_count"], "artifact count") != 0:
+        raise WindowsNativeObservationReadinessError("artifact count differs")
+    if _hash(output["probe_sha256"], "observer probe executable") \
+            != expected_probe_executable_sha256:
+        raise WindowsNativeObservationReadinessError(
+            "observer probe identity differs"
+        )
+
+    passive_boundary = (
+        output["status"] == "FAIL"
+        and output["stage"] == "native-observation"
+        and output["cd_mounted"]
+        and output["process_alive_after_15s"]
+        and output["window_present"]
+        and output["window_class"] == "#32770"
+        and output["dialog_reason"] == "unknown_dialog"
+        and output["captured_width"] == 318
+        and output["captured_height"] == 140
+        and output["child_static_count"] == 0
+        and output["child_edit_count"] == 1
+        and output["child_button_count"] == 2
+        and output["button_labels_safe"] == ["Hardware", "Software"]
+        and output["window_title_safe"] == "REDACTED"
+        and output["manager_slots_verified"]
+        and output["pixel_samples"] == 36
+        and output["pixel_changes"] == 0
+        and output["nonblack_pixels_max"] == 42757
+        and output["process_cpu_ms"] == 265
+        and output["process_exit_code"] == 0
+        and not output["ui_profile_hint"]
+        and not output["profile_dialog_identified"]
+        and not output["profile_submit_requested"]
+        and not output["profile_submit_attempted"]
+        and not output["profile_submit_sent"]
+        and not output["profile_submit_accepted"]
+        and not output["profile_dialog_closed"]
+        and output["profile_submit_guard"] == "not_requested"
+    )
+    renderer_absent = (
+        not output["gt_loaded"]
+        and not output["create_callsite_verified"]
+        and output["create_calls"] == 0
+        and output["create_returns"] == 0
+        and output["create_success"] == 0
+        and not output["device_nonnull"]
+        and output["manager_ticks"] == 0
+        and output["manager_renders"] == 0
+    )
+    if not passive_boundary or not renderer_absent:
+        raise WindowsNativeObservationReadinessError(
+            "passive renderer-selector boundary differs"
+        )
+
+    return {
+        "schema": 1,
+        "protocol": PROTOCOL,
+        "run_id": run_id,
+        "head_sha": head_sha,
+        "status": "NATIVE_RENDERER_SELECTOR_PASSIVE_DIAGNOSTIC_ONLY",
+        "source_revision": {
+            "head_sha": head_sha,
+            "tested_tree_sha": tested_tree_sha,
+        },
+        "source_identities": {
+            "probe_source_path": PROBE_SOURCE_PATH,
+            "probe_source_blob_sha256": probe_source_sha256,
+            "probe_executable_sha256": output["probe_sha256"],
+        },
+        "source_log": {
+            "path": log_path.name,
+            "sha256": expected_log_hash,
+            "bytes": expected_log_bytes,
+        },
+        "process_alive_after_15s": output["process_alive_after_15s"],
+        "window_present": output["window_present"],
+        "window_class": output["window_class"],
+        "window_title_safe": output["window_title_safe"],
+        "button_labels_safe": list(output["button_labels_safe"]),
+        "captured_width": output["captured_width"],
+        "captured_height": output["captured_height"],
+        "pixel_samples": output["pixel_samples"],
+        "pixel_changes": output["pixel_changes"],
+        "manager_slots_verified": output["manager_slots_verified"],
+        "profile_submit_guard": output["profile_submit_guard"],
+        "proof_limits": {
+            "renderer_selection_input_sent": False,
+            "direct3d_module_loaded": False,
+            "direct3d_device_creation_called": False,
+            "manager_ticks_observed": False,
+            "native_pixel_changes_observed": False,
+            "native_gameplay_progress": False,
+            "native_parity_evidence": False,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -385,8 +608,15 @@ def main() -> int:
     parser.add_argument("--tested-tree-sha", required=True)
     parser.add_argument("--probe-source-sha256", required=True)
     parser.add_argument("--probe-executable-sha256", required=True)
+    parser.add_argument(
+        "--receipt-type",
+        choices=("static-dialog", "renderer-selector"),
+        default="static-dialog",
+    )
     arguments = parser.parse_args()
-    receipt = classify(
+    classifier = classify if arguments.receipt_type == "static-dialog" \
+        else classify_renderer_selector
+    receipt = classifier(
         arguments.manifest,
         arguments.log,
         expected_run_id=arguments.run_id,
