@@ -86,9 +86,9 @@ def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
     return value
 
 
-def _public_output(text: str) -> tuple[dict[str, Any], str]:
-    candidates: list[tuple[dict[str, Any], str]] = []
-    for line in text.splitlines():
+def _public_output(text: str) -> tuple[dict[str, Any], int, str]:
+    candidates: list[tuple[dict[str, Any], int, str]] = []
+    for line_number, line in enumerate(text.splitlines()):
         stripped = line.strip()
         start = stripped.find("{")
         end = stripped.rfind("}")
@@ -101,21 +101,34 @@ def _public_output(text: str) -> tuple[dict[str, Any], str]:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict) and "status" in value:
-            candidates.append((value, line))
+            candidates.append((value, line_number, line))
     if len(candidates) != 1:
         raise WindowsExtractionReadinessError("public output occurrences differ")
-    output, line = candidates[0]
-    return _fields(output, PUBLIC_OUTPUT_FIELDS, "public output"), line
+    output, line_number, line = candidates[0]
+    return (
+        _fields(output, PUBLIC_OUTPUT_FIELDS, "public output"),
+        line_number,
+        line,
+    )
 
 
-def _checkout_identity_proven(text: str, head_sha: str) -> bool:
-    for line in text.splitlines():
+def _checkout_line_number(text: str, head_sha: str) -> int | None:
+    for line_number, line in enumerate(text.splitlines()):
         fields = line.rstrip().split("\t")
         if len(fields) >= 3 \
                 and fields[1].startswith("Run actions/checkout@") \
                 and line.rstrip().endswith(head_sha):
-            return True
-    return False
+            return line_number
+    return None
+
+
+def _post_checkout_line_number(text: str) -> int | None:
+    for line_number, line in enumerate(text.splitlines()):
+        fields = line.rstrip().split("\t")
+        if len(fields) >= 3 \
+                and fields[1].startswith("Post Run actions/checkout@"):
+            return line_number
+    return None
 
 
 def classify(
@@ -163,14 +176,24 @@ def classify(
         raise WindowsExtractionReadinessError("log bytes differ")
     if hashlib.sha256(raw_log).hexdigest() != expected_log_hash:
         raise WindowsExtractionReadinessError("log hash differs")
-    if not _checkout_identity_proven(text, expected_head_sha):
+    checkout_line_number = _checkout_line_number(text, expected_head_sha)
+    if checkout_line_number is None:
         raise WindowsExtractionReadinessError("checkout identity differs")
 
-    output, output_line = _public_output(text)
+    output, output_line_number, output_line = _public_output(text)
     output_fields = output_line.rstrip().split("\t")
     if len(output_fields) < 3 \
             or output_fields[1] != MAIN_JOB_STEP:
         raise WindowsExtractionReadinessError("public output job step differs")
+    if output_line_number < checkout_line_number:
+        raise WindowsExtractionReadinessError("public output precedes checkout")
+    post_checkout_line_number = _post_checkout_line_number(text)
+    if post_checkout_line_number is None:
+        raise WindowsExtractionReadinessError("post-checkout cleanup is missing")
+    if output_line_number > post_checkout_line_number:
+        raise WindowsExtractionReadinessError(
+            "public output follows post-checkout cleanup"
+        )
     if not isinstance(output["status"], str) \
             or type(output["artifact_count"]) is not int \
             or type(output["iso_sha256_matched"]) is not bool \
