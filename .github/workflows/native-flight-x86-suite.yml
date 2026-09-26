@@ -94,13 +94,3 @@ jobs:
             "$RUNNER_TEMP/miel-native/output/build-diagnostics/DINPUT.map"
           install -m 0600 /opt/miel/DINPUT.symbols \
             "$RUNNER_TEMP/miel-native/output/build-diagnostics/DINPUT.symbols"
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: flight-x86-results
-          retention-days: 1
-          # Only the output/ tree (scenario receipts + logs). The full
-          # miel-native/ dir also contains wine-prefix/dosdevices symlinks to
-          # system paths (z:/boot/efi) that make the upload scan fail EACCES.
-          path: ${{ runner.temp }}/miel-native/output/

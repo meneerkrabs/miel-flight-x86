@@ -1,3 +1,5 @@
+# Parked: this public workflow uploaded unpacked private game files and the
+# full native work tree. Restore only after private transfer and reviewed export.
 name: Native flight Windows suite
 
 on:
