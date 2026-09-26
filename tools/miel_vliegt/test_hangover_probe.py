@@ -1782,9 +1782,15 @@ class HangoverProbeTests(unittest.TestCase):
         self.assertIn("observer_initialize(NULL) != 1u", proxy)
         self.assertIn("signal_observer_failure();", proxy)
         self.assertIn("MielObserverFailure-%lu", proxy)
+        self.assertIn("not call real DirectInputCreateA here", proxy)
+        self.assertIn("wine-dinput bypassed", proxy)
+        self.assertNotIn("real_direct_input_create", proxy)
+        self.assertNotIn("LoadLibraryA(dinput_path)", proxy)
         self.assertLess(
             proxy.index("observer_initialize(NULL) != 1u"),
-            proxy.index("return real_direct_input_create"),
+            proxy.index(
+                "__declspec(dllexport) HRESULT WINAPI DirectInputCreateA"
+            ),
         )
         self.assertIn("terminate_failed_target", launcher)
         self.assertLess(

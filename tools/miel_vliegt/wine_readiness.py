@@ -66,13 +66,31 @@ class WineReadinessError(ValueError):
     """Raised when readiness evidence is malformed or unbound."""
 
 
+class DuplicateKeyError(ValueError):
+    """Raised when duplicate JSON keys would silently replace evidence."""
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise DuplicateKeyError(f"duplicate JSON key {key!r}")
+        value[key] = item
+    return value
+
+
+_STRICT_DECODER = json.JSONDecoder(object_pairs_hook=_unique_object)
+
+
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = _STRICT_DECODER.decode(path.read_text(encoding="utf-8"))
+    except DuplicateKeyError as error:
+        raise WineReadinessError("duplicate JSON key in readiness observation") from error
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise WineReadinessError(f"cannot read Wine readiness observation: {path}") from error
     if not isinstance(value, dict):
@@ -85,7 +103,10 @@ def _read_log(root: Path, reference: Any, label: str) -> tuple[str, dict[str, An
             or not isinstance(reference.get("path"), str) \
             or not SHA256.fullmatch(str(reference.get("sha256", ""))):
         raise WineReadinessError(f"{label} log reference is invalid")
-    path = (root / reference["path"]).resolve()
+    relative_path = Path(reference["path"])
+    if relative_path.is_absolute():
+        raise WineReadinessError(f"{label} log path is not relative")
+    path = (root / relative_path).resolve()
     try:
         path.relative_to(root.resolve())
     except ValueError as error:
@@ -141,6 +162,15 @@ def validate_observation(
             or observation.get("schema") != 1 \
             or observation.get("protocol") != OBSERVATION_PROTOCOL:
         raise WineReadinessError("unsupported Wine readiness observation")
+    backend = observation.get("backend")
+    if not isinstance(backend, dict) or not backend \
+            or not isinstance(backend.get("id"), str) or not backend["id"] \
+            or any(
+                not isinstance(key, str) or not key
+                or not isinstance(value, str) or not value
+                for key, value in backend.items()
+            ):
+        raise WineReadinessError("Wine readiness backend identity is invalid")
     requirements = observation.get("requirements")
     if not isinstance(requirements, dict) or set(requirements) != {
         "service", "transportSentinel", "comClasses",

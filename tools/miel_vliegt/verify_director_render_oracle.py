@@ -79,7 +79,10 @@ def _is_sha256(value: Any) -> bool:
 def _artifact(root: Path, reference: Any, label: str) -> Path:
     if not isinstance(reference, str) or not reference:
         raise ValueError(f"{label} must be a non-empty relative artifact path")
-    candidate = (root / reference).resolve()
+    relative_path = Path(reference)
+    if relative_path.is_absolute():
+        raise ValueError(f"{label} must be a non-empty relative artifact path")
+    candidate = (root / relative_path).resolve()
     try:
         candidate.relative_to(root.resolve())
     except ValueError as error:

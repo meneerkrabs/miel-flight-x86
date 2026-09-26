@@ -356,6 +356,11 @@ def sha256_file(path: Path) -> str:
 
 
 def _artifact_path(root: Path, relative: str) -> Path:
+    if not isinstance(relative, str) or not relative \
+            or Path(relative).is_absolute():
+        raise ValueError(
+            "artifact path must be a non-empty repository-relative path"
+        )
     candidate = (root / relative).resolve()
     try:
         candidate.relative_to(root.resolve())

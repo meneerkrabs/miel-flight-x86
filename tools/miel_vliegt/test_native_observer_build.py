@@ -1519,7 +1519,10 @@ class NativeObserverBuildTest(unittest.TestCase):
 
         presentation_gate = source[
             source.index("static BOOL presentation_context_enabled"):
-            source.index("static BOOL stable_module_identity")
+            source.index(
+                "static BOOL stable_module_identity",
+                source.index("static BOOL presentation_context_enabled"),
+            )
         ]
         context_gate = presentation_gate[
             :presentation_gate.index("static BOOL presentation_emission_enabled")

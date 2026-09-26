@@ -359,6 +359,18 @@ static DWORD wait_for_proxy_bootstrap(const PROCESS_INFORMATION *process,
     return result;
 }
 
+static const char *proxy_target_exit_detail(const Evidence *evidence)
+{
+    if (evidence->login_pending_observed &&
+        evidence->proxy_observer_ready) {
+        return "target-exited-after-login-pending-before-activation";
+    }
+    if (evidence->proxy_observer_ready) {
+        return "target-exited-after-observer-ready-before-login-pending";
+    }
+    return "target-exited-before-proxy-bootstrap";
+}
+
 typedef struct EnvironmentSnapshot {
     const char *name;
     char *value;
@@ -656,7 +668,7 @@ int main(int argc, char **argv)
     }
     if (wait_result == WAIT_OBJECT_0 + 2u) {
         write_receipt(&options, &evidence, "FAIL", "proxy",
-                      "target-exited-before-proxy-bootstrap");
+                      proxy_target_exit_detail(&evidence));
         goto done;
     }
     if (wait_result == WAIT_TIMEOUT) {

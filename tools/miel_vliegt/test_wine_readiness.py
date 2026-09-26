@@ -144,6 +144,16 @@ class WineReadinessTests(unittest.TestCase):
                 wine_readiness.validate_observation(
                     escaped, evidence_root=directory,
                 )
+            absolute = copy.deepcopy(observation)
+            absolute["phases"][0]["log"]["path"] = str(
+                directory / absolute["phases"][0]["log"]["path"]
+            )
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError, "log path is not relative"
+            ):
+                wine_readiness.validate_observation(
+                    absolute, evidence_root=directory,
+                )
 
     def test_missing_process_snapshot_cannot_be_inferred_from_service_exit_zero(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -162,6 +172,48 @@ class WineReadinessTests(unittest.TestCase):
             )
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["service_process_topology"])
+
+    def test_backend_identity_must_be_a_nonempty_string_mapping(self):
+        invalid_backends = (
+            None,
+            [],
+            {},
+            {"id": ""},
+            {"id": 1},
+            {"id": "fex", "wine": 9},
+        )
+        for backend in invalid_backends:
+            with self.subTest(backend=backend):
+                with tempfile.TemporaryDirectory() as raw:
+                    directory = Path(raw)
+                    observation = self.observation(directory)
+                    observation["backend"] = backend
+                    with self.assertRaisesRegex(
+                        wine_readiness.WineReadinessError,
+                        "backend identity is invalid",
+                    ):
+                        wine_readiness.validate_observation(
+                            observation, evidence_root=directory,
+                        )
+
+    def test_duplicate_json_keys_cannot_silently_replace_readiness_fields(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            observation_path = directory / "observation.json"
+            observation_path.write_text(json.dumps(observation), encoding="utf-8")
+            rendered = observation_path.read_text(encoding="utf-8")
+            duplicated = rendered.replace(
+                '"schema": 1, ',
+                '"schema": 1, "schema": 1, ',
+                1,
+            )
+            self.assertNotEqual(rendered, duplicated)
+            observation_path.write_text(duplicated, encoding="utf-8")
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError, "duplicate JSON key"
+            ):
+                wine_readiness.validate_file(observation_path)
 
 
 if __name__ == "__main__":

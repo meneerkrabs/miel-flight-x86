@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import copy
+import tempfile
 import unittest
+from pathlib import Path
 
 from tools.miel_vliegt import native_mode_bodies as mode_bodies
 
@@ -91,6 +93,21 @@ class NativeModeBodyTests(unittest.TestCase):
         broken["source"]["artifacts"]["native_scene_probe"]["sha256"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "pinned mode body artifact drifted"):
             mode_bodies.validate_contract(broken)
+
+
+class NativeModeBodyArtifactContractTests(unittest.TestCase):
+    def test_references_must_be_non_empty_repository_relative_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            artifact = root / "artifact.json"
+            artifact.write_bytes(b"{}")
+            for reference in (None, "", str(artifact)):
+                with self.subTest(reference=reference):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "artifact path must be a non-empty repository-relative path",
+                    ):
+                        mode_bodies._artifact_path(root, reference)
 
 
 if __name__ == "__main__":

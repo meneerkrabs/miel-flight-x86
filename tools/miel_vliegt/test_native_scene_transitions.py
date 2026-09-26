@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import copy
+import tempfile
 import unittest
+from pathlib import Path
 
 from tools.miel_vliegt import native_scene_transitions as transitions
 
@@ -161,6 +163,21 @@ class NativeSceneTransitionTests(unittest.TestCase):
         broken["debug_edges"][0]["evidence_status"] = "PROVEN_STATIC"
         with self.assertRaisesRegex(ValueError, "debug edge escaped"):
             self.validate_structure(broken)
+
+
+class NativeSceneTransitionArtifactContractTests(unittest.TestCase):
+    def test_references_must_be_non_empty_repository_relative_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            artifact = root / "artifact.json"
+            artifact.write_bytes(b"{}")
+            for reference in (None, "", str(artifact)):
+                with self.subTest(reference=reference):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "artifact path must be a non-empty repository-relative path",
+                    ):
+                        transitions._artifact_path(root, reference)
 
 
 if __name__ == "__main__":

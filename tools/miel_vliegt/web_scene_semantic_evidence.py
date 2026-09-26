@@ -633,6 +633,8 @@ def build_staged_manifest(
 
 def _resolve_ref(reference: dict[str, Any], label: str) -> Path:
     if not isinstance(reference, dict) or set(reference) != {"path", "sha256", "size"} \
+            or not isinstance(reference.get("path"), str) or not reference["path"] \
+            or Path(reference.get("path")).is_absolute() \
             or not _is_sha256(reference.get("sha256")) \
             or type(reference.get("size")) is not int or reference["size"] < 1:
         raise WebSceneSemanticEvidenceError(f"{label} reference fields differ")

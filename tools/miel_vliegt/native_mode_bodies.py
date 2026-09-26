@@ -105,6 +105,11 @@ def canonical_sha256(value: Any) -> str:
 
 
 def _artifact_path(root: Path, relative: str) -> Path:
+    if not isinstance(relative, str) or not relative \
+            or Path(relative).is_absolute():
+        raise ValueError(
+            "artifact path must be a non-empty repository-relative path"
+        )
     path = (root / relative).resolve()
     try:
         path.relative_to(root.resolve())
