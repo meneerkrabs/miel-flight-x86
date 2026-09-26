@@ -187,7 +187,7 @@ jobs:
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
-            & $probeExe $game.FullName $probeLog 60 --submit-profile `
+            & $probeExe $game.FullName $probeLog 20 `
               *> (Join-Path $private 'native-probe-stdout.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
               throw 'native observer failed'
@@ -229,6 +229,8 @@ jobs:
               captured_height=$probeResult.captured_height;
               window_class=$probeResult.window_class;
               dialog_reason=$probeResult.dialog_reason;
+              window_title_safe=$probeResult.window_title_safe;
+              button_labels_safe=$probeResult.button_labels_safe;
               profile_submit_guard=$probeResult.profile_submit_guard;
               profile_submit_accepted=$probeResult.profile_submit_accepted;
               process_cpu_ms=$probeResult.process_cpu_ms;
@@ -248,7 +250,8 @@ jobs:
                     'create_hr', 'device_nonnull', 'manager_ticks',
                     'manager_renders', 'pixel_samples', 'pixel_changes',
                     'nonblack_pixels_max', 'captured_width', 'captured_height',
-                    'window_class', 'dialog_reason', 'child_static_count',
+                    'window_class', 'dialog_reason', 'window_title_safe',
+                    'button_labels_safe', 'child_static_count',
                     'child_button_count', 'child_edit_count', 'process_cpu_ms',
                     'ui_profile_hint', 'profile_dialog_identified',
                     'profile_submit_requested', 'profile_submit_attempted',

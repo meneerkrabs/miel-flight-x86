@@ -34,6 +34,7 @@ static int profile_hint, submit_profile, submit_decided, profile_submit_attempte
 static int profile_submit_sent, profile_submit_accepted, profile_dialog_closed, profile_dialog_identified;
 static HWND profile_dialog;
 static const char *profile_submit_guard = "not_requested";
+static char window_title_safe[65], button_labels_safe[2][21];
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
        REASON_MISSING = 8, REASON_INSTALL = 16, REASON_ERROR = 32 };
@@ -151,6 +152,31 @@ static void classify_text(char *value)
     if (strstr(value, "error") || strstr(value, "fout") || strstr(value, "cannot") ||
         strstr(value, "kan inte") || strstr(value, "failed")) dialog_flags |= REASON_ERROR;
 }
+static void sanitize_label(char *destination, size_t capacity, const char *source)
+{
+    size_t i, length = strlen(source);
+    if (length >= capacity) goto redacted;
+    for (i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)source[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+              c == ' ' || c == '-')) goto redacted;
+    }
+    memcpy(destination, source, length + 1);
+    return;
+redacted:
+    strcpy(destination, "REDACTED");
+}
+static void print_json_string(FILE *file, const char *value)
+{
+    const unsigned char *p = (const unsigned char *)value;
+    fputc('"', file);
+    for (; *p; p++) {
+        if (*p == '"' || *p == '\\') { fputc('\\', file); fputc(*p, file); }
+        else if (*p < 0x20) fprintf(file, "\\u%04x", (unsigned)*p);
+        else fputc(*p, file);
+    }
+    fputc('"', file);
+}
 static BOOL CALLBACK inspect_control(HWND control, LPARAM count_arg)
 {
     char class_name[64], value[256];
@@ -167,6 +193,9 @@ static BOOL CALLBACK inspect_control(HWND control, LPARAM count_arg)
     if (SendMessageTimeoutA(control, WM_GETTEXT, sizeof value, (LPARAM)value,
                             SMTO_ABORTIFHUNG | SMTO_BLOCK, 50, &result)) {
         value[sizeof value - 1] = 0;
+        if (_stricmp(class_name, "Button") == 0 && child_button_count <= 2)
+            sanitize_label(button_labels_safe[child_button_count - 1],
+                           sizeof button_labels_safe[0], value);
         classify_text(value);
     }
     return TRUE;
@@ -190,6 +219,8 @@ static void inspect_window(void)
     }
     if (!game_window) return;
     child_static_count = child_button_count = child_edit_count = 0;
+    window_title_safe[0] = 0;
+    button_labels_safe[0][0] = button_labels_safe[1][0] = 0;
     dialog_flags = 0;
     profile_hint = 0;
     dialog_reason = "none";
@@ -198,6 +229,8 @@ static void inspect_window(void)
     else window_class = "other";
     memset(title, 0, sizeof title);
     GetWindowTextA(game_window, title, sizeof title);
+    title[sizeof title - 1] = 0;
+    sanitize_label(window_title_safe, sizeof window_title_safe, title);
     classify_text(title);
     EnumChildWindows(game_window, inspect_control, (LPARAM)&count);
     if (dialog_flags & REASON_MEDIA) dialog_reason = "media_prompt";
@@ -589,7 +622,7 @@ int main(int argc, char **argv)
         "\"profile_submit_accepted\":%s,\"profile_dialog_closed\":%s,"
         "\"profile_submit_guard\":\"%s\","
         "\"first_pixel_hash\":\"%08lX\",\"last_pixel_hash\":\"%08lX\","
-        "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s}\n",
+        "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s,",
         last_device ? "true" : "false", ticks, renders, pixel_samples, pixel_changes,
         nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false",
         window_class, child_static_count, child_button_count, child_edit_count, dialog_reason, process_cpu_ms,
@@ -599,6 +632,13 @@ int main(int argc, char **argv)
         profile_dialog_closed ? "true" : "false", profile_submit_guard,
         first_pixel, last_pixel, alive ? "false" : "true", exit_code,
         process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false");
+    fputs("\"window_title_safe\":", log);
+    print_json_string(log, window_title_safe);
+    fputs(",\"button_labels_safe\":[", log);
+    print_json_string(log, button_labels_safe[0]);
+    fputc(',', log);
+    print_json_string(log, button_labels_safe[1]);
+    fputs("]}\n", log);
     fclose(log);
     return probe_error ? 6 : 0;
 }
