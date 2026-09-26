@@ -40,33 +40,47 @@ jobs:
             if (-not (Test-Path $encrypted)) { throw 'downloaded ISO absent' }
             $stage = 'decrypt'
             $iso = Join-Path $private 'Mielvliegt.iso'
+            $passFile = Join-Path $private 'gpg-passphrase.txt'
+            [System.IO.File]::WriteAllText($passFile, $env:ISO_GPG_PASSPHRASE,
+              [System.Text.UTF8Encoding]::new($false))
             $gpgInput = $encrypted
             $gpgOutput = $iso
+            $gpgPassFile = $passFile
             if ($gpg.StartsWith('C:\msys64\', [StringComparison]::OrdinalIgnoreCase)) {
               $stage = 'path-conversion'
               $cygpath = Join-Path (Split-Path $gpg) 'cygpath.exe'
               if (-not (Test-Path $cygpath)) { throw 'MSYS2 path helper absent' }
               $gpgInput = (& $cygpath -u $encrypted 2> (Join-Path $private 'cygpath.log')).Trim()
               $gpgOutput = (& $cygpath -u $iso 2>> (Join-Path $private 'cygpath.log')).Trim()
-              if ($LASTEXITCODE -ne 0 -or -not $gpgInput -or -not $gpgOutput) {
+              $gpgPassFile = (& $cygpath -u $passFile 2>> (Join-Path $private 'cygpath.log')).Trim()
+              if ($LASTEXITCODE -ne 0 -or -not $gpgInput -or -not $gpgOutput -or -not $gpgPassFile) {
                 throw 'MSYS2 path conversion failed'
               }
               $stage = 'decrypt'
             }
-            $env:ISO_GPG_PASSPHRASE | & $gpg --batch --yes --quiet --pinentry-mode loopback `
-              --passphrase-fd 0 --output $gpgOutput --decrypt $gpgInput `
+            & $gpg --batch --yes --quiet --no-tty --pinentry-mode loopback `
+              --passphrase-file $gpgPassFile --output $gpgOutput --decrypt $gpgInput `
               2> (Join-Path $private 'gpg.log')
             $gpgExitCode = $LASTEXITCODE
+            $stage = 'credential-cleanup'
+            Remove-Item $passFile -Force -ErrorAction Stop
+            $stage = 'decrypt'
             if ($gpgExitCode -ne 0) {
               $gpgMessage = Get-Content (Join-Path $private 'gpg.log') -Raw -ErrorAction SilentlyContinue
               if ($gpgMessage -match 'bad passphrase|bad session key|decryption failed: Bad key') {
                 $gpgErrorCategory = 'CREDENTIAL_REJECTED'
+              } elseif ($gpgMessage -match 'pinentry|dev/tty|Inappropriate ioctl') {
+                $gpgErrorCategory = 'TTY_OR_AGENT'
+              } elseif ($gpgMessage -match 'gpg-passphrase.txt') {
+                $gpgErrorCategory = 'PASSPHRASE_FILE'
+              } elseif ($gpgMessage -match 'Mielvliegt.iso.gpg') {
+                $gpgErrorCategory = 'ENCRYPTED_INPUT'
+              } elseif ($gpgMessage -match 'Mielvliegt.iso') {
+                $gpgErrorCategory = 'DECRYPTED_OUTPUT'
               } elseif ($gpgMessage -match 'No such file|can.t open') {
                 $gpgErrorCategory = 'PATH_OR_INPUT'
               } elseif ($gpgMessage -match 'No valid OpenPGP data|invalid packet|bad armor') {
                 $gpgErrorCategory = 'ENCRYPTED_DATA'
-              } elseif ($gpgMessage -match 'pinentry|agent|Inappropriate ioctl') {
-                $gpgErrorCategory = 'AGENT'
               } else {
                 $gpgErrorCategory = 'OTHER'
               }
@@ -93,6 +107,8 @@ jobs:
             if (-not $game -or (Get-FileHash $game.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.executable.sha256) {
               throw 'original executable identity unavailable'
             }
+            $stage = 'cleanup'
+            Remove-Item $private -Recurse -Force -ErrorAction Stop
             @{status='EXTRACTION_READY'; iso_sha256_matched=$true; executable_sha256_matched=$true; artifact_count=0} |
               ConvertTo-Json -Compress | Write-Output
           } catch {
