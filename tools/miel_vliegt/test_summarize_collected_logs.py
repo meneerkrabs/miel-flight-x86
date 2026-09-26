@@ -12,18 +12,34 @@ class BoundedLogDiagnosticsTests(unittest.TestCase):
             root = Path(temporary)
             secret = "PRIVATE_ISO_CONTENT_AND_USER_PATH"
             (root / "proxy.log").write_text(
-                secret + "\nMVP_DllMain loaded\nMVP_EXC code=0x8007000E\n"
+                secret + "\nMVP_DllMain loaded\n"
+                "MVP_DD7 sequence=1 method=IDirect3D7::CreateDevice phase=leave hr=0x8007000E\n"
+                "MVP_DD7 sequence=2 detail=IDirect3D7::CreateDevice-result device=00000000\n"
+                "MVP_DD7 sequence=3 method=IDirect3D7::CreateDevice-rgb-retry phase=leave hr=0x8007000E\n"
+                "MVP_DD7 sequence=4 detail=IDirect3D7::CreateDevice-rgb-result device=00000000\n"
+                "MVP_EXC code=0x40010006 addr=0xDEADBEEF PRIVATE_PATH\n"
+                "MVP_EXC code=0xC0000005 addr=0xDEADBEEF PRIVATE_PATH\n"
+                "private quoted MVP_DD7 sequence=5 method=IDirect3D7::CreateDevice "
+                "phase=leave hr=0xDEADBEEF\n"
             )
             (root / "outside.log").symlink_to(root / "proxy.log")
             result = summarize(root)
             rendered = json.dumps(result)
             self.assertNotIn(secret, rendered)
             self.assertNotIn("proxy.log", rendered)
+            self.assertNotIn("DEADBEEF", rendered)
+            self.assertNotIn("PRIVATE_PATH", rendered)
             self.assertNotIn("tail_sha256", rendered)
             self.assertEqual(result["status"], "DIAGNOSTIC_ONLY")
             self.assertEqual(len(result["logs"]), 1)
-            self.assertEqual(result["logs"][0]["markers"]["MVP_EXC"], 1)
+            self.assertEqual(result["logs"][0]["markers"]["MVP_EXC"], 2)
             self.assertEqual(result["logs"][0]["known_error_codes"], ["E_OUTOFMEMORY"])
+            self.assertEqual(result["logs"][0]["device_outcomes"], [
+                {"route": "HAL", "hresult": "0x8007000E", "device": "NULL"},
+                {"route": "RGB_RETRY", "hresult": "0x8007000E", "device": "NULL"},
+            ])
+            self.assertEqual(result["logs"][0]["exception_classes"],
+                             {"ACCESS_VIOLATION": 1, "DEBUG_PRINT": 1})
 
     def test_large_log_samples_only_bounded_tail(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -33,6 +49,18 @@ class BoundedLogDiagnosticsTests(unittest.TestCase):
             self.assertGreater(row["size_bytes"], MAX_TAIL)
             self.assertEqual(row["tail_bytes"], MAX_TAIL)
             self.assertEqual(row["markers"]["MVO"], 1)
+
+    def test_interleaved_result_does_not_invent_device_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "proxy.log").write_text(
+                "MVP_DD7 sequence=1 method=IDirect3D7::CreateDevice "
+                "phase=leave hr=0x8007000E\n"
+                "MVP_DD7 sequence=3 detail=IDirect3D7::CreateDevice-result "
+                "device=00000000\n"
+            )
+            self.assertEqual(summarize(root)["logs"][0]["device_outcomes"][0]["device"],
+                             "UNKNOWN")
 
     def test_too_many_files_fail_closed_before_reading(self):
         with tempfile.TemporaryDirectory() as temporary:
