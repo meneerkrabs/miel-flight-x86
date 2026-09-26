@@ -19,7 +19,10 @@ jobs:
           ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
           $stage = 'setup'
+          $gpgExitCode = $null
+          $gpgErrorCategory = 'NONE'
           $private = Join-Path $env:RUNNER_TEMP 'miel-flight-private'
           try {
             New-Item -ItemType Directory -Path $private -Force | Out-Null
@@ -38,7 +41,22 @@ jobs:
             $env:ISO_GPG_PASSPHRASE | & $gpg --batch --yes --quiet --pinentry-mode loopback `
               --passphrase-fd 0 --output $iso --decrypt (Join-Path $private 'Mielvliegt.iso.gpg') `
               2> (Join-Path $private 'gpg.log')
-            if ($LASTEXITCODE -ne 0) { throw 'decryption failed' }
+            $gpgExitCode = $LASTEXITCODE
+            if ($gpgExitCode -ne 0) {
+              $gpgMessage = Get-Content (Join-Path $private 'gpg.log') -Raw -ErrorAction SilentlyContinue
+              if ($gpgMessage -match 'bad passphrase|bad session key|decryption failed: Bad key') {
+                $gpgErrorCategory = 'CREDENTIAL_REJECTED'
+              } elseif ($gpgMessage -match 'No such file|can.t open') {
+                $gpgErrorCategory = 'PATH_OR_INPUT'
+              } elseif ($gpgMessage -match 'No valid OpenPGP data|invalid packet|bad armor') {
+                $gpgErrorCategory = 'ENCRYPTED_DATA'
+              } elseif ($gpgMessage -match 'pinentry|agent|Inappropriate ioctl') {
+                $gpgErrorCategory = 'AGENT'
+              } else {
+                $gpgErrorCategory = 'OTHER'
+              }
+              throw 'decryption failed'
+            }
             $stage = 'identity'
             $identity = Get-Content 'content/miel_vliegt/source_identity.json' -Raw | ConvertFrom-Json
             if ((Get-FileHash $iso -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.iso.sha256) {
@@ -63,7 +81,12 @@ jobs:
             @{status='EXTRACTION_READY'; iso_sha256_matched=$true; executable_sha256_matched=$true; artifact_count=0} |
               ConvertTo-Json -Compress | Write-Output
           } catch {
-            @{status='FAIL'; stage=$stage; artifact_count=0} |
+            $result = @{status='FAIL'; stage=$stage; artifact_count=0}
+            if ($stage -eq 'decrypt') {
+              $result.gpg_exit_code = $gpgExitCode
+              $result.gpg_error_category = $gpgErrorCategory
+            }
+            $result |
               ConvertTo-Json -Compress | Write-Output
             exit 1
           } finally {
