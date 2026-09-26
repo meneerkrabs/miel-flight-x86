@@ -139,12 +139,19 @@ def _activation_pattern(clsid: str) -> re.Pattern[str]:
 
 
 def _registry_proven(text: str, clsid: str) -> bool:
-    compact = text.replace("/", "\\")
-    return (
-        f"CLSID\\{clsid}\\InprocServer32".lower() in compact.lower()
-        and re.search(r"\bREG_SZ\b", text, re.IGNORECASE) is not None
-        and re.search(r"\.dll(?:\s|$)", text, re.IGNORECASE) is not None
-    )
+    expected_path = f"CLSID\\{clsid}\\InprocServer32".lower()
+    lines = text.splitlines()
+    for header, value_line in zip(lines, lines[1:]):
+        compact = header.replace("/", "\\")
+        if expected_path in compact.lower() \
+                and re.search(
+                    r"\bREG_SZ\b", value_line, re.IGNORECASE,
+                ) is not None \
+                and re.search(
+                    r"\.dll(?:\s|$)", value_line, re.IGNORECASE,
+                ) is not None:
+            return True
+    return False
 
 
 def _process_topology_proven(text: str) -> bool:

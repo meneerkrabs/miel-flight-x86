@@ -173,6 +173,34 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["service_process_topology"])
 
+    def test_registry_path_and_dll_value_must_be_in_the_same_readback_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            registry = next(
+                row for row in observation["phases"]
+                if row["id"] == f"com-registry:{DIRECTSOUND}"
+            )
+            registry_path = directory / registry["log"]["path"]
+            registry_path.write_text(
+                f"HKEY_CLASSES_ROOT\\CLSID\\{DIRECTSOUND}\\InprocServer32\n"
+                "unrelated diagnostic line\n"
+                "unrelated line REG_SZ C:\\windows\\system32\\dsound.dll\n",
+                encoding="utf-8",
+            )
+            registry["log"]["sha256"] = hashlib.sha256(
+                registry_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["required_com_registered"])
+        self.assertFalse(
+            receipt["com"]["registry"][DIRECTSOUND]
+        )
+
     def test_backend_identity_must_be_a_nonempty_string_mapping(self):
         invalid_backends = (
             None,
