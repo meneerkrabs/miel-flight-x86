@@ -34,6 +34,7 @@ jobs:
           $probeResult = $null
           $probeSha256 = $null
           $waveOutDevices = $null
+          $audioServiceReady = $false
           $cleanupFailed = $false
           $finalResult = $null
           try {
@@ -187,6 +188,18 @@ jobs:
             }
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             try {
+              foreach ($name in @('AudioEndpointBuilder', 'Audiosrv')) {
+                $service = Get-Service -Name $name -ErrorAction Stop
+                if ($service.StartType -eq 'Disabled') {
+                  Set-Service -Name $name -StartupType Manual -ErrorAction Stop
+                }
+                if ($service.Status -ne 'Running') {
+                  Start-Service -Name $name -ErrorAction Stop
+                }
+              }
+              $audioServiceReady = (Get-Service Audiosrv).Status -eq 'Running'
+            } catch { $audioServiceReady = $false }
+            try {
               Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class MielWinmm { [DllImport("winmm.dll")] public static extern uint waveOutGetNumDevs(); }' -ErrorAction Stop
               $waveOutDevices = [MielWinmm]::waveOutGetNumDevs()
             } catch { $waveOutDevices = $null }
@@ -242,6 +255,7 @@ jobs:
               hardware_selection_sent=$probeResult.hardware_selection_sent;
               debugger_attached=$probeResult.debugger_attached;
               wave_out_devices=$waveOutDevices;
+              audio_service_ready=$audioServiceReady;
               first_chance_av_count=$probeResult.first_chance_av_count;
               audio_entry_count=$probeResult.audio_entry_count;
               process_cpu_ms=$probeResult.process_cpu_ms;
@@ -254,6 +268,7 @@ jobs:
               $finalResult.window_present = $windowPresent
               $finalResult.process_exit_code = $nativeExitCode
               $finalResult.wave_out_devices = $waveOutDevices
+              $finalResult.audio_service_ready = $audioServiceReady
               $finalResult.probe_sha256 = $probeSha256
               if ($probeResult) {
                 foreach ($key in @('debugger_attached', 'gt_loaded', 'create_callsite_verified',
