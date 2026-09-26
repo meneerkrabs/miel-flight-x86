@@ -1,0 +1,71 @@
+name: Native Flight Windows extraction readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-in-one-job:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe private game extraction without an artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISO_GPG_PASSPHRASE: ${{ secrets.ISO_GPG_PASSPHRASE }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = 'setup'
+          $private = Join-Path $env:RUNNER_TEMP 'miel-flight-private'
+          try {
+            New-Item -ItemType Directory -Path $private -Force | Out-Null
+            $stage = 'tools'
+            $gpg = @('C:\msys64\usr\bin\gpg.exe', 'C:\Program Files\Git\usr\bin\gpg.exe') |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $gpg -or -not $env:ISO_GPG_PASSPHRASE -or -not (Get-Command 7z -ErrorAction SilentlyContinue)) {
+              throw 'required tool or existing secret unavailable'
+            }
+            $stage = 'download'
+            & gh release download flight-iso-v1 --repo meneerkrabs/miel-flight-x86 `
+              --pattern 'Mielvliegt.iso.gpg' --dir $private --clobber *> (Join-Path $private 'download.log')
+            if ($LASTEXITCODE -ne 0) { throw 'release download failed' }
+            $stage = 'decrypt'
+            $iso = Join-Path $private 'Mielvliegt.iso'
+            $env:ISO_GPG_PASSPHRASE | & $gpg --batch --yes --quiet --pinentry-mode loopback `
+              --passphrase-fd 0 --output $iso --decrypt (Join-Path $private 'Mielvliegt.iso.gpg') `
+              2> (Join-Path $private 'gpg.log')
+            if ($LASTEXITCODE -ne 0) { throw 'decryption failed' }
+            $stage = 'identity'
+            $identity = Get-Content 'content/miel_vliegt/source_identity.json' -Raw | ConvertFrom-Json
+            if ((Get-FileHash $iso -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.iso.sha256) {
+              throw 'ISO identity differs'
+            }
+            $stage = 'iso-extract'
+            $installer = Join-Path $private 'installer'
+            & 7z x -y "-o$installer" $iso *> (Join-Path $private 'iso-extract.log')
+            if ($LASTEXITCODE -ne 0) { throw 'ISO extraction failed' }
+            $cab = Get-ChildItem $installer -File -Recurse -Filter 'data1.cab' |
+              Select-Object -First 1
+            if (-not $cab) { throw 'installer CAB missing' }
+            $stage = 'cab-extract'
+            $system = Join-Path $private 'system'
+            & 7z x -y "-o$system" $cab.FullName *> (Join-Path $private 'cab-extract.log')
+            if ($LASTEXITCODE -ne 0) { throw 'CAB extraction unsupported' }
+            $game = Get-ChildItem $system -File -Recurse -Filter 'MulleMeck.exe' |
+              Select-Object -First 1
+            if (-not $game -or (Get-FileHash $game.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.executable.sha256) {
+              throw 'original executable identity unavailable'
+            }
+            @{status='EXTRACTION_READY'; iso_sha256_matched=$true; executable_sha256_matched=$true; artifact_count=0} |
+              ConvertTo-Json -Compress | Write-Output
+          } catch {
+            @{status='FAIL'; stage=$stage; artifact_count=0} |
+              ConvertTo-Json -Compress | Write-Output
+            exit 1
+          } finally {
+            Remove-Item $private -Recurse -Force -ErrorAction SilentlyContinue
+          }
