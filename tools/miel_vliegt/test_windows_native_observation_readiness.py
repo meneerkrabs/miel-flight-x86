@@ -118,7 +118,7 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
@@ -257,6 +257,33 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
             ):
                 self.classify_evidence(manifest_path, log_path)
 
+    def test_incidental_post_cleanup_mention_cannot_substitute_for_cleanup(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(directory)
+            cleanup_line = (
+                "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
+            ).encode("ascii")
+            incidental_line = (
+                "unrelated diagnostic mentions "
+                "Post Run actions/checkout cleanup\n"
+            ).encode("ascii")
+            raw_log = log_path.read_bytes().replace(
+                cleanup_line, incidental_line
+            )
+            self.assertNotEqual(raw_log, log_path.read_bytes())
+            log_path.write_bytes(raw_log)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["log_sha256"] = hashlib.sha256(raw_log).hexdigest()
+            manifest["log_bytes"] = len(raw_log)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "post-checkout cleanup is missing",
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
     def test_output_step_chronology_and_exact_types_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
@@ -296,7 +323,7 @@ class WindowsNativeObservationReadinessTests(unittest.TestCase):
                     if insertion_index is None:
                         insertion_index = next(
                             index for index, line in enumerate(lines)
-                            if line.startswith("Post Run actions/checkout")
+                            if "\tPost Run actions/checkout@v5\t" in line
                         ) + 1
                     lines.insert(insertion_index, output_line)
                     raw_log = ("\n".join(lines) + "\n").encode("utf-8")
@@ -382,7 +409,7 @@ class WindowsNativeRendererSelectorTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
@@ -571,7 +598,7 @@ class WindowsNativeHardwareProgressTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
@@ -754,7 +781,7 @@ class WindowsNativeFatalExceptionTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
@@ -973,7 +1000,7 @@ class WindowsNativeFatalContextTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
@@ -1205,7 +1232,7 @@ class WindowsNativeEntryTransitionTests(unittest.TestCase):
             "extract-in-one-job\tProbe private game extraction without an artifact\t"
             f"timestamp {rendered}\n"
             "runner cleanup\n"
-            "Post Run actions/checkout\tcleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
         ).encode("utf-8")
         log_path = directory / "run.log"
         log_path.write_bytes(log)
