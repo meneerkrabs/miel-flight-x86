@@ -35,6 +35,7 @@ jobs:
           $probeSha256 = $null
           $waveOutDevices = $null
           $preFaultMnemonics = @()
+          $preFaultDestinations = @()
           $preFaultWritesEsi = $false
           $faultMnemonic = 'UNAVAILABLE'
           $cleanupFailed = $false
@@ -193,8 +194,18 @@ jobs:
                       $mnemonic = $Matches[1].ToUpperInvariant()
                       if ($address -ge 0x00409B1C -and $address -lt 0x00409B22 -and $preFaultMnemonics.Count -lt 6) {
                         $preFaultMnemonics += $mnemonic
-                        if ($instruction -match '(?i)\b(mov|lea|xor|add|sub|and|or)\s+esi\s*,') {
-                          $preFaultWritesEsi = $true
+                        if ($instruction -match '(?i)\bmov\s+(?<destination>[^,]+),') {
+                          $destination = $Matches.destination.Trim()
+                          if ($destination.Contains('[')) { $preFaultDestinations += 'MEMORY' }
+                          elseif ($destination -match '(?i)\bESI\b') {
+                            $preFaultDestinations += 'ESI'
+                            $preFaultWritesEsi = $true
+                          }
+                          elseif ($destination -match '(?i)\b(EAX|EBX|ECX|EDX|EDI|EBP|ESP)\b') {
+                            $preFaultDestinations += 'OTHER_REGISTER'
+                          } else { $preFaultDestinations += 'OTHER' }
+                        } else {
+                          $preFaultDestinations += 'OTHER'
                         }
                       }
                       if ($address -eq 0x00409B22) { $faultMnemonic = $mnemonic }
@@ -202,7 +213,7 @@ jobs:
                   }
                 }
               }
-            } catch { $preFaultMnemonics = @(); $preFaultWritesEsi = $false; $faultMnemonic = 'UNAVAILABLE' }
+            } catch { $preFaultMnemonics = @(); $preFaultDestinations = @(); $preFaultWritesEsi = $false; $faultMnemonic = 'UNAVAILABLE' }
             $stage = 'game-inputs'
             $gameDir = Split-Path $game.FullName
             & 7z e -y "-o$gameDir" $iso data.up map.up sounds.up Miel.ini `
@@ -279,6 +290,7 @@ jobs:
               first_chance_av_count=$probeResult.first_chance_av_count;
               audio_entry_count=$probeResult.audio_entry_count;
               pre_fault_mnemonics=$preFaultMnemonics;
+              pre_fault_destinations=$preFaultDestinations;
               pre_fault_writes_esi=$preFaultWritesEsi;
               fault_mnemonic=$faultMnemonic;
               process_cpu_ms=$probeResult.process_cpu_ms;
@@ -292,6 +304,7 @@ jobs:
               $finalResult.process_exit_code = $nativeExitCode
               $finalResult.wave_out_devices = $waveOutDevices
               $finalResult.pre_fault_mnemonics = $preFaultMnemonics
+              $finalResult.pre_fault_destinations = $preFaultDestinations
               $finalResult.pre_fault_writes_esi = $preFaultWritesEsi
               $finalResult.fault_mnemonic = $faultMnemonic
               $finalResult.probe_sha256 = $probeSha256
