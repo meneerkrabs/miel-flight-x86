@@ -187,7 +187,7 @@ jobs:
             if (-not $cdMounted) { $stage = 'cd-mount'; throw 'ISO mount unavailable' }
             $stage = 'native-observation'
             $probeLog = Join-Path $private 'native-probe.json'
-            & $probeExe $game.FullName $probeLog 20 `
+            & $probeExe $game.FullName $probeLog 60 --select-hardware `
               *> (Join-Path $private 'native-probe-stdout.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $probeLog)) {
               throw 'native observer failed'
@@ -201,6 +201,8 @@ jobs:
             $windowPresent = [bool]$probeResult.window_present
             $nativeExitCode = $probeResult.child_exit_code
             if (-not $alive -or -not $windowPresent -or
+                -not $probeResult.hardware_selection_sent -or
+                -not $probeResult.hardware_dialog_closed -or
                 -not $probeResult.create_callsite_verified -or
                 -not $probeResult.manager_slots_verified -or
                 -not $probeResult.create_success -or
@@ -231,8 +233,8 @@ jobs:
               dialog_reason=$probeResult.dialog_reason;
               window_title_safe=$probeResult.window_title_safe;
               button_labels_safe=$probeResult.button_labels_safe;
-              profile_submit_guard=$probeResult.profile_submit_guard;
-              profile_submit_accepted=$probeResult.profile_submit_accepted;
+              hardware_selection_guard=$probeResult.hardware_selection_guard;
+              hardware_selection_sent=$probeResult.hardware_selection_sent;
               process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
           } catch {
@@ -253,10 +255,9 @@ jobs:
                     'window_class', 'dialog_reason', 'window_title_safe',
                     'button_labels_safe', 'child_static_count',
                     'child_button_count', 'child_edit_count', 'process_cpu_ms',
-                    'ui_profile_hint', 'profile_dialog_identified',
-                    'profile_submit_requested', 'profile_submit_attempted',
-                    'profile_submit_sent', 'profile_submit_accepted',
-                    'profile_dialog_closed', 'profile_submit_guard')) {
+                    'hardware_selection_requested', 'hardware_selection_attempted',
+                    'hardware_selection_sent', 'hardware_dialog_closed',
+                    'hardware_selection_guard')) {
                   $finalResult[$key] = $probeResult.$key
                 }
               }

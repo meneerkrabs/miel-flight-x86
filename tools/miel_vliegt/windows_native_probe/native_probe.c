@@ -30,10 +30,10 @@ static HWND game_window;
 static unsigned long child_static_count, child_button_count, child_edit_count, process_cpu_ms;
 static unsigned dialog_flags;
 static const char *window_class = "none", *dialog_reason = "none";
-static int profile_hint, submit_profile, submit_decided, profile_submit_attempted;
-static int profile_submit_sent, profile_submit_accepted, profile_dialog_closed, profile_dialog_identified;
-static HWND profile_dialog;
-static const char *profile_submit_guard = "not_requested";
+static int select_hardware, selection_decided, hardware_selection_attempted;
+static int hardware_selection_sent, hardware_dialog_closed;
+static HWND hardware_dialog;
+static const char *hardware_selection_guard = "not_requested";
 static char window_title_safe[65], button_labels_safe[2][21];
 
 enum { REASON_MEDIA = 1, REASON_GRAPHICS = 2, REASON_MEMORY = 4,
@@ -137,10 +137,6 @@ static void classify_text(char *value)
 {
     char *p;
     for (p = value; *p; p++) if (*p >= 'A' && *p <= 'Z') *p += 'a' - 'A';
-    if (strstr(value, "username") || strstr(value, "user name") || strstr(value, "naam") ||
-        strstr(value, "namn") || strstr(value, "profile") || strstr(value, "profiel") ||
-        strstr(value, "login") || strstr(value, "speler") || strstr(value, "player") ||
-        strstr(value, "new user")) profile_hint = 1;
     if (strstr(value, "cd-rom") || strstr(value, "insert") || strstr(value, "schijf") ||
         strstr(value, "skiva") || strstr(value, "disc") || strstr(value, "disk")) dialog_flags |= REASON_MEDIA;
     if (strstr(value, "directx") || strstr(value, "direct3d") || strstr(value, "video") ||
@@ -222,7 +218,6 @@ static void inspect_window(void)
     window_title_safe[0] = 0;
     button_labels_safe[0][0] = button_labels_safe[1][0] = 0;
     dialog_flags = 0;
-    profile_hint = 0;
     dialog_reason = "none";
     if (GetClassNameA(game_window, name, sizeof name) && strcmp(name, "#32770") == 0)
         window_class = "#32770";
@@ -242,78 +237,74 @@ static void inspect_window(void)
     else if (strcmp(window_class, "#32770") == 0) dialog_reason = "unknown_dialog";
 }
 typedef struct {
-    HWND edit, ok;
-    unsigned total, edits, buttons, statics, ok_count;
-} SubmitControls;
-static BOOL CALLBACK identify_submit_control(HWND control, LPARAM argument)
+    HWND hardware, software;
+    unsigned total, edits, buttons, statics, hardware_count, software_count;
+} HardwareControls;
+static BOOL CALLBACK identify_hardware_controls(HWND control, LPARAM argument)
 {
-    SubmitControls *found = (SubmitControls *)argument;
-    char name[64];
+    HardwareControls *found = (HardwareControls *)argument;
+    char name[64], label[32];
+    DWORD_PTR delivered;
     if (++found->total > 16) return FALSE;
     if (!GetClassNameA(control, name, sizeof name)) return TRUE;
-    if (_stricmp(name, "Edit") == 0) { found->edits++; found->edit = control; }
+    if (_stricmp(name, "Edit") == 0) found->edits++;
     else if (_stricmp(name, "Static") == 0) found->statics++;
     else if (_stricmp(name, "Button") == 0) {
         found->buttons++;
-        if (GetDlgCtrlID(control) == IDOK) { found->ok_count++; found->ok = control; }
+        memset(label, 0, sizeof label);
+        if (!SendMessageTimeoutA(control, WM_GETTEXT, sizeof label, (LPARAM)label,
+                                 SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &delivered)) return TRUE;
+        label[sizeof label - 1] = 0;
+        if (_stricmp(label, "Hardware") == 0) {
+            found->hardware_count++;
+            found->hardware = control;
+        } else if (_stricmp(label, "Software") == 0) {
+            found->software_count++;
+            found->software = control;
+        }
     }
     return TRUE;
 }
-static void maybe_submit_profile(DWORD elapsed)
+static void maybe_select_hardware(DWORD elapsed)
 {
-    SubmitControls controls;
+    HardwareControls controls;
     RECT rect;
-    DWORD_PTR default_id, delivered;
-    LONG_PTR edit_style;
-    if (!submit_profile || submit_decided || elapsed < 1500u) return;
+    DWORD_PTR delivered;
+    DWORD owner = 0;
+    char name[64];
+    if (!select_hardware || selection_decided || elapsed < 1500u) return;
     if (!game_window || !IsWindow(game_window)) {
         game_window = NULL;
         EnumWindows(find_window, 0);
     }
     if (!game_window) return;
-    inspect_window();
-    if (strcmp(window_class, "#32770") != 0) return;
-    submit_decided = 1;
-    profile_submit_guard = "UI_REQUIRES_IDENTIFICATION";
-    if (!profile_hint || dialog_flags) return;
-    if (!GetClientRect(game_window, &rect) || rect.right != 318 || rect.bottom != 140) {
-        profile_submit_guard = "DIALOG_GEOMETRY_MISMATCH";
-        return;
-    }
+    GetWindowThreadProcessId(game_window, &owner);
+    if (owner != child_pid || !GetClassNameA(game_window, name, sizeof name) ||
+        strcmp(name, "#32770") != 0) return;
+    selection_decided = 1;
+    hardware_selection_guard = "DIALOG_MISMATCH";
+    if (!GetClientRect(game_window, &rect) || rect.right != 318 || rect.bottom != 140) return;
     memset(&controls, 0, sizeof controls);
-    EnumChildWindows(game_window, identify_submit_control, (LPARAM)&controls);
+    EnumChildWindows(game_window, identify_hardware_controls, (LPARAM)&controls);
     if (controls.total != 3 || controls.edits != 1 || controls.buttons != 2 ||
-        controls.statics != 0 || controls.ok_count != 1) {
-        profile_submit_guard = "AMBIGUOUS_CONTROLS";
+        controls.statics != 0 || controls.hardware_count != 1 || controls.software_count != 1) {
+        hardware_selection_guard = "CONTROLS_MISMATCH";
         return;
     }
-    edit_style = GetWindowLongPtr(controls.edit, GWL_STYLE);
-    if (edit_style & (ES_PASSWORD | ES_READONLY)) {
-        profile_submit_guard = "PROTECTED_EDIT";
+    if (!IsWindowVisible(controls.hardware) || !IsWindowEnabled(controls.hardware) ||
+        !IsWindowVisible(controls.software) || !IsWindowEnabled(controls.software)) {
+        hardware_selection_guard = "HARDWARE_UNAVAILABLE";
         return;
     }
-    if (!SendMessageTimeoutA(game_window, DM_GETDEFID, 0, 0,
-                             SMTO_ABORTIFHUNG | SMTO_BLOCK, 250, &default_id) ||
-        HIWORD(default_id) != DC_HASDEFID || LOWORD(default_id) != IDOK ||
-        (GetWindowLongPtr(controls.ok, GWL_STYLE) & BS_TYPEMASK) != BS_DEFPUSHBUTTON) {
-        profile_submit_guard = "DEFAULT_NOT_IDOK";
-        return;
-    }
-    profile_dialog_identified = 1;
-    profile_dialog = game_window;
-    profile_submit_attempted = 1;
-    if (!SendMessageTimeoutA(controls.edit, WM_SETTEXT, 0, (LPARAM)"MVO_CI",
-                             SMTO_ABORTIFHUNG | SMTO_BLOCK, 1000, &delivered) || !delivered) {
-        profile_submit_guard = "SETTEXT_FAILED";
-        return;
-    }
-    if (!SendMessageTimeoutA(controls.ok, BM_CLICK, 0, 0,
+    hardware_dialog = game_window;
+    hardware_selection_attempted = 1;
+    if (!SendMessageTimeoutA(controls.hardware, BM_CLICK, 0, 0,
                              SMTO_ABORTIFHUNG | SMTO_BLOCK, 1000, &delivered)) {
-        profile_submit_guard = "IDOK_CLICK_FAILED";
+        hardware_selection_guard = "HARDWARE_CLICK_FAILED";
         return;
     }
-    profile_submit_sent = 1;
-    profile_submit_guard = "SUBMITTED";
+    hardware_selection_sent = 1;
+    hardware_selection_guard = "HARDWARE_CLICK_SENT";
 }
 static void sample_pixels(void)
 {
@@ -527,11 +518,11 @@ int main(int argc, char **argv)
     ULONGLONG cpu_start, cpu_end;
     int alive = 1, duration_set = 0, arg;
     FILE *log;
-    if (argc < 3 || argc > 5) { fprintf(stderr, "usage: native_probe.exe MulleMeck.exe result.json [seconds] [--submit-profile]\n"); return 2; }
+    if (argc < 3 || argc > 5) { fprintf(stderr, "usage: native_probe.exe MulleMeck.exe result.json [seconds] [--select-hardware]\n"); return 2; }
     for (arg = 3; arg < argc; arg++) {
-        if (strcmp(argv[arg], "--submit-profile") == 0 && !submit_profile) {
-            submit_profile = 1;
-            profile_submit_guard = "WAITING_FOR_DIALOG";
+        if (strcmp(argv[arg], "--select-hardware") == 0 && !select_hardware) {
+            select_hardware = 1;
+            hardware_selection_guard = "WAITING_FOR_DIALOG";
         } else if (!duration_set) {
             char *end;
             unsigned long value = strtoul(argv[arg], &end, 10);
@@ -568,12 +559,10 @@ int main(int argc, char **argv)
             process_alive_after_15s = 1;
             if (game_window && IsWindow(game_window)) window_present_after_15s = 1;
         }
-        if (profile_submit_sent && profile_dialog &&
-            (!IsWindow(profile_dialog) || !IsWindowVisible(profile_dialog))) {
-            profile_dialog_closed = 1;
-            profile_submit_accepted = 1;
-        }
-        maybe_submit_profile(elapsed);
+        if (hardware_selection_sent && hardware_dialog &&
+            (!IsWindow(hardware_dialog) || !IsWindowVisible(hardware_dialog)))
+            hardware_dialog_closed = 1;
+        maybe_select_hardware(elapsed);
         if (elapsed / 500u != last_sample) {
             last_sample = elapsed / 500u;
             sample_pixels();
@@ -592,11 +581,9 @@ int main(int argc, char **argv)
         }
         if (probe_error) break;
     }
-    if (profile_submit_sent && profile_dialog &&
-        (!IsWindow(profile_dialog) || !IsWindowVisible(profile_dialog))) {
-        profile_dialog_closed = 1;
-        profile_submit_accepted = 1;
-    }
+    if (hardware_selection_sent && hardware_dialog &&
+        (!IsWindow(hardware_dialog) || !IsWindowVisible(hardware_dialog)))
+        hardware_dialog_closed = 1;
     inspect_window();
     cpu_end = cpu_ticks();
     if (cpu_end >= cpu_start) process_cpu_ms = (unsigned long)((cpu_end - cpu_start) / 10000u);
@@ -617,19 +604,17 @@ int main(int argc, char **argv)
         "\"captured_width\":%lu,\"captured_height\":%lu,\"window_present\":%s,"
         "\"window_class\":\"%s\",\"child_static_count\":%lu,\"child_button_count\":%lu,"
         "\"child_edit_count\":%lu,\"dialog_reason\":\"%s\",\"process_cpu_ms\":%lu,"
-        "\"ui_profile_hint\":%s,\"profile_dialog_identified\":%s,\"profile_submit_requested\":%s,"
-        "\"profile_submit_attempted\":%s,\"profile_submit_sent\":%s,"
-        "\"profile_submit_accepted\":%s,\"profile_dialog_closed\":%s,"
-        "\"profile_submit_guard\":\"%s\","
+        "\"hardware_selection_requested\":%s,\"hardware_selection_attempted\":%s,"
+        "\"hardware_selection_sent\":%s,\"hardware_dialog_closed\":%s,"
+        "\"hardware_selection_guard\":\"%s\","
         "\"first_pixel_hash\":\"%08lX\",\"last_pixel_hash\":\"%08lX\","
         "\"child_exited\":%s,\"child_exit_code\":%lu,\"process_alive_after_15s\":%s,\"probe_error\":%s,",
         last_device ? "true" : "false", ticks, renders, pixel_samples, pixel_changes,
         nonblack_pixels_max, captured_width, captured_height, window_present_after_15s ? "true" : "false",
         window_class, child_static_count, child_button_count, child_edit_count, dialog_reason, process_cpu_ms,
-        profile_hint ? "true" : "false", profile_dialog_identified ? "true" : "false",
-        submit_profile ? "true" : "false", profile_submit_attempted ? "true" : "false",
-        profile_submit_sent ? "true" : "false", profile_submit_accepted ? "true" : "false",
-        profile_dialog_closed ? "true" : "false", profile_submit_guard,
+        select_hardware ? "true" : "false", hardware_selection_attempted ? "true" : "false",
+        hardware_selection_sent ? "true" : "false", hardware_dialog_closed ? "true" : "false",
+        hardware_selection_guard,
         first_pixel, last_pixel, alive ? "false" : "true", exit_code,
         process_alive_after_15s ? "true" : "false", probe_error ? "true" : "false");
     fputs("\"window_title_safe\":", log);
