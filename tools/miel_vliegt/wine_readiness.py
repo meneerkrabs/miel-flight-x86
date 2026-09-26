@@ -161,17 +161,17 @@ def _registry_proven(text: str, clsid: str) -> bool:
 
 
 def _process_topology_proven(text: str) -> bool:
-    process_patterns = (
-        re.compile(r"(?<![A-Za-z0-9_-])wineserver(?:64)?(?![A-Za-z0-9_-])"),
-        re.compile(r"(?<![A-Za-z0-9_-])services\.exe(?![A-Za-z0-9_-])"),
-        re.compile(r"(?<![A-Za-z0-9_-])rpcss\.exe(?![A-Za-z0-9_-])"),
+    process_record_groups = (
+        {"wineserver", "wineserver64"},
+        {"services.exe"},
+        {"rpcss.exe"},
     )
-    remaining = list(process_patterns)
+    remaining = list(process_record_groups)
     for line in text.splitlines():
-        for pattern in remaining:
-            if pattern.search(line):
-                remaining.remove(pattern)
-                break
+        record = line.strip()
+        matches = [group for group in remaining if record in group]
+        if len(matches) == 1:
+            remaining.remove(matches[0])
     return not remaining
 
 
