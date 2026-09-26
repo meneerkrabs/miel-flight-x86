@@ -51,9 +51,3 @@ jobs:
           echo "=== counts ==="
           echo "iso wav lines: $(grep -ic '\.wav' /tmp/inv/iso-tree.txt || true)"
           echo "cab wav lines: $(grep -ic '\.wav' /tmp/inv/unshield-list.txt || true)"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: iso-inventory
-          retention-days: 3
-          path: /tmp/inv/*.txt
