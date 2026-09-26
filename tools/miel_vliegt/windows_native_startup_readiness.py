@@ -14,6 +14,7 @@ from typing import Any
 
 PROTOCOL = "miel-vliegt-windows-native-startup-readiness"
 ROOT = Path(__file__).resolve().parents[2]
+MAIN_JOB_NAME = "extract-in-one-job"
 MAIN_JOB_STEP = "Probe private game extraction without an artifact"
 SOURCE_IDENTITY_PATH = ROOT / "content/miel_vliegt/source_identity.json"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -161,6 +162,7 @@ def _checkout_line_number(text: str, head_sha: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
         fields = line.rstrip().split("\t")
         if len(fields) >= 3 \
+                and fields[0] == MAIN_JOB_NAME \
                 and fields[1].startswith("Run actions/checkout@") \
                 and line.rstrip().endswith(head_sha):
             return line_number
@@ -171,6 +173,7 @@ def _post_checkout_line_number(text: str) -> int | None:
     for line_number, line in enumerate(text.splitlines()):
         fields = line.rstrip().split("\t")
         if len(fields) >= 3 \
+                and fields[0] == MAIN_JOB_NAME \
                 and fields[1].startswith("Post Run actions/checkout@"):
             return line_number
     return None
@@ -178,7 +181,9 @@ def _post_checkout_line_number(text: str) -> int | None:
 
 def _reviewed_job_step(output_line: str) -> bool:
     fields = output_line.rstrip().split("\t")
-    return len(fields) >= 3 and fields[1] == MAIN_JOB_STEP
+    return len(fields) >= 3 \
+        and fields[0] == MAIN_JOB_NAME \
+        and fields[1] == MAIN_JOB_STEP
 
 
 def classify(
