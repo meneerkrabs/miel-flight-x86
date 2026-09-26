@@ -34,6 +34,9 @@ jobs:
           $probeResult = $null
           $probeSha256 = $null
           $waveOutDevices = $null
+          $preFaultMnemonics = @()
+          $preFaultWritesEsi = $false
+          $faultMnemonic = 'UNAVAILABLE'
           $cleanupFailed = $false
           $finalResult = $null
           try {
@@ -169,6 +172,37 @@ jobs:
             if (-not $game -or (Get-FileHash $game.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.executable.sha256) {
               throw 'original executable identity unavailable'
             }
+            $stage = 'instruction-shape'
+            try {
+              $disasmLog = Join-Path $private 'instruction-disasm.log'
+              $disasmCmd = Join-Path $private 'disassemble.cmd'
+              @(
+                '@echo off'
+                ('call "{0}" x86 >nul' -f $vcvars)
+                'if errorlevel 1 exit /b 1'
+                ('dumpbin /nologo /DISASM:NOBYTES /RANGE:0x00409B1C,0x00409B2A /OUT:"{0}" "{1}"' -f $disasmLog, $game.FullName)
+                'exit /b %errorlevel%'
+              ) | Set-Content -Path $disasmCmd -Encoding Ascii
+              & $env:ComSpec /d /c $disasmCmd *> (Join-Path $private 'disassemble-run.log')
+              if ($LASTEXITCODE -eq 0 -and (Test-Path $disasmLog)) {
+                foreach ($line in Get-Content $disasmLog) {
+                  if ($line -match '^\s*(?<addr>[0-9A-Fa-f]{8}):\s*(?<instruction>.*)$') {
+                    $address = [Convert]::ToInt32($Matches.addr, 16)
+                    $instruction = $Matches.instruction
+                    if ($instruction -match '(?i)\b(mov|lea|xor|add|sub|cmp|test|call|jmp|j[a-z]+|push|pop|and|or|shl|shr|inc|dec|ret)\b') {
+                      $mnemonic = $Matches[1].ToUpperInvariant()
+                      if ($address -ge 0x00409B1C -and $address -lt 0x00409B22 -and $preFaultMnemonics.Count -lt 6) {
+                        $preFaultMnemonics += $mnemonic
+                        if ($instruction -match '(?i)\b(mov|lea|xor|add|sub|and|or)\s+esi\s*,') {
+                          $preFaultWritesEsi = $true
+                        }
+                      }
+                      if ($address -eq 0x00409B22) { $faultMnemonic = $mnemonic }
+                    }
+                  }
+                }
+              }
+            } catch { $preFaultMnemonics = @(); $preFaultWritesEsi = $false; $faultMnemonic = 'UNAVAILABLE' }
             $stage = 'game-inputs'
             $gameDir = Split-Path $game.FullName
             & 7z e -y "-o$gameDir" $iso data.up map.up sounds.up Miel.ini `
@@ -244,6 +278,9 @@ jobs:
               wave_out_devices=$waveOutDevices;
               first_chance_av_count=$probeResult.first_chance_av_count;
               audio_entry_count=$probeResult.audio_entry_count;
+              pre_fault_mnemonics=$preFaultMnemonics;
+              pre_fault_writes_esi=$preFaultWritesEsi;
+              fault_mnemonic=$faultMnemonic;
               process_cpu_ms=$probeResult.process_cpu_ms;
               probe_sha256=$probeSha256; artifact_count=0}
           } catch {
@@ -254,6 +291,9 @@ jobs:
               $finalResult.window_present = $windowPresent
               $finalResult.process_exit_code = $nativeExitCode
               $finalResult.wave_out_devices = $waveOutDevices
+              $finalResult.pre_fault_mnemonics = $preFaultMnemonics
+              $finalResult.pre_fault_writes_esi = $preFaultWritesEsi
+              $finalResult.fault_mnemonic = $faultMnemonic
               $finalResult.probe_sha256 = $probeSha256
               if ($probeResult) {
                 foreach ($key in @('debugger_attached', 'gt_loaded', 'create_callsite_verified',
