@@ -142,6 +142,33 @@ def _source_blob(revision: str, path: str) -> str:
     )
 
 
+def _reviewed_executable_sha256(revision: str) -> str:
+    try:
+        identity = _STRICT_DECODER.decode(
+            _git_output(["show", f"{revision}:{SOURCE_IDENTITY_PATH}"])
+        )
+    except DuplicateKeyError as error:
+        raise FlightX86DiagnosticReceiptError(
+            "duplicate JSON key in reviewed source identity"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise FlightX86DiagnosticReceiptError(
+            "reviewed source identity differs"
+        ) from error
+    if not isinstance(identity, dict):
+        raise FlightX86DiagnosticReceiptError(
+            "reviewed executable identity differs"
+        )
+    executable = identity.get("executable")
+    if identity.get("schema") != 1 \
+            or not isinstance(executable, dict) \
+            or set(executable) != {"filename", "sha256"}:
+        raise FlightX86DiagnosticReceiptError(
+            "reviewed executable identity differs"
+        )
+    return _hash(executable.get("sha256"), "reviewed executable")
+
+
 def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
     if type(value) is not int or value < minimum:
         raise FlightX86DiagnosticReceiptError(f"{label} is invalid")
@@ -336,6 +363,10 @@ def classify(
             head_sha, SOURCE_IDENTITY_PATH,
         ),
     }
+    if expected_executable_sha256 != _reviewed_executable_sha256(head_sha):
+        raise FlightX86DiagnosticReceiptError(
+            "reviewed executable identity differs"
+        )
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
     expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
     artifact_count = manifest["artifact_count"]

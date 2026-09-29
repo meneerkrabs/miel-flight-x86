@@ -380,6 +380,27 @@ class FlightX86DiagnosticReceiptTests(unittest.TestCase):
                     expected_patch_receipt_sha256=PATCH_RECEIPT_SHA,
                 )
 
+    def test_executable_expectation_comes_from_head_source_identity(self):
+        drifted_hash = "c" * 64
+        self.launcher["original_executable_sha256"] = drifted_hash
+        self.launcher["patched_executable_sha256"] = drifted_hash
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            with self.assertRaisesRegex(
+                FlightX86DiagnosticReceiptError,
+                "reviewed executable identity differs",
+            ):
+                classify(
+                    manifest_path,
+                    log_path,
+                    expected_run_id=36226599632,
+                    expected_head_sha=HEAD_SHA,
+                    expected_executable_sha256=drifted_hash,
+                    expected_observer_dll_sha256=OBSERVER_SHA,
+                    expected_real_dinput_sha256=REAL_DINPUT_SHA,
+                    expected_patch_receipt_sha256=PATCH_RECEIPT_SHA,
+                )
+
     def test_every_launcher_source_identity_is_bound_to_reviewed_input(self):
         reviewed = {
             "observer_dll_sha256": OBSERVER_SHA,
