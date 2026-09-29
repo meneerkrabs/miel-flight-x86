@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -83,8 +84,39 @@ def _commit(value: Any, label: str) -> str:
     return value
 
 
-def _reviewed_source_identities(identity: dict[str, Any]) -> tuple[str, str]:
-    reviewed = _load(SOURCE_IDENTITY_PATH, "reviewed source identity")
+def _git_output(arguments: list[str]) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), *arguments],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise WindowsExtractionReadinessError(
+            "reviewed source revision is unavailable"
+        ) from error
+
+
+def _reviewed_source_identities(
+    identity: dict[str, Any], head_sha: str,
+) -> tuple[str, str]:
+    head_sha = _commit(head_sha, "reviewed source identity revision")
+    relative_identity_path = SOURCE_IDENTITY_PATH.relative_to(ROOT).as_posix()
+    try:
+        reviewed = _STRICT_DECODER.decode(
+            _git_output(["show", f"{head_sha}:{relative_identity_path}"])
+        )
+    except DuplicateKeyError as error:
+        raise WindowsExtractionReadinessError(
+            "duplicate JSON key in reviewed source identity"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise WindowsExtractionReadinessError(
+            "reviewed source identity differs"
+        ) from error
+    if not isinstance(reviewed, dict):
+        raise WindowsExtractionReadinessError("source identity differs")
     if identity.get("schema") != reviewed.get("schema"):
         raise WindowsExtractionReadinessError("source identity differs")
     values: list[str] = []
@@ -279,7 +311,7 @@ def main() -> int:
     arguments = parser.parse_args()
     identity = _load(arguments.identity, "source identity")
     expected_iso_sha256, expected_executable_sha256 = (
-        _reviewed_source_identities(identity)
+        _reviewed_source_identities(identity, arguments.head_sha)
     )
     receipt = classify(
         arguments.manifest,

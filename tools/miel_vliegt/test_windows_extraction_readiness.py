@@ -8,6 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from tools.miel_vliegt import windows_extraction_readiness as extraction_readiness
 from tools.miel_vliegt.windows_extraction_readiness import (
     WindowsExtractionReadinessError,
     classify,
@@ -116,6 +117,47 @@ class WindowsExtractionReadinessTests(unittest.TestCase):
             ]
             with mock.patch("sys.argv", arguments), \
                     redirect_stdout(StringIO()):
+                with self.assertRaisesRegex(
+                    WindowsExtractionReadinessError,
+                    "source identity differs",
+                ):
+                    main()
+
+    def test_working_tree_identity_cannot_substitute_for_head_identity(self):
+        drifted_identity = {
+            "schema": 1,
+            "iso": {"filename": "working-tree.iso", "sha256": ISO_SHA},
+            "executable": {
+                "filename": "MulleMeck.exe", "sha256": EXE_SHA
+            },
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(directory)
+            identity_path = directory / "identity.json"
+            identity_path.write_text(
+                json.dumps(drifted_identity), encoding="utf-8"
+            )
+            arguments = [
+                "windows_extraction_readiness.py",
+                "--manifest", str(manifest_path),
+                "--log", str(log_path),
+                "--run-id", str(RUN_ID),
+                "--head-sha", HEAD_SHA,
+                "--identity", str(identity_path),
+            ]
+            original_load = extraction_readiness._load
+
+            def load_identity_only(path, label):
+                if label in ("source identity", "reviewed source identity"):
+                    return drifted_identity
+                return original_load(path, label)
+
+            with mock.patch("sys.argv", arguments), \
+                    mock.patch(
+                        "tools.miel_vliegt.windows_extraction_readiness._load",
+                        side_effect=load_identity_only,
+                    ), redirect_stdout(StringIO()):
                 with self.assertRaisesRegex(
                     WindowsExtractionReadinessError,
                     "source identity differs",
