@@ -354,6 +354,24 @@ class WineReadinessTests(unittest.TestCase):
                     observation, evidence_root=directory,
                 )
 
+    def test_com_class_inventory_is_protocol_fixed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            observation["requirements"]["comClasses"] = [DIRECTSOUND]
+            observation["phases"] = [
+                row for row in observation["phases"]
+                if not row["id"].endswith(MMDEVICE)
+            ]
+
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "COM-class inventory is invalid",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_process_topology_requires_distinct_process_records(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

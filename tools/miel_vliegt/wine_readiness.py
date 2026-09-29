@@ -21,6 +21,10 @@ from typing import Any
 OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
 TRANSPORT_SENTINEL = "MIEL_WINE_TRANSPORT_OK"
+REQUIRED_COM_CLASSES = frozenset({
+    "{47D4D946-62E8-11CF-93BC-444553540000}",
+    "{BCDE0395-E52F-467C-8E3D-C4579291692E}",
+})
 CLSID = re.compile(r"^\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RPCSS_SERVICE_NAME = re.compile(
@@ -218,6 +222,7 @@ def validate_observation(
     classes = requirements.get("comClasses")
     if not isinstance(classes, list) or not classes \
             or len(set(classes)) != len(classes) \
+            or set(classes) != REQUIRED_COM_CLASSES \
             or any(not isinstance(value, str) or not CLSID.fullmatch(value)
                    for value in classes):
         raise WineReadinessError("Wine readiness COM-class inventory is invalid")
