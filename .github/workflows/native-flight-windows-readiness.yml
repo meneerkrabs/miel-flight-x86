@@ -12,6 +12,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      # Hosted runners have no audio endpoint (run 36235967418: Audiosrv running,
+      # waveOutGetNumDevs()=0). Install the VB-Cable virtual sound card so the
+      # original game's DirectSound path sees a real device.
+      - name: Install virtual sound card
+        uses: LABSN/sound-ci-helpers@e9d6ba52163a3283714a68412036ddf33f78d49c
       - name: Probe private game extraction without an artifact
         shell: pwsh
         env:
