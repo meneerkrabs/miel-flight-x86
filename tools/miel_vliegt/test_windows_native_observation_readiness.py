@@ -140,6 +140,64 @@ class WindowsNativeObservationSourceIdentityTests(unittest.TestCase):
                     self, receipt, blob, executable_sha256
                 )
 
+    def test_all_receipts_reject_cross_job_chronology(self):
+        cases = (
+            (
+                WindowsNativeObservationReadinessTests,
+                "test_static_dialog_observation_is_diagnostic_only",
+            ),
+            (
+                WindowsNativeRendererSelectorTests,
+                "test_passive_renderer_selector_labels_are_diagnostic_only",
+            ),
+            (
+                WindowsNativeHardwareProgressTests,
+                "test_hardware_progress_and_fatal_exit_remain_diagnostic_only",
+            ),
+            (
+                WindowsNativeFatalExceptionTests,
+                "test_located_fatal_exception_is_diagnostic_only",
+            ),
+            (
+                WindowsNativeFatalContextTests,
+                "test_fatal_context_is_diagnostic_only",
+            ),
+            (
+                WindowsNativeEntryTransitionTests,
+                "test_entry_to_fault_esi_transition_is_diagnostic_only",
+            ),
+        )
+        for testcase_class, anchor in cases:
+            with self.subTest(class_name=testcase_class.__name__):
+                testcase = testcase_class(anchor)
+                testcase.setUp()
+                with tempfile.TemporaryDirectory() as raw:
+                    manifest_path, log_path = testcase.write_evidence(
+                        Path(raw)
+                    )
+                    raw_log = log_path.read_bytes().replace(
+                        b"extract-in-one-job\t", b"unrelated-job\t"
+                    )
+                    self.assertNotEqual(raw_log, log_path.read_bytes())
+                    log_path.write_bytes(raw_log)
+                    manifest = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                    manifest["log_sha256"] = hashlib.sha256(
+                        raw_log
+                    ).hexdigest()
+                    manifest["log_bytes"] = len(raw_log)
+                    manifest_path.write_text(
+                        json.dumps(manifest), encoding="utf-8"
+                    )
+                    with self.assertRaisesRegex(
+                        WindowsNativeObservationReadinessError,
+                        "checkout identity differs",
+                    ):
+                        testcase.classify_evidence(
+                            manifest_path, log_path
+                        )
+
 
 class WindowsNativeObservationReadinessTests(unittest.TestCase):
     def setUp(self):
