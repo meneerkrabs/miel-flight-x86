@@ -101,6 +101,26 @@ class WineReadinessTests(unittest.TestCase):
         self.assertFalse(receipt["checks"]["required_com_activated"])
         self.assertTrue(receipt["checks"]["wineboot_process_completed"])
 
+    def test_wineboot_exit_zero_requires_completion_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            wineboot = next(
+                row for row in observation["phases"]
+                if row["id"] == "wineboot"
+            )
+            wineboot_path = directory / wineboot["log"]["path"]
+            wineboot_path.write_text("wrapper exited 0\n", encoding="utf-8")
+            wineboot["log"]["sha256"] = hashlib.sha256(
+                wineboot_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["wineboot_process_completed"])
+
     def test_rpcss_timeout_is_classified_even_when_wrapper_reports_exit_zero(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

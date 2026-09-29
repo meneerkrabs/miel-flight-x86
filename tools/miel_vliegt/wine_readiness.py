@@ -21,6 +21,7 @@ from typing import Any
 OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
 TRANSPORT_SENTINEL = "MIEL_WINE_TRANSPORT_OK"
+WINEBOOT_SENTINEL = "wineboot completed"
 REQUIRED_COM_CLASSES = frozenset({
     "{47D4D946-62E8-11CF-93BC-444553540000}",
     "{BCDE0395-E52F-467C-8E3D-C4579291692E}",
@@ -290,7 +291,12 @@ def validate_observation(
         for clsid in classes
     }
     checks = {
-        "wineboot_process_completed": _phase_ok(indexed["wineboot"]),
+        "wineboot_process_completed": (
+            _phase_ok(indexed["wineboot"])
+            and _standalone_sentinel(
+                texts["wineboot"], WINEBOOT_SENTINEL,
+            )
+        ),
         "transport_roundtrip": (
             _phase_ok(indexed["transport"])
             and _standalone_sentinel(
