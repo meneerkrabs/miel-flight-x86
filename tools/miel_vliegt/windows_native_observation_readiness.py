@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 MAIN_JOB_NAME = "extract-in-one-job"
 MAIN_JOB_STEP = "Probe private game extraction without an artifact"
 PROBE_SOURCE_PATH = "tools/miel_vliegt/windows_native_probe/native_probe.c"
+WORKFLOW_SOURCE_PATH = ".github/workflows/native-flight-windows-readiness.yml"
+SOURCE_IDENTITY_PATH = "content/miel_vliegt/source_identity.json"
 EXPECTED_WORKFLOW = "Native Flight Windows extraction readiness"
 EXPECTED_CREATED_AT = "2026-09-26T09:38:29Z"
 EXPECTED_UPDATED_AT = "2026-09-26T09:40:25Z"
@@ -1752,6 +1754,8 @@ def classify_virtual_audio_runtime(
     expected_head_branch: str,
     expected_tested_tree_sha: str,
     expected_probe_source_blob: str,
+    expected_workflow_source_blob: str,
+    expected_source_identity_blob: str,
     expected_probe_executable_sha256: str,
 ) -> dict[str, Any]:
     manifest = _fields(
@@ -1766,6 +1770,12 @@ def classify_virtual_audio_runtime(
     )
     expected_probe_source_blob = _git_id(
         expected_probe_source_blob, "expected probe source blob"
+    )
+    expected_workflow_source_blob = _git_id(
+        expected_workflow_source_blob, "expected workflow source blob"
+    )
+    expected_source_identity_blob = _git_id(
+        expected_source_identity_blob, "expected source identity blob"
     )
     expected_probe_executable_sha256 = _hash(
         expected_probe_executable_sha256, "expected observer probe executable"
@@ -1793,10 +1803,20 @@ def classify_virtual_audio_runtime(
 
     tested_tree_sha = _commit_tree(head_sha)
     probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    workflow_source_blob = _source_blob(head_sha, WORKFLOW_SOURCE_PATH)
+    source_identity_blob = _source_blob(head_sha, SOURCE_IDENTITY_PATH)
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
     if probe_source_blob != expected_probe_source_blob:
         raise WindowsNativeObservationReadinessError("probe source differs")
+    if workflow_source_blob != expected_workflow_source_blob:
+        raise WindowsNativeObservationReadinessError(
+            "workflow source differs"
+        )
+    if source_identity_blob != expected_source_identity_blob:
+        raise WindowsNativeObservationReadinessError(
+            "source identity differs"
+        )
 
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
     expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
@@ -2032,6 +2052,10 @@ def classify_virtual_audio_runtime(
         "source_identities": {
             "probe_source_path": PROBE_SOURCE_PATH,
             "probe_source_blob_id": probe_source_blob,
+            "workflow_source_path": WORKFLOW_SOURCE_PATH,
+            "workflow_source_blob_id": workflow_source_blob,
+            "source_identity_path": SOURCE_IDENTITY_PATH,
+            "source_identity_blob_id": source_identity_blob,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
@@ -2084,6 +2108,8 @@ def main() -> int:
     parser.add_argument("--head-branch", required=True)
     parser.add_argument("--tested-tree-sha", required=True)
     parser.add_argument("--probe-source-blob", required=True)
+    parser.add_argument("--workflow-source-blob")
+    parser.add_argument("--source-identity-blob")
     parser.add_argument("--probe-executable-sha256", required=True)
     parser.add_argument(
         "--receipt-type",
@@ -2105,15 +2131,25 @@ def main() -> int:
         "virtual-audio-runtime": classify_virtual_audio_runtime,
     }
     classifier = classifiers[arguments.receipt_type]
+    classifier_arguments = {
+        "expected_run_id": arguments.run_id,
+        "expected_head_sha": arguments.head_sha,
+        "expected_head_branch": arguments.head_branch,
+        "expected_tested_tree_sha": arguments.tested_tree_sha,
+        "expected_probe_source_blob": arguments.probe_source_blob,
+        "expected_probe_executable_sha256": arguments.probe_executable_sha256,
+    }
+    if arguments.receipt_type == "virtual-audio-runtime":
+        classifier_arguments["expected_workflow_source_blob"] = (
+            arguments.workflow_source_blob
+        )
+        classifier_arguments["expected_source_identity_blob"] = (
+            arguments.source_identity_blob
+        )
     receipt = classifier(
         arguments.manifest,
         arguments.log,
-        expected_run_id=arguments.run_id,
-        expected_head_sha=arguments.head_sha,
-        expected_head_branch=arguments.head_branch,
-        expected_tested_tree_sha=arguments.tested_tree_sha,
-        expected_probe_source_blob=arguments.probe_source_blob,
-        expected_probe_executable_sha256=arguments.probe_executable_sha256,
+        **classifier_arguments,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0

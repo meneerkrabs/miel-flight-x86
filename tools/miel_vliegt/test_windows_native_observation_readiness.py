@@ -75,6 +75,12 @@ VIRTUAL_TREE_SHA = "fe1438b6dd457a1784a309c38a137fb2bf008041"
 VIRTUAL_PROBE_SOURCE_BLOB = (
     "df079e431e64eaed5a28b968b012bb575cb7125b"
 )
+VIRTUAL_WORKFLOW_SOURCE_BLOB = (
+    "5eb3df6e0edfe085a45448081106c5b74460b27d"
+)
+VIRTUAL_SOURCE_IDENTITY_BLOB = (
+    "81c38cc97d3b2dc153b8c65933784a85061dd3e5"
+)
 VIRTUAL_PROBE_EXE_SHA = (
     "1ff99746d4e51657c8132e26c09eaef710677b02a2a5983e1895fa8cd30ed02c"
 )
@@ -1650,12 +1656,25 @@ class WindowsNativeVirtualAudioRuntimeTests(unittest.TestCase):
         return manifest_path, log_path
 
     def classify_evidence(self, manifest_path: Path, log_path: Path):
+        def source_blob(revision: str, path: str):
+            return {
+                "tools/miel_vliegt/windows_native_probe/native_probe.c": (
+                    VIRTUAL_PROBE_SOURCE_BLOB
+                ),
+                ".github/workflows/native-flight-windows-readiness.yml": (
+                    VIRTUAL_WORKFLOW_SOURCE_BLOB
+                ),
+                "content/miel_vliegt/source_identity.json": (
+                    VIRTUAL_SOURCE_IDENTITY_BLOB
+                ),
+            }[path]
+
         with mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._commit_tree",
             return_value=VIRTUAL_TREE_SHA,
         ), mock.patch(
             "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
-            return_value=VIRTUAL_PROBE_SOURCE_BLOB,
+            side_effect=source_blob,
         ):
             return classify_virtual_audio_runtime(
                 manifest_path,
@@ -1665,6 +1684,8 @@ class WindowsNativeVirtualAudioRuntimeTests(unittest.TestCase):
                 expected_head_branch=VIRTUAL_HEAD_BRANCH,
                 expected_tested_tree_sha=VIRTUAL_TREE_SHA,
                 expected_probe_source_blob=VIRTUAL_PROBE_SOURCE_BLOB,
+                expected_workflow_source_blob=VIRTUAL_WORKFLOW_SOURCE_BLOB,
+                expected_source_identity_blob=VIRTUAL_SOURCE_IDENTITY_BLOB,
                 expected_probe_executable_sha256=VIRTUAL_PROBE_EXE_SHA,
             )
 
@@ -1689,6 +1710,20 @@ class WindowsNativeVirtualAudioRuntimeTests(unittest.TestCase):
         self.assertFalse(limits["audio_endpoint_absence_root_cause_proven"])
         self.assertFalse(limits["complete_native_gameplay_progress"])
         self.assertFalse(limits["native_parity_evidence"])
+
+    def test_virtual_audio_receipt_binds_workflow_and_identity_sources(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        self.assertEqual(
+            receipt["source_identities"]["workflow_source_blob_id"],
+            VIRTUAL_WORKFLOW_SOURCE_BLOB,
+        )
+        self.assertEqual(
+            receipt["source_identities"]["source_identity_blob_id"],
+            VIRTUAL_SOURCE_IDENTITY_BLOB,
+        )
 
     def test_virtual_audio_install_identity_and_chronology_are_structural(self):
         drifts = {
