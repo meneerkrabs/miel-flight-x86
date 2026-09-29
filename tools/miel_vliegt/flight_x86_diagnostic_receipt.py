@@ -7,12 +7,14 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 
 PROTOCOL = "miel-vliegt-flight-x86-diagnostic-receipt"
+ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER_BOOTSTRAP_STRATEGY = (
     "dinput-post-loader-worker-or-call-bootstrap"
 )
@@ -103,6 +105,31 @@ def _commit(value: Any, label: str) -> str:
     if not isinstance(value, str) or GIT_COMMIT.fullmatch(value) is None:
         raise FlightX86DiagnosticReceiptError(f"{label} is not a Git commit")
     return value
+
+
+def _git_output(arguments: list[str]) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), *arguments],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise FlightX86DiagnosticReceiptError(
+            "reviewed source revision is unavailable"
+        ) from error
+
+
+def _commit_tree(revision: str) -> str:
+    if _git_output(["cat-file", "-t", revision]).strip() != "commit":
+        raise FlightX86DiagnosticReceiptError(
+            "tested source revision is not a commit"
+        )
+    return _commit(
+        _git_output(["rev-parse", f"{revision}^{{tree}}"]).strip(),
+        "tested source tree",
+    )
 
 
 def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
@@ -284,6 +311,7 @@ def classify(
     )
     if run_id != expected_run_id or head_sha != expected_head_sha:
         raise FlightX86DiagnosticReceiptError("run identity differs")
+    tested_tree_sha = _commit_tree(head_sha)
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
     expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
     artifact_count = manifest["artifact_count"]
@@ -388,6 +416,10 @@ def classify(
         "status": "DIAGNOSTIC_ONLY",
         "run_id": run_id,
         "head_sha": head_sha,
+        "source_revision": {
+            "head_sha": head_sha,
+            "tested_tree_sha": tested_tree_sha,
+        },
         "run_status": manifest["status"],
         "source_log": {
             "sha256": expected_log_hash,
