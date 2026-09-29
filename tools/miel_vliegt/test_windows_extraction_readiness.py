@@ -18,6 +18,7 @@ from tools.miel_vliegt.windows_extraction_readiness import (
 
 RUN_ID = 36229051318
 HEAD_SHA = "8798716c256770b821e1ddb68a71add46ec344dd"
+TESTED_TREE_SHA = "5338d73e8567051cc4c0b97fece63fe257130bdf"
 ISO_SHA = "693a85370b704e743f56c7d6c39bc89574c1a74129ca351157e5b9514aaa3a60"
 EXE_SHA = "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
 
@@ -202,6 +203,33 @@ class WindowsExtractionReadinessTests(unittest.TestCase):
                 WindowsExtractionReadinessError, "extraction output promotes a claim"
             ):
                 self.classify_evidence(manifest_path, log_path)
+
+    def test_run_head_must_be_a_commit_object(self):
+        non_commit_revision = TESTED_TREE_SHA
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            manifest_path, log_path = self.write_evidence(directory)
+            raw_log = log_path.read_bytes().replace(
+                HEAD_SHA.encode("ascii"), non_commit_revision.encode("ascii")
+            )
+            log_path.write_bytes(raw_log)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["head_sha"] = non_commit_revision
+            manifest["log_sha256"] = hashlib.sha256(raw_log).hexdigest()
+            manifest["log_bytes"] = len(raw_log)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                WindowsExtractionReadinessError,
+                "tested source revision is not a commit",
+            ):
+                classify(
+                    manifest_path,
+                    log_path,
+                    expected_run_id=RUN_ID,
+                    expected_head_sha=non_commit_revision,
+                    expected_iso_sha256=ISO_SHA,
+                    expected_executable_sha256=EXE_SHA,
+                )
 
     def test_log_and_manifest_hash_drift_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:

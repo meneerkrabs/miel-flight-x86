@@ -98,6 +98,17 @@ def _git_output(arguments: list[str]) -> str:
         ) from error
 
 
+def _commit_tree(revision: str) -> str:
+    if _git_output(["cat-file", "-t", revision]).strip() != "commit":
+        raise WindowsExtractionReadinessError(
+            "tested source revision is not a commit"
+        )
+    return _commit(
+        _git_output(["rev-parse", f"{revision}^{{tree}}"]).strip(),
+        "tested source tree",
+    )
+
+
 def _reviewed_source_identities(
     identity: dict[str, Any], head_sha: str,
 ) -> tuple[str, str]:
@@ -203,6 +214,7 @@ def classify(
     )
     if run_id != expected_run_id or head_sha != expected_head_sha:
         raise WindowsExtractionReadinessError("run identity differs")
+    tested_tree_sha = _commit_tree(head_sha)
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
     expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
     artifact_count = _integer(manifest["artifact_count"], "artifact count")
@@ -278,6 +290,10 @@ def classify(
         "native_game_started": False,
         "run_id": run_id,
         "head_sha": head_sha,
+        "source_revision": {
+            "head_sha": head_sha,
+            "tested_tree_sha": tested_tree_sha,
+        },
         "source_log": {
             "sha256": expected_log_hash,
             "bytes": expected_log_bytes,
