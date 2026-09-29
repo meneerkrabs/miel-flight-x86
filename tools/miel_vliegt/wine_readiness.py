@@ -20,6 +20,7 @@ from typing import Any
 
 OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
+TRANSPORT_SENTINEL = "MIEL_WINE_TRANSPORT_OK"
 CLSID = re.compile(r"^\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RPCSS_SERVICE_NAME = re.compile(
@@ -212,8 +213,7 @@ def validate_observation(
     if not isinstance(requirements, dict) or set(requirements) != {
         "service", "transportSentinel", "comClasses",
     } or requirements.get("service") != "RpcSs" \
-            or not isinstance(requirements.get("transportSentinel"), str) \
-            or not requirements["transportSentinel"]:
+            or requirements.get("transportSentinel") != TRANSPORT_SENTINEL:
         raise WineReadinessError("Wine readiness requirements are invalid")
     classes = requirements.get("comClasses")
     if not isinstance(classes, list) or not classes \

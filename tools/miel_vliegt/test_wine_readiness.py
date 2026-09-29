@@ -329,6 +329,31 @@ class WineReadinessTests(unittest.TestCase):
         self.assertFalse(receipt["checks"]["transport_roundtrip"])
         self.assertFalse(receipt["checks"]["wineserver_clean_shutdown"])
 
+    def test_transport_sentinel_identity_is_protocol_fixed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            observation["requirements"]["transportSentinel"] = (
+                "wineboot completed"
+            )
+            transport = next(
+                row for row in observation["phases"]
+                if row["id"] == "transport"
+            )
+            transport_path = directory / transport["log"]["path"]
+            transport_path.write_text("wineboot completed\n", encoding="utf-8")
+            transport["log"]["sha256"] = hashlib.sha256(
+                transport_path.read_bytes()
+            ).hexdigest()
+
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "requirements are invalid",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_process_topology_requires_distinct_process_records(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
