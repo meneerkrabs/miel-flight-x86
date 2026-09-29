@@ -457,6 +457,7 @@ class WineReadinessTests(unittest.TestCase):
             [],
             {},
             {"id": ""},
+            {"id": "fex"},
             {"id": 1},
             {"id": "fex", "wine": 9},
         )

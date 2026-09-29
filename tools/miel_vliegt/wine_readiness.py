@@ -206,6 +206,7 @@ def validate_observation(
         raise WineReadinessError("unsupported Wine readiness observation")
     backend = observation.get("backend")
     if not isinstance(backend, dict) or not backend \
+            or set(backend) != {"id", "wine"} \
             or not isinstance(backend.get("id"), str) or not backend["id"] \
             or any(
                 not isinstance(key, str) or not key
