@@ -15,6 +15,9 @@ from typing import Any
 
 PROTOCOL = "miel-vliegt-flight-x86-diagnostic-receipt"
 ROOT = Path(__file__).resolve().parents[2]
+LAUNCHER_SOURCE_PATH = "tools/miel_vliegt/hangover/native_observer_launcher.c"
+WORKFLOW_SOURCE_PATH = ".github/workflows/native-flight-x86-suite.yml"
+SOURCE_IDENTITY_PATH = "content/miel_vliegt/source_identity.json"
 LAUNCHER_BOOTSTRAP_STRATEGY = (
     "dinput-post-loader-worker-or-call-bootstrap"
 )
@@ -129,6 +132,13 @@ def _commit_tree(revision: str) -> str:
     return _commit(
         _git_output(["rev-parse", f"{revision}^{{tree}}"]).strip(),
         "tested source tree",
+    )
+
+
+def _source_blob(revision: str, path: str) -> str:
+    return _commit(
+        _git_output(["rev-parse", f"{revision}:{path}"]).strip(),
+        f"reviewed source blob {path}",
     )
 
 
@@ -312,6 +322,20 @@ def classify(
     if run_id != expected_run_id or head_sha != expected_head_sha:
         raise FlightX86DiagnosticReceiptError("run identity differs")
     tested_tree_sha = _commit_tree(head_sha)
+    source_blobs = {
+        "launcher_source_path": LAUNCHER_SOURCE_PATH,
+        "launcher_source_blob_id": _source_blob(
+            head_sha, LAUNCHER_SOURCE_PATH,
+        ),
+        "workflow_source_path": WORKFLOW_SOURCE_PATH,
+        "workflow_source_blob_id": _source_blob(
+            head_sha, WORKFLOW_SOURCE_PATH,
+        ),
+        "source_identity_path": SOURCE_IDENTITY_PATH,
+        "source_identity_blob_id": _source_blob(
+            head_sha, SOURCE_IDENTITY_PATH,
+        ),
+    }
     expected_log_hash = _hash(manifest["log_sha256"], "run log")
     expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
     artifact_count = manifest["artifact_count"]
@@ -420,6 +444,7 @@ def classify(
             "head_sha": head_sha,
             "tested_tree_sha": tested_tree_sha,
         },
+        "source_blobs": source_blobs,
         "run_status": manifest["status"],
         "source_log": {
             "sha256": expected_log_hash,

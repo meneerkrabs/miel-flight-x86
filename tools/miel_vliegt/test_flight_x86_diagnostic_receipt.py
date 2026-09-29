@@ -18,6 +18,9 @@ from tools.miel_vliegt.flight_x86_diagnostic_receipt import (
 
 HEAD_SHA = "6b381fb9977f29a8ffc3d8101b1a17439f56044a"
 TESTED_TREE_SHA = "8ea077b2bdc48042a8b3a949d90a5f5abb4963dd"
+LAUNCHER_SOURCE_BLOB = "565e278124c5e24cb9da6300a967fbb8b2d0bd0d"
+WORKFLOW_SOURCE_BLOB = "eee00b3a302160a4d75b1a9d9c111e2367f6468d"
+SOURCE_IDENTITY_BLOB = "81c38cc97d3b2dc153b8c65933784a85061dd3e5"
 LOG_SHA = "7" * 64
 EXE_SHA = "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
 OBSERVER_SHA = "6ed49d48dd68f0207acc8746f56c3a12e8146bc3b072e933a16a03f5263e32d8"
@@ -142,6 +145,38 @@ class FlightX86DiagnosticReceiptTests(unittest.TestCase):
         self.assertFalse(limits["successful_device_creation_proven"])
         self.assertFalse(limits["manager_initialization_proven"])
         self.assertFalse(limits["native_parity_evidence"])
+
+    def test_receipt_binds_required_source_blobs(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = classify(
+                manifest_path,
+                log_path,
+                expected_run_id=36226599632,
+                expected_head_sha=HEAD_SHA,
+                expected_executable_sha256=EXE_SHA,
+                expected_observer_dll_sha256=OBSERVER_SHA,
+                expected_real_dinput_sha256=REAL_DINPUT_SHA,
+                expected_patch_receipt_sha256=PATCH_RECEIPT_SHA,
+            )
+
+        self.assertEqual(
+            receipt["source_blobs"],
+            {
+                "launcher_source_path": (
+                    "tools/miel_vliegt/hangover/native_observer_launcher.c"
+                ),
+                "launcher_source_blob_id": LAUNCHER_SOURCE_BLOB,
+                "workflow_source_path": (
+                    ".github/workflows/native-flight-x86-suite.yml"
+                ),
+                "workflow_source_blob_id": WORKFLOW_SOURCE_BLOB,
+                "source_identity_path": (
+                    "content/miel_vliegt/source_identity.json"
+                ),
+                "source_identity_blob_id": SOURCE_IDENTITY_BLOB,
+            },
+        )
 
     def test_run_head_must_be_a_commit_object(self):
         non_commit_revision = TESTED_TREE_SHA
