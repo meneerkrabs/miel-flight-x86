@@ -14,6 +14,7 @@ from tools.miel_vliegt.windows_native_observation_readiness import (
     classify,
     classify_hardware_progress,
     classify_renderer_selector,
+    classify_virtual_audio_runtime,
 )
 
 
@@ -67,6 +68,19 @@ ENTRY_PROBE_SOURCE_BLOB = (
 )
 ENTRY_PROBE_EXE_SHA = (
     "f3ec7723b57cbbf661b21df3bb15744c60cf8b2d8d54a67a64d7fc490552b241"
+)
+VIRTUAL_RUN_ID = 36535768944
+VIRTUAL_HEAD_SHA = "d230c0c58975e91695a64a120e4e2fdd10be424c"
+VIRTUAL_TREE_SHA = "fe1438b6dd457a1784a309c38a137fb2bf008041"
+VIRTUAL_PROBE_SOURCE_BLOB = (
+    "df079e431e64eaed5a28b968b012bb575cb7125b"
+)
+VIRTUAL_PROBE_EXE_SHA = (
+    "1ff99746d4e51657c8132e26c09eaef710677b02a2a5983e1895fa8cd30ed02c"
+)
+VIRTUAL_HEAD_BRANCH = "codex/flight-native-virtual-audio-20260929"
+VIRTUAL_SOUND_ACTION = (
+    "LABSN/sound-ci-helpers@e9d6ba52163a3283714a68412036ddf33f78d49c"
 )
 
 
@@ -1498,6 +1512,243 @@ class WindowsNativeEntryTransitionTests(unittest.TestCase):
             log_path.write_bytes(log_path.read_bytes() + b"drift\n")
             with self.assertRaisesRegex(
                 WindowsNativeObservationReadinessError, "log bytes differ"
+            ):
+                self.classify_evidence(manifest_path, log_path)
+
+
+class WindowsNativeVirtualAudioRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.maxDiff = None
+        self.output = {
+            "artifact_count": 0,
+            "audio_entry_count": 39,
+            "audio_entry_esi_unchanged": False,
+            "audio_entry_same_thread": False,
+            "audio_entry_verified": True,
+            "audio_service_ready": True,
+            "button_labels_safe": ["", ""],
+            "captured_height": 457,
+            "captured_width": 640,
+            "cd_mounted": True,
+            "child_button_count": 0,
+            "child_edit_count": 0,
+            "child_static_count": 0,
+            "create_calls": 0,
+            "create_callsite_verified": True,
+            "create_hr": None,
+            "create_returns": 0,
+            "create_success": 0,
+            "debugger_attached": True,
+            "device_nonnull": False,
+            "dialog_reason": "none",
+            "esi_block_categories": {
+                "0x00409AF1": "unavailable",
+                "0x00409B10": "unavailable",
+                "0x00409B1C": "unavailable",
+            },
+            "esi_block_hits": {
+                "0x00409AF1": 0,
+                "0x00409B10": 0,
+                "0x00409B1C": 0,
+            },
+            "esi_block_matches_fatal": {
+                "0x00409AF1": False,
+                "0x00409B10": False,
+                "0x00409B1C": False,
+            },
+            "esi_block_verified": {
+                "0x00409AF1": True,
+                "0x00409B10": True,
+                "0x00409B1C": True,
+            },
+            "fatal_access_type": "unavailable",
+            "fatal_context_available": False,
+            "fatal_exception_code": None,
+            "fatal_exception_module": "unknown",
+            "fatal_exception_rva": None,
+            "fatal_fault_category": "unavailable",
+            "fault_offset": None,
+            "fault_register": None,
+            "fault_register_category": None,
+            "first_chance_av_count": 0,
+            "gt_loaded": True,
+            "hardware_dialog_closed": True,
+            "hardware_selection_attempted": True,
+            "hardware_selection_guard": "HARDWARE_CLICK_SENT",
+            "hardware_selection_requested": True,
+            "hardware_selection_sent": True,
+            "last_audio_arg_category": "private",
+            "last_audio_ecx_category": "private",
+            "last_audio_esi_category": "module",
+            "last_audio_return_rva": "0x000099B8",
+            "last_esi_transition_block": None,
+            "manager_renders": 3494,
+            "manager_slots_verified": True,
+            "manager_ticks": 3495,
+            "nonblack_pixels_max": 290688,
+            "pixel_changes": 114,
+            "pixel_samples": 116,
+            "probe_sha256": VIRTUAL_PROBE_EXE_SHA,
+            "process_alive_after_15s": True,
+            "process_cpu_ms": 52656,
+            "process_exit_code": 0,
+            "register_categories": {
+                "EAX": "unavailable",
+                "EBP": "unavailable",
+                "EBX": "unavailable",
+                "ECX": "unavailable",
+                "EDI": "unavailable",
+                "EDX": "unavailable",
+                "ESI": "unavailable",
+                "ESP": "unavailable",
+            },
+            "stack_return_rvas": [],
+            "stage": "native-observation",
+            "status": "FAIL",
+            "wave_out_devices": 1,
+            "window_class": "other",
+            "window_present": True,
+            "window_title_safe": "Miel Monteur",
+        }
+
+    def write_evidence(self, directory: Path, *, output=None):
+        public_output = dict(self.output)
+        public_output.update(output or {})
+        rendered = json.dumps(
+            public_output, sort_keys=True, separators=(",", ":")
+        )
+        log = (
+            "checkout prefix\n"
+            f"extract-in-one-job\tRun actions/checkout@v5\ttimestamp {VIRTUAL_HEAD_SHA}\n"
+            "extract-in-one-job\tInstall virtual sound card\t"
+            f"run {VIRTUAL_SOUND_ACTION}\n"
+            "extract-in-one-job\tInstall virtual sound card\t"
+            "Drivers installed successfully.\n"
+            "extract-in-one-job\tInstall virtual sound card\t"
+            "##[end-action conclusion=success]\n"
+            "extract-in-one-job\tProbe private game extraction without an artifact\t"
+            f"timestamp {rendered}\n"
+            "runner cleanup\n"
+            "extract-in-one-job\tPost Run actions/checkout@v5\tcleanup\n"
+        ).encode("utf-8")
+        log_path = directory / "run.log"
+        log_path.write_bytes(log)
+        manifest = {
+            "run_id": VIRTUAL_RUN_ID,
+            "head_branch": VIRTUAL_HEAD_BRANCH,
+            "head_sha": VIRTUAL_HEAD_SHA,
+            "status": "completed",
+            "conclusion": "failure",
+            "workflow_name": "Native Flight Windows extraction readiness",
+            "created_at": "2026-09-29T07:17:36Z",
+            "updated_at": "2026-09-29T07:19:54Z",
+            "log_sha256": hashlib.sha256(log).hexdigest(),
+            "log_bytes": len(log),
+        }
+        manifest_path = directory / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest_path, log_path
+
+    def classify_evidence(self, manifest_path: Path, log_path: Path):
+        with mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._commit_tree",
+            return_value=VIRTUAL_TREE_SHA,
+        ), mock.patch(
+            "tools.miel_vliegt.windows_native_observation_readiness._source_blob",
+            return_value=VIRTUAL_PROBE_SOURCE_BLOB,
+        ):
+            return classify_virtual_audio_runtime(
+                manifest_path,
+                log_path,
+                expected_run_id=VIRTUAL_RUN_ID,
+                expected_head_sha=VIRTUAL_HEAD_SHA,
+                expected_head_branch=VIRTUAL_HEAD_BRANCH,
+                expected_tested_tree_sha=VIRTUAL_TREE_SHA,
+                expected_probe_source_blob=VIRTUAL_PROBE_SOURCE_BLOB,
+                expected_probe_executable_sha256=VIRTUAL_PROBE_EXE_SHA,
+            )
+
+    def test_virtual_audio_runtime_is_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(Path(raw))
+            receipt = self.classify_evidence(manifest_path, log_path)
+
+        self.assertEqual(
+            receipt["status"],
+            "NATIVE_VIRTUAL_AUDIO_RUNTIME_DIAGNOSTIC_ONLY",
+        )
+        self.assertEqual(receipt["audio_prerequisite"]["wave_out_devices"], 1)
+        self.assertTrue(receipt["audio_prerequisite"]["service_ready"])
+        self.assertEqual(receipt["runtime_progress"]["manager_ticks"], 3495)
+        self.assertEqual(receipt["runtime_progress"]["pixel_changes"], 114)
+        self.assertEqual(receipt["failure_boundary"]["reported_status"], "FAIL")
+        self.assertFalse(receipt["failure_boundary"]["fatal_exception"])
+        limits = receipt["proof_limits"]
+        self.assertFalse(limits["direct3d_device_creation_called"])
+        self.assertFalse(limits["direct3d_device_created"])
+        self.assertFalse(limits["audio_endpoint_absence_root_cause_proven"])
+        self.assertFalse(limits["complete_native_gameplay_progress"])
+        self.assertFalse(limits["native_parity_evidence"])
+
+    def test_virtual_audio_install_identity_and_chronology_are_structural(self):
+        drifts = {
+            "virtual audio action differs": VIRTUAL_SOUND_ACTION.replace(
+                "e9d6ba52163a3283714a68412036ddf33f78d49c",
+                "0" * 40,
+            ),
+            "virtual audio install is missing": None,
+        }
+        for message, action in drifts.items():
+            with self.subTest(message=message):
+                with tempfile.TemporaryDirectory() as raw:
+                    directory = Path(raw)
+                    manifest_path, log_path = self.write_evidence(directory)
+                    raw_log = log_path.read_bytes()
+                    if action is None:
+                        start = raw_log.index(
+                            b"extract-in-one-job\tInstall virtual sound card"
+                        )
+                        end = raw_log.index(
+                            b"extract-in-one-job\tProbe private game extraction"
+                        )
+                        raw_log = raw_log[:start] + raw_log[end:]
+                    else:
+                        raw_log = raw_log.replace(
+                            VIRTUAL_SOUND_ACTION.encode("ascii"),
+                            action.encode("ascii"),
+                        )
+                    log_path.write_bytes(raw_log)
+                    manifest = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                    manifest["log_sha256"] = hashlib.sha256(
+                        raw_log
+                    ).hexdigest()
+                    manifest["log_bytes"] = len(raw_log)
+                    manifest_path.write_text(
+                        json.dumps(manifest), encoding="utf-8"
+                    )
+                    with self.assertRaisesRegex(
+                        WindowsNativeObservationReadinessError,
+                        "virtual audio installation differs",
+                    ):
+                        self.classify_evidence(manifest_path, log_path)
+
+    def test_virtual_audio_runtime_cannot_promote_device_proof(self):
+        overclaim = {
+            "status": "NATIVE_RENDER_DIAGNOSTIC_ONLY",
+            "create_calls": 1,
+            "create_returns": 1,
+            "create_success": 1,
+            "device_nonnull": True,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            manifest_path, log_path = self.write_evidence(
+                Path(raw), output=overclaim
+            )
+            with self.assertRaisesRegex(
+                WindowsNativeObservationReadinessError,
+                "virtual audio runtime boundary differs",
             ):
                 self.classify_evidence(manifest_path, log_path)
 

@@ -30,6 +30,12 @@ CONTEXT_CREATED_AT = "2026-09-26T10:14:43Z"
 CONTEXT_UPDATED_AT = "2026-09-26T10:15:28Z"
 ENTRY_CREATED_AT = "2026-09-26T10:21:03Z"
 ENTRY_UPDATED_AT = "2026-09-26T10:21:59Z"
+VIRTUAL_AUDIO_CREATED_AT = "2026-09-29T07:17:36Z"
+VIRTUAL_AUDIO_UPDATED_AT = "2026-09-29T07:19:54Z"
+VIRTUAL_AUDIO_JOB_STEP = "Install virtual sound card"
+VIRTUAL_SOUND_ACTION = (
+    "LABSN/sound-ci-helpers@e9d6ba52163a3283714a68412036ddf33f78d49c"
+)
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_ID = re.compile(r"^[0-9a-f]{40}$")
 MANIFEST_FIELDS = {
@@ -105,6 +111,13 @@ ENTRY_BOOLEAN_FIELDS = CONTEXT_BOOLEAN_FIELDS | {
     "audio_entry_esi_unchanged", "audio_entry_same_thread",
     "audio_entry_verified",
 }
+ESI_BLOCK_KEYS = {"0x00409AF1", "0x00409B10", "0x00409B1C"}
+VIRTUAL_OUTPUT_FIELDS = ENTRY_OUTPUT_FIELDS | {
+    "audio_service_ready", "esi_block_categories", "esi_block_hits",
+    "esi_block_matches_fatal", "esi_block_verified",
+    "last_esi_transition_block", "wave_out_devices",
+}
+VIRTUAL_BOOLEAN_FIELDS = ENTRY_BOOLEAN_FIELDS | {"audio_service_ready"}
 
 
 class WindowsNativeObservationReadinessError(ValueError):
@@ -262,6 +275,32 @@ def _reviewed_job_step(output_line: str) -> bool:
     return len(fields) >= 3 \
         and fields[0] == MAIN_JOB_NAME \
         and fields[1] == MAIN_JOB_STEP
+
+
+def _virtual_audio_install_end_line_number(text: str) -> int | None:
+    action_seen = False
+    driver_installed = False
+    start_line = None
+    end_line = None
+    for line_number, line in enumerate(text.splitlines()):
+        fields = line.rstrip().split("\t")
+        if len(fields) < 3 \
+                or fields[0] != MAIN_JOB_NAME \
+                or fields[1] != VIRTUAL_AUDIO_JOB_STEP:
+            continue
+        if start_line is None:
+            start_line = line_number
+        if VIRTUAL_SOUND_ACTION in line:
+            action_seen = True
+        if "Drivers installed successfully." in line:
+            driver_installed = True
+        if "##[end-action" in line and "conclusion=success" in line:
+            end_line = line_number
+    if not action_seen or not driver_installed \
+            or start_line is None or end_line is None \
+            or end_line <= start_line:
+        return None
+    return end_line
 
 
 def classify(
@@ -1704,6 +1743,338 @@ def classify_entry_transition(
     }
 
 
+def classify_virtual_audio_runtime(
+    manifest_path: Path,
+    log_path: Path,
+    *,
+    expected_run_id: int,
+    expected_head_sha: str,
+    expected_head_branch: str,
+    expected_tested_tree_sha: str,
+    expected_probe_source_blob: str,
+    expected_probe_executable_sha256: str,
+) -> dict[str, Any]:
+    manifest = _fields(
+        _load(manifest_path, "manifest"), MANIFEST_FIELDS, "manifest"
+    )
+    run_id = _integer(manifest["run_id"], "run id", minimum=1)
+    head_sha = _git_id(manifest["head_sha"], "run head")
+    expected_run_id = _integer(expected_run_id, "expected run id", minimum=1)
+    expected_head_sha = _git_id(expected_head_sha, "expected run head")
+    expected_tested_tree_sha = _git_id(
+        expected_tested_tree_sha, "expected tested tree"
+    )
+    expected_probe_source_blob = _git_id(
+        expected_probe_source_blob, "expected probe source blob"
+    )
+    expected_probe_executable_sha256 = _hash(
+        expected_probe_executable_sha256, "expected observer probe executable"
+    )
+    for name, value in (
+        ("head branch", manifest["head_branch"]),
+        ("run status", manifest["status"]),
+        ("run conclusion", manifest["conclusion"]),
+        ("workflow name", manifest["workflow_name"]),
+        ("created timestamp", manifest["created_at"]),
+        ("updated timestamp", manifest["updated_at"]),
+        ("expected head branch", expected_head_branch),
+    ):
+        if not isinstance(value, str) or not value:
+            raise WindowsNativeObservationReadinessError(f"{name} is invalid")
+    if run_id != expected_run_id or head_sha != expected_head_sha \
+            or manifest["head_branch"] != expected_head_branch:
+        raise WindowsNativeObservationReadinessError("run identity differs")
+    if manifest["status"] != "completed" \
+            or manifest["conclusion"] != "failure" \
+            or manifest["workflow_name"] != EXPECTED_WORKFLOW \
+            or manifest["created_at"] != VIRTUAL_AUDIO_CREATED_AT \
+            or manifest["updated_at"] != VIRTUAL_AUDIO_UPDATED_AT:
+        raise WindowsNativeObservationReadinessError("run metadata differs")
+
+    tested_tree_sha = _commit_tree(head_sha)
+    probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
+    if tested_tree_sha != expected_tested_tree_sha:
+        raise WindowsNativeObservationReadinessError("tested tree differs")
+    if probe_source_blob != expected_probe_source_blob:
+        raise WindowsNativeObservationReadinessError("probe source differs")
+
+    expected_log_hash = _hash(manifest["log_sha256"], "run log")
+    expected_log_bytes = _integer(manifest["log_bytes"], "run log size")
+    try:
+        raw_log = log_path.read_bytes()
+        text = raw_log.decode("utf-8", errors="replace")
+    except OSError as error:
+        raise WindowsNativeObservationReadinessError(
+            "run log is unavailable"
+        ) from error
+    if len(raw_log) != expected_log_bytes:
+        raise WindowsNativeObservationReadinessError("log bytes differ")
+    if hashlib.sha256(raw_log).hexdigest() != expected_log_hash:
+        raise WindowsNativeObservationReadinessError("log hash differs")
+
+    checkout_line_number = _checkout_line_number(text, expected_head_sha)
+    if checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError("checkout identity differs")
+    install_end_line_number = _virtual_audio_install_end_line_number(text)
+    if install_end_line_number is None:
+        raise WindowsNativeObservationReadinessError(
+            "virtual audio installation differs"
+        )
+    output, output_line_number, output_line = _public_output(
+        text, VIRTUAL_OUTPUT_FIELDS
+    )
+    if not _reviewed_job_step(output_line):
+        raise WindowsNativeObservationReadinessError(
+            "public output job step differs"
+        )
+    if output_line_number < checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output precedes checkout"
+        )
+    if output_line_number < install_end_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output precedes virtual audio installation"
+        )
+    post_checkout_line_number = _post_checkout_line_number(text)
+    if post_checkout_line_number is None:
+        raise WindowsNativeObservationReadinessError(
+            "post-checkout cleanup is missing"
+        )
+    if output_line_number > post_checkout_line_number:
+        raise WindowsNativeObservationReadinessError(
+            "public output follows post-checkout cleanup"
+        )
+
+    labels = output["button_labels_safe"]
+    register_categories = output["register_categories"]
+    stack_returns = output["stack_return_rvas"]
+    block_categories = output["esi_block_categories"]
+    block_hits = output["esi_block_hits"]
+    block_matches = output["esi_block_matches_fatal"]
+    block_verified = output["esi_block_verified"]
+    if any(type(output[name]) is not bool for name in VIRTUAL_BOOLEAN_FIELDS) \
+            or any(
+                type(output[name]) is not int
+                for name in FATAL_INTEGER_FIELDS | {
+                    "audio_entry_count", "wave_out_devices",
+                }
+            ) \
+            or any(
+                not isinstance(output[name], str)
+                for name in (
+                    "dialog_reason", "hardware_selection_guard", "stage",
+                    "status", "window_class", "window_title_safe",
+                    "fatal_access_type", "fatal_exception_module",
+                    "fatal_fault_category", "last_audio_arg_category",
+                    "last_audio_ecx_category", "last_audio_esi_category",
+                )
+            ) \
+            or not isinstance(output["probe_sha256"], str) \
+            or SHA256.fullmatch(output["probe_sha256"]) is None \
+            or output["create_hr"] is not None \
+            or not isinstance(
+                output["fatal_exception_code"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["fatal_exception_rva"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["fault_register"], (str, type(None))
+            ) \
+            or not isinstance(output["fault_offset"], (int, type(None))) \
+            or not isinstance(
+                output["fault_register_category"], (str, type(None))
+            ) \
+            or not isinstance(
+                output["last_audio_return_rva"], (str, type(None))
+            ) \
+            or output["last_esi_transition_block"] is not None \
+            or not isinstance(labels, list) \
+            or len(labels) != 2 \
+            or any(not isinstance(label, str) for label in labels) \
+            or not isinstance(register_categories, dict) \
+            or set(register_categories) != CONTEXT_REGISTER_NAMES \
+            or any(
+                not isinstance(value, str)
+                for value in register_categories.values()
+            ) \
+            or not isinstance(stack_returns, list) \
+            or any(
+                not isinstance(row, dict) or set(row) != {"module", "rva"}
+                or not isinstance(row.get("module"), str)
+                or not isinstance(row.get("rva"), str)
+                for row in stack_returns
+            ) \
+            or any(
+                not isinstance(value, dict) or set(value) != ESI_BLOCK_KEYS
+                for value in (block_categories, block_hits, block_matches,
+                              block_verified)
+            ) \
+            or any(
+                not isinstance(value, str)
+                for value in block_categories.values()
+            ) \
+            or any(type(value) is not int for value in block_hits.values()) \
+            or any(
+                type(value) is not bool
+                for value in block_matches.values()
+            ) \
+            or any(
+                type(value) is not bool
+                for value in block_verified.values()
+            ):
+        raise WindowsNativeObservationReadinessError("public output types differ")
+    if _integer(output["artifact_count"], "artifact count") != 0:
+        raise WindowsNativeObservationReadinessError("artifact count differs")
+    if _hash(output["probe_sha256"], "observer probe executable") \
+            != expected_probe_executable_sha256:
+        raise WindowsNativeObservationReadinessError(
+            "observer probe identity differs"
+        )
+
+    audio_boundary = (
+        output["audio_service_ready"]
+        and output["wave_out_devices"] == 1
+    )
+    progress_boundary = (
+        output["status"] == "FAIL"
+        and output["stage"] == "native-observation"
+        and output["cd_mounted"]
+        and output["hardware_selection_requested"]
+        and output["hardware_selection_attempted"]
+        and output["hardware_selection_sent"]
+        and output["hardware_dialog_closed"]
+        and output["hardware_selection_guard"] == "HARDWARE_CLICK_SENT"
+        and output["gt_loaded"]
+        and output["create_callsite_verified"]
+        and output["manager_slots_verified"]
+        and output["manager_ticks"] == 3495
+        and output["manager_renders"] == 3494
+        and output["pixel_samples"] == 116
+        and output["pixel_changes"] == 114
+        and output["nonblack_pixels_max"] == 290688
+        and output["captured_width"] == 640
+        and output["captured_height"] == 457
+        and output["process_cpu_ms"] == 52656
+    )
+    stable_boundary = (
+        output["process_alive_after_15s"]
+        and output["window_present"]
+        and output["window_class"] == "other"
+        and output["window_title_safe"] == "Miel Monteur"
+        and output["dialog_reason"] == "none"
+        and output["button_labels_safe"] == ["", ""]
+        and output["child_static_count"] == 0
+        and output["child_button_count"] == 0
+        and output["child_edit_count"] == 0
+        and output["process_exit_code"] == 0
+        and not output["fatal_context_available"]
+        and output["fatal_exception_code"] is None
+        and output["fatal_exception_module"] == "unknown"
+        and output["fatal_exception_rva"] is None
+        and output["fatal_access_type"] == "unavailable"
+        and output["fatal_fault_category"] == "unavailable"
+        and output["first_chance_av_count"] == 0
+    )
+    entry_boundary = (
+        output["audio_entry_verified"]
+        and output["audio_entry_count"] == 39
+        and not output["audio_entry_same_thread"]
+        and not output["audio_entry_esi_unchanged"]
+        and output["last_audio_esi_category"] == "module"
+        and output["last_audio_ecx_category"] == "private"
+        and output["last_audio_arg_category"] == "private"
+        and output["last_audio_return_rva"] == "0x000099B8"
+        and output["esi_block_verified"] == {
+            "0x00409AF1": True,
+            "0x00409B10": True,
+            "0x00409B1C": True,
+        }
+        and output["esi_block_hits"] == {
+            "0x00409AF1": 0,
+            "0x00409B10": 0,
+            "0x00409B1C": 0,
+        }
+        and output["esi_block_categories"] == {
+            "0x00409AF1": "unavailable",
+            "0x00409B10": "unavailable",
+            "0x00409B1C": "unavailable",
+        }
+        and output["esi_block_matches_fatal"] == {
+            "0x00409AF1": False,
+            "0x00409B10": False,
+            "0x00409B1C": False,
+        }
+    )
+    device_boundary = (
+        output["create_calls"] == 0
+        and output["create_returns"] == 0
+        and output["create_success"] == 0
+        and not output["device_nonnull"]
+    )
+    if not audio_boundary or not progress_boundary \
+            or not stable_boundary or not entry_boundary \
+            or not device_boundary:
+        raise WindowsNativeObservationReadinessError(
+            "virtual audio runtime boundary differs"
+        )
+
+    return {
+        "schema": 1,
+        "protocol": PROTOCOL,
+        "run_id": run_id,
+        "head_sha": head_sha,
+        "status": "NATIVE_VIRTUAL_AUDIO_RUNTIME_DIAGNOSTIC_ONLY",
+        "source_revision": {
+            "head_sha": head_sha,
+            "tested_tree_sha": tested_tree_sha,
+        },
+        "source_identities": {
+            "probe_source_path": PROBE_SOURCE_PATH,
+            "probe_source_blob_id": probe_source_blob,
+            "probe_executable_sha256": output["probe_sha256"],
+        },
+        "source_log": {
+            "path": log_path.name,
+            "sha256": expected_log_hash,
+            "bytes": expected_log_bytes,
+        },
+        "audio_prerequisite": {
+            "virtual_sound_action": VIRTUAL_SOUND_ACTION,
+            "service_ready": output["audio_service_ready"],
+            "wave_out_devices": output["wave_out_devices"],
+        },
+        "runtime_progress": {
+            "hardware_selection_sent": output["hardware_selection_sent"],
+            "direct3d_module_loaded": output["gt_loaded"],
+            "manager_ticks": output["manager_ticks"],
+            "manager_renders": output["manager_renders"],
+            "pixel_samples": output["pixel_samples"],
+            "pixel_changes": output["pixel_changes"],
+            "captured_width": output["captured_width"],
+            "captured_height": output["captured_height"],
+        },
+        "failure_boundary": {
+            "reported_status": output["status"],
+            "fatal_exception": False,
+            "process_alive_after_15s": output["process_alive_after_15s"],
+            "process_exit_code": output["process_exit_code"],
+        },
+        "entry_observation": {
+            "verified": output["audio_entry_verified"],
+            "count": output["audio_entry_count"],
+            "same_thread_as_fault": output["audio_entry_same_thread"],
+        },
+        "proof_limits": {
+            "audio_endpoint_absence_root_cause_proven": False,
+            "direct3d_device_creation_called": False,
+            "direct3d_device_created": False,
+            "complete_native_gameplay_progress": False,
+            "native_parity_evidence": False,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -1719,6 +2090,7 @@ def main() -> int:
         choices=(
             "static-dialog", "renderer-selector", "hardware-progress",
             "fatal-exception", "fatal-context", "entry-transition",
+            "virtual-audio-runtime",
         ),
         default="static-dialog",
     )
@@ -1730,6 +2102,7 @@ def main() -> int:
         "fatal-exception": classify_fatal_exception,
         "fatal-context": classify_fatal_context,
         "entry-transition": classify_entry_transition,
+        "virtual-audio-runtime": classify_virtual_audio_runtime,
     }
     classifier = classifiers[arguments.receipt_type]
     receipt = classifier(
