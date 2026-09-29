@@ -82,8 +82,39 @@ def _git_id(value: Any, label: str) -> str:
     return value
 
 
-def _native_source_identities(identity: dict[str, Any]) -> tuple[str, str]:
-    reviewed = _load(SOURCE_IDENTITY_PATH, "reviewed source identity")
+def _git_output(arguments: list[str]) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), *arguments],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise WindowsNativeStartupReadinessError(
+            "reviewed source revision is unavailable"
+        ) from error
+
+
+def _native_source_identities(
+    identity: dict[str, Any], head_sha: str,
+) -> tuple[str, str]:
+    head_sha = _git_id(head_sha, "reviewed source identity revision")
+    relative_identity_path = SOURCE_IDENTITY_PATH.relative_to(ROOT).as_posix()
+    try:
+        reviewed = _STRICT_DECODER.decode(
+            _git_output(["show", f"{head_sha}:{relative_identity_path}"])
+        )
+    except DuplicateKeyError as error:
+        raise WindowsNativeStartupReadinessError(
+            "duplicate JSON key in reviewed source identity"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise WindowsNativeStartupReadinessError(
+            "reviewed source identity differs"
+        ) from error
+    if not isinstance(reviewed, dict):
+        raise WindowsNativeStartupReadinessError("source identity differs")
     if identity.get("schema") != reviewed.get("schema"):
         raise WindowsNativeStartupReadinessError("source identity differs")
     values: list[str] = []
@@ -344,7 +375,7 @@ def main() -> int:
     arguments = parser.parse_args()
     identity = _load(arguments.identity, "source identity")
     expected_iso_sha256, expected_executable_sha256 = (
-        _native_source_identities(identity)
+        _native_source_identities(identity, arguments.head_sha)
     )
     receipt = classify(
         arguments.manifest,
