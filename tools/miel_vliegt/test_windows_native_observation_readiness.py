@@ -81,6 +81,12 @@ VIRTUAL_WORKFLOW_SOURCE_BLOB = (
 VIRTUAL_SOURCE_IDENTITY_BLOB = (
     "81c38cc97d3b2dc153b8c65933784a85061dd3e5"
 )
+VIRTUAL_ORIGINAL_ISO_SHA256 = (
+    "693a85370b704e743f56c7d6c39bc89574c1a74129ca351157e5b9514aaa3a60"
+)
+VIRTUAL_ORIGINAL_EXECUTABLE_SHA256 = (
+    "a84550b46612dc326177a67a84d6fd1e35aae3dc74361254611d1b03eda559a2"
+)
 VIRTUAL_PROBE_EXE_SHA = (
     "1ff99746d4e51657c8132e26c09eaef710677b02a2a5983e1895fa8cd30ed02c"
 )
@@ -1723,6 +1729,14 @@ class WindowsNativeVirtualAudioRuntimeTests(unittest.TestCase):
         self.assertEqual(
             receipt["source_identities"]["source_identity_blob_id"],
             VIRTUAL_SOURCE_IDENTITY_BLOB,
+        )
+        self.assertEqual(
+            receipt["source_identities"]["original_iso_sha256"],
+            VIRTUAL_ORIGINAL_ISO_SHA256,
+        )
+        self.assertEqual(
+            receipt["source_identities"]["original_executable_sha256"],
+            VIRTUAL_ORIGINAL_EXECUTABLE_SHA256,
         )
 
     def test_virtual_audio_install_identity_and_chronology_are_structural(self):

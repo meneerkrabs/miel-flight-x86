@@ -218,6 +218,35 @@ def _source_blob(revision: str, path: str) -> str:
     )
 
 
+def _reviewed_original_media(revision: str) -> tuple[str, str]:
+    try:
+        identity = _STRICT_DECODER.decode(
+            _git_output(["show", f"{revision}:{SOURCE_IDENTITY_PATH}"])
+        )
+    except DuplicateKeyError as error:
+        raise WindowsNativeObservationReadinessError(
+            "duplicate JSON key in reviewed source identity"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise WindowsNativeObservationReadinessError(
+            "reviewed source identity differs"
+        ) from error
+    if not isinstance(identity, dict) or identity.get("schema") != 1:
+        raise WindowsNativeObservationReadinessError(
+            "reviewed source identity differs"
+        )
+    records = []
+    for section in ("iso", "executable"):
+        record = identity.get(section)
+        if not isinstance(record, dict) \
+                or set(record) != {"filename", "sha256"}:
+            raise WindowsNativeObservationReadinessError(
+                "reviewed source identity differs"
+            )
+        records.append(_hash(record.get("sha256"), f"reviewed {section}"))
+    return records[0], records[1]
+
+
 def _public_output(
     text: str,
     expected_fields: set[str] = PUBLIC_OUTPUT_FIELDS,
@@ -1805,6 +1834,9 @@ def classify_virtual_audio_runtime(
     probe_source_blob = _source_blob(head_sha, PROBE_SOURCE_PATH)
     workflow_source_blob = _source_blob(head_sha, WORKFLOW_SOURCE_PATH)
     source_identity_blob = _source_blob(head_sha, SOURCE_IDENTITY_PATH)
+    original_iso_sha256, original_executable_sha256 = (
+        _reviewed_original_media(head_sha)
+    )
     if tested_tree_sha != expected_tested_tree_sha:
         raise WindowsNativeObservationReadinessError("tested tree differs")
     if probe_source_blob != expected_probe_source_blob:
@@ -2056,6 +2088,8 @@ def classify_virtual_audio_runtime(
             "workflow_source_blob_id": workflow_source_blob,
             "source_identity_path": SOURCE_IDENTITY_PATH,
             "source_identity_blob_id": source_identity_blob,
+            "original_iso_sha256": original_iso_sha256,
+            "original_executable_sha256": original_executable_sha256,
             "probe_executable_sha256": output["probe_sha256"],
         },
         "source_log": {
