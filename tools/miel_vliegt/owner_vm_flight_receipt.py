@@ -342,6 +342,13 @@ def _observer_barn_vtable(path: Path) -> tuple[str, str]:
         raise OwnerVMFlightReceiptError(
             "cannot read public observer source"
         ) from error
+    if (
+        path.absolute() != DEFAULT_OBSERVER_HOOK.absolute()
+        and _sha256_file(path) != _sha256_file(DEFAULT_OBSERVER_HOOK)
+    ):
+        raise OwnerVMFlightReceiptError(
+            "public observer hook bytes differ"
+        )
     matches = BARN_LIFECYCLE.findall(source)
     if len(matches) != 1:
         raise OwnerVMFlightReceiptError(

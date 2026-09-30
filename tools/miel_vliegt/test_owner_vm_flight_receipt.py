@@ -1614,6 +1614,34 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
         self.assertEqual(result["state"]["BarnView"], 0)
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
 
+    def test_alternate_observer_hook_must_mirror_reviewed_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            exact = Path(directory) / "native_observer_hook.c"
+            exact.write_bytes(OBSERVER_HOOK.read_bytes())
+            exact_result = validate_bridge_observation(
+                {"ok": True, "state": _bridge_state()},
+                observer_hook_path=exact,
+            )
+            self.assertEqual(
+                exact_result["observer_hook_sha256"],
+                hashlib.sha256(OBSERVER_HOOK.read_bytes()).hexdigest(),
+            )
+
+            drifted = Path(directory) / "drifted_observer_hook.c"
+            drifted.write_text(
+                OBSERVER_HOOK.read_text(encoding="utf-8")
+                + "\n/* unrelated diagnostic comment */\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "public observer hook bytes differ",
+            ):
+                validate_bridge_observation(
+                    {"ok": True, "state": _bridge_state()},
+                    observer_hook_path=drifted,
+                )
+
     def test_door_click_is_navigation_candidate_only(self):
         result = validate_bridge_observation(
             {"ok": True, "click": _bridge_click()},
