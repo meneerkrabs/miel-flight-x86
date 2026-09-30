@@ -10,14 +10,17 @@ from pathlib import Path
 
 from tools.miel_vliegt.owner_vm_flight_receipt import (
     OwnerVMFlightReceiptError,
+    load_bridge_success,
     validate_arrow_diagnostic,
     validate_flight_frame,
+    validate_bridge_observation,
 )
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_IDENTITY = ROOT / "content/miel_vliegt/source_identity.json"
 TRANSITIONS = ROOT / "content/miel_vliegt/native_scene_transitions.json"
+OBSERVER_HOOK = ROOT / "tools/miel_vliegt/hangover/native_observer_hook.c"
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 457
 
@@ -55,6 +58,38 @@ def _process() -> dict:
         "window_title": "Miel Monteur",
         "before_alive": True,
         "after_alive": True,
+    }
+
+
+def _bridge_state() -> dict:
+    return {
+        "ProcessId": 1234,
+        "Application": 0x11111111,
+        "Manager": 0x22222222,
+        "CurrentMode": 0x33333333,
+        "CurrentVtable": "0x0044caec",
+        "PendingMode": 0,
+        "Loaded": 1,
+        "Opened": 1,
+        "BarnView": 0,
+        "InputContext": 0x11111111,
+        "CursorObject": 0x44444444,
+        "CursorX": 100,
+        "CursorY": 200,
+    }
+
+
+def _bridge_click() -> dict:
+    return {
+        "target": [450, 150],
+        "delta": [350, -50],
+        "cursorBefore": [100, 200],
+        "cursorAfter": [450, 150],
+        "barnViewBefore": 0,
+        "barnViewAfter": 1,
+        "openedBefore": 1,
+        "openedAfter": 1,
+        "injectionSeen": True,
     }
 
 
@@ -443,6 +478,67 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             result["blocker_code"], "BARN_ESCAPE_DISPATCH_UNOBSERVED"
         )
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+
+class OwnerVMBridgeObservationTests(unittest.TestCase):
+    def test_state_is_bound_to_the_public_barn_vtable(self):
+        result = validate_bridge_observation(
+            {"ok": True, "state": _bridge_state()},
+            observer_hook_path=OBSERVER_HOOK,
+        )
+        self.assertEqual(
+            result["status"], "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
+        )
+        self.assertEqual(result["barn_mode_vtable"], "0x0044caec")
+        self.assertEqual(result["state"]["BarnView"], 0)
+        self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+    def test_door_click_is_navigation_candidate_only(self):
+        result = validate_bridge_observation(
+            {"ok": True, "click": _bridge_click()},
+            observer_hook_path=OBSERVER_HOOK,
+        )
+        self.assertEqual(
+            result["status"],
+            "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY",
+        )
+        self.assertEqual(result["click"]["barn_view_before"], 0)
+        self.assertEqual(result["click"]["barn_view_after"], 1)
+        self.assertFalse(result["proof_limits"]["native_flight_transition"])
+        self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+    def test_vtable_or_injection_drift_fails_closed(self):
+        wrong_vtable = {"ok": True, "state": _bridge_state()}
+        wrong_vtable["state"]["CurrentVtable"] = "0x0044cf58"
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "barn vtable"
+        ):
+            validate_bridge_observation(
+                wrong_vtable, observer_hook_path=OBSERVER_HOOK
+            )
+
+        wrong_click = {"ok": True, "click": _bridge_click()}
+        wrong_click["click"]["injectionSeen"] = False
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "injection"
+        ):
+            validate_bridge_observation(
+                wrong_click, observer_hook_path=OBSERVER_HOOK
+            )
+
+    def test_loader_selects_exactly_one_requested_success(self):
+        raw = (
+            '{"ok":false,"error":"transport diagnostic"}'
+            '{"ok":true,"state":{"unused":true}}'
+        )
+        self.assertEqual(
+            load_bridge_success(raw, "state"),
+            {"ok": True, "state": {"unused": True}},
+        )
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "one success"
+        ):
+            load_bridge_success(raw + '{"ok":true,"state":{}}', "state")
 
 
 if __name__ == "__main__":

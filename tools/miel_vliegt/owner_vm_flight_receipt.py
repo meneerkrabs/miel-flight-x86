@@ -20,6 +20,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE_IDENTITY = ROOT / "content/miel_vliegt/source_identity.json"
 DEFAULT_TRANSITIONS = ROOT / "content/miel_vliegt/native_scene_transitions.json"
+DEFAULT_OBSERVER_HOOK = (
+    ROOT / "tools/miel_vliegt/hangover/native_observer_hook.c"
+)
 ARROW_PROTOCOL = "miel-vliegt-owner-vm-arrow-diagnostic"
 FRAME_PROTOCOL = "miel-vliegt-owner-vm-native-flight-frame"
 TRANSITION_CONTRACT_ID = "miel-vliegt-native-scene-transitions-v1"
@@ -34,6 +37,9 @@ FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
 AIRPLANE_COMPLETE_BITS = 0x1FF
 AIRPLANE_COMPLETE_PREDICATE = (
     "barn.airplane(+0x160).completion(+0x128) == 0x1ff"
+)
+BARN_LIFECYCLE = re.compile(
+    r'\{"barn",\s*"mode_barn",\s*(0x[0-9a-f]{8})u'
 )
 
 SOURCE_KEYS = {
@@ -103,6 +109,19 @@ FRAME_TOP_KEYS = {
     "schema", "protocol", "capture_id", "source", "environment", "process",
     "input", "prerequisites", "transitions", "runtime", "frame",
     "proof_limits",
+}
+BRIDGE_STATE_KEYS = {
+    "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
+    "PendingMode", "Loaded", "Opened", "BarnView", "InputContext",
+    "CursorObject", "CursorX", "CursorY",
+}
+BRIDGE_CLICK_KEYS = {
+    "target", "delta", "cursorBefore", "cursorAfter", "barnViewBefore",
+    "barnViewAfter", "openedBefore", "openedAfter", "injectionSeen",
+}
+BRIDGE_PROOF_KEYS = {
+    "native_flight_transition", "direct3d7_device_evidence",
+    "native_parity_evidence",
 }
 
 
@@ -212,6 +231,176 @@ def _sha256_file(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
         raise OwnerVMFlightReceiptError(f"cannot hash {path}") from error
+
+
+def load_bridge_success(raw: str, requested: str) -> dict[str, Any]:
+    """Select exactly one successful bounded bridge record from stdout."""
+
+    records: list[dict[str, Any]] = []
+    cursor = 0
+    while cursor < len(raw):
+        while cursor < len(raw) and raw[cursor].isspace():
+            cursor += 1
+        if cursor == len(raw):
+            break
+        try:
+            value, cursor = _STRICT_DECODER.raw_decode(raw, cursor)
+        except DuplicateKeyError as error:
+            raise OwnerVMFlightReceiptError(
+                "duplicate JSON key in bridge output"
+            ) from error
+        except json.JSONDecodeError as error:
+            raise OwnerVMFlightReceiptError(
+                "bridge output is not canonical JSON records"
+            ) from error
+        if not isinstance(value, dict) or type(value.get("ok")) is not bool:
+            raise OwnerVMFlightReceiptError("bridge record shape differs")
+        records.append(value)
+    matches = [
+        record for record in records
+        if record["ok"] is True and requested in record
+    ]
+    if len(matches) != 1:
+        raise OwnerVMFlightReceiptError(
+            f"bridge output must contain exactly one success record for {requested}"
+        )
+    return matches[0]
+
+
+def _observer_barn_vtable(path: Path) -> tuple[str, str]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise OwnerVMFlightReceiptError(
+            "cannot read public observer source"
+        ) from error
+    matches = BARN_LIFECYCLE.findall(source)
+    if len(matches) != 1:
+        raise OwnerVMFlightReceiptError(
+            "public observer barn lifecycle is not uniquely bound"
+        )
+    return matches[0], _sha256_file(path)
+
+
+def _bridge_state(value: Any) -> dict[str, Any]:
+    state = _fields(value, BRIDGE_STATE_KEYS, "bridge state")
+    for field in (
+        "ProcessId", "Application", "Manager", "CurrentMode",
+        "CursorObject",
+    ):
+        _integer(state[field], f"bridge state.{field}", minimum=1)
+    if state["InputContext"] != state["Application"]:
+        raise OwnerVMFlightReceiptError("bridge input context differs")
+    if state["PendingMode"] != 0:
+        raise OwnerVMFlightReceiptError("bridge state is not mode-settled")
+    for field in ("Loaded", "Opened"):
+        _integer(state[field], f"bridge state.{field}", minimum=0)
+        if state[field] != 1:
+            raise OwnerVMFlightReceiptError(
+                f"bridge mode is not loaded and open: {field}"
+            )
+    barn_view = _integer(state["BarnView"], "bridge state.BarnView")
+    if barn_view not in (0, 1):
+        raise OwnerVMFlightReceiptError("bridge BarnView is invalid")
+    _integer(state["CursorX"], "bridge state.CursorX", maximum=639)
+    _integer(state["CursorY"], "bridge state.CursorY", maximum=479)
+    return state
+
+
+def _bridge_point(value: Any, label: str) -> list[int]:
+    if (
+        not isinstance(value, list)
+        or len(value) != 2
+        or any(type(coordinate) is not int for coordinate in value)
+    ):
+        raise OwnerVMFlightReceiptError(f"{label} must be an integer pair")
+    if not (0 <= value[0] <= 639 and 0 <= value[1] <= 479):
+        raise OwnerVMFlightReceiptError(f"{label} is outside the game client")
+    return value
+
+
+def _bridge_click(value: Any) -> dict[str, Any]:
+    click = _fields(value, BRIDGE_CLICK_KEYS, "bridge click")
+    target = _bridge_point(click["target"], "click.target")
+    delta = click["delta"]
+    before = _bridge_point(click["cursorBefore"], "click.cursorBefore")
+    after = _bridge_point(click["cursorAfter"], "click.cursorAfter")
+    if (
+        not isinstance(delta, list)
+        or len(delta) != 2
+        or any(type(offset) is not int for offset in delta)
+        or after != target
+        or [before[0] + delta[0], before[1] + delta[1]] != target
+    ):
+        raise OwnerVMFlightReceiptError("click geometry differs")
+    barn_before = _integer(click["barnViewBefore"], "click.barnViewBefore")
+    barn_after = _integer(click["barnViewAfter"], "click.barnViewAfter")
+    opened_before = _integer(click["openedBefore"], "click.openedBefore")
+    opened_after = _integer(click["openedAfter"], "click.openedAfter")
+    if (
+        barn_before not in (0, 1)
+        or barn_after not in (0, 1)
+        or opened_before != 1
+        or opened_after != 1
+        or _boolean(click["injectionSeen"], "click.injectionSeen") is not True
+    ):
+        raise OwnerVMFlightReceiptError("click state or injection differs")
+    return {
+        "target": target,
+        "delta": delta,
+        "cursor_before": before,
+        "cursor_after": after,
+        "barn_view_before": barn_before,
+        "barn_view_after": barn_after,
+        "opened_before": opened_before,
+        "opened_after": opened_after,
+        "injection_seen": True,
+    }
+
+
+def validate_bridge_observation(
+    payload: dict[str, Any],
+    *,
+    observer_hook_path: Path = DEFAULT_OBSERVER_HOOK,
+) -> dict[str, Any]:
+    """Bind one bounded owner-VM bridge record without promoting it."""
+
+    barn_vtable, observer_source_sha256 = _observer_barn_vtable(
+        observer_hook_path
+    )
+    proof_limits = {key: False for key in BRIDGE_PROOF_KEYS}
+    common = {
+        "schema": 1,
+        "protocol": "miel-vliegt-owner-vm-bridge-observation-result",
+        "observer_hook_sha256": observer_source_sha256,
+        "barn_mode_vtable": barn_vtable,
+        "proof_limits": proof_limits,
+    }
+    if set(payload) == {"ok", "state"}:
+        if payload["ok"] is not True:
+            raise OwnerVMFlightReceiptError("bridge observation failed")
+        state = _bridge_state(payload["state"])
+        if state["CurrentVtable"] != barn_vtable:
+            raise OwnerVMFlightReceiptError(
+                "live current vtable differs from public barn vtable"
+            )
+        return {
+            **common,
+            "status": "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY",
+            "state": state,
+        }
+    if set(payload) == {"ok", "click"}:
+        if payload["ok"] is not True:
+            raise OwnerVMFlightReceiptError("bridge observation failed")
+        click = _bridge_click(payload["click"])
+        status = (
+            "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
+            if click["barn_view_before"] == 0
+            and click["barn_view_after"] == 1
+            else "NATIVE_OWNER_VM_BARN_CLICK_DIAGNOSTIC_ONLY"
+        )
+        return {**common, "status": status, "click": click}
+    raise OwnerVMFlightReceiptError("bridge success record fields differ")
 
 
 def _source_and_environment(
