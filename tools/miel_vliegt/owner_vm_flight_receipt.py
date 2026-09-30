@@ -120,9 +120,13 @@ BRIDGE_CLICK_KEYS = {
     "barnViewAfter", "openedBefore", "openedAfter", "injectionSeen",
 }
 BRIDGE_PROOF_KEYS = {
-    "native_flight_transition", "direct3d7_device_evidence",
-    "native_parity_evidence",
+    "airplane_completion_evidence", "native_flight_transition",
+    "direct3d7_device_evidence", "native_parity_evidence",
 }
+BRIDGE_PROCESS_FIELDS = (
+    "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
+    "InputContext", "CursorObject", "PendingMode", "Loaded", "Opened",
+)
 
 
 class OwnerVMFlightReceiptError(ValueError):
@@ -401,6 +405,72 @@ def validate_bridge_observation(
         )
         return {**common, "status": status, "click": click}
     raise OwnerVMFlightReceiptError("bridge success record fields differ")
+
+
+def validate_bridge_sequence(
+    before_payload: dict[str, Any],
+    click_payload: dict[str, Any],
+    after_payload: dict[str, Any],
+    *,
+    observer_hook_path: Path = DEFAULT_OBSERVER_HOOK,
+) -> dict[str, Any]:
+    """Bind one click to a single live before/after bridge process."""
+
+    before_result = validate_bridge_observation(
+        before_payload, observer_hook_path=observer_hook_path
+    )
+    click_result = validate_bridge_observation(
+        click_payload, observer_hook_path=observer_hook_path
+    )
+    after_result = validate_bridge_observation(
+        after_payload, observer_hook_path=observer_hook_path
+    )
+    before = before_result["state"]
+    click = click_result["click"]
+    after = after_result["state"]
+    if (
+        before_result["status"]
+        != "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
+        or after_result["status"]
+        != "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
+        or click_result["status"]
+        != "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
+    ):
+        raise OwnerVMFlightReceiptError("bridge sequence kinds differ")
+    for field in BRIDGE_PROCESS_FIELDS:
+        if before[field] != after[field]:
+            raise OwnerVMFlightReceiptError(
+                "bridge process identity drifted across click"
+            )
+    if (
+        [before["CursorX"], before["CursorY"]] != click["cursor_before"]
+        or before["BarnView"] != click["barn_view_before"]
+    ):
+        raise OwnerVMFlightReceiptError("pre-click state disagrees with click")
+    if (
+        [after["CursorX"], after["CursorY"]] != click["cursor_after"]
+        or after["BarnView"] != click["barn_view_after"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "post-click state disagrees with click"
+        )
+    return {
+        "schema": 1,
+        "protocol": "miel-vliegt-owner-vm-bridge-sequence-result",
+        "status": "NATIVE_OWNER_VM_BARN_DOOR_SEQUENCE_CANDIDATE_ONLY",
+        "observer_hook_sha256": before_result["observer_hook_sha256"],
+        "barn_mode_vtable": before_result["barn_mode_vtable"],
+        "process_id": before["ProcessId"],
+        "before": {
+            "barn_view": before["BarnView"],
+            "cursor": [before["CursorX"], before["CursorY"]],
+        },
+        "after": {
+            "barn_view": after["BarnView"],
+            "cursor": [after["CursorX"], after["CursorY"]],
+        },
+        "proof_limits": {key: False for key in BRIDGE_PROOF_KEYS},
+    }
 
 
 def _source_and_environment(

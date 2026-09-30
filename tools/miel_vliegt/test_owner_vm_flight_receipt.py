@@ -14,6 +14,7 @@ from tools.miel_vliegt.owner_vm_flight_receipt import (
     validate_arrow_diagnostic,
     validate_flight_frame,
     validate_bridge_observation,
+    validate_bridge_sequence,
 )
 
 
@@ -61,7 +62,7 @@ def _process() -> dict:
     }
 
 
-def _bridge_state() -> dict:
+def _bridge_state(*, barn_view: int = 0, x: int = 100, y: int = 200) -> dict:
     return {
         "ProcessId": 1234,
         "Application": 0x11111111,
@@ -71,11 +72,11 @@ def _bridge_state() -> dict:
         "PendingMode": 0,
         "Loaded": 1,
         "Opened": 1,
-        "BarnView": 0,
+        "BarnView": barn_view,
         "InputContext": 0x11111111,
         "CursorObject": 0x44444444,
-        "CursorX": 100,
-        "CursorY": 200,
+        "CursorX": x,
+        "CursorY": y,
     }
 
 
@@ -539,6 +540,57 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
             OwnerVMFlightReceiptError, "one success"
         ):
             load_bridge_success(raw + '{"ok":true,"state":{}}', "state")
+
+    def test_click_sequence_is_bound_to_one_live_process(self):
+        result = validate_bridge_sequence(
+            {"ok": True, "state": _bridge_state()},
+            {"ok": True, "click": _bridge_click()},
+            {
+                "ok": True,
+                "state": _bridge_state(barn_view=1, x=450, y=150),
+            },
+            observer_hook_path=OBSERVER_HOOK,
+        )
+        self.assertEqual(
+            result["status"],
+            "NATIVE_OWNER_VM_BARN_DOOR_SEQUENCE_CANDIDATE_ONLY",
+        )
+        self.assertEqual(result["before"]["barn_view"], 0)
+        self.assertEqual(result["after"]["barn_view"], 1)
+        self.assertEqual(result["before"]["cursor"], [100, 200])
+        self.assertEqual(result["after"]["cursor"], [450, 150])
+        self.assertNotIn("Application", result)
+        self.assertNotIn("CurrentMode", result)
+        self.assertFalse(
+            result["proof_limits"]["airplane_completion_evidence"]
+        )
+        self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+    def test_cross_process_or_post_click_state_drift_fails_closed(self):
+        wrong_process = {"ok": True, "state": _bridge_state()}
+        wrong_process["state"]["ProcessId"] += 1
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "process identity"
+        ):
+            validate_bridge_sequence(
+                wrong_process,
+                {"ok": True, "click": _bridge_click()},
+                {
+                    "ok": True,
+                    "state": _bridge_state(barn_view=1, x=450, y=150),
+                },
+                observer_hook_path=OBSERVER_HOOK,
+            )
+
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "post-click state"
+        ):
+            validate_bridge_sequence(
+                {"ok": True, "state": _bridge_state()},
+                {"ok": True, "click": _bridge_click()},
+                {"ok": True, "state": _bridge_state()},
+                observer_hook_path=OBSERVER_HOOK,
+            )
 
 
 if __name__ == "__main__":
