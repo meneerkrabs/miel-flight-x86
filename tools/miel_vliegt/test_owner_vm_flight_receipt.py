@@ -798,6 +798,27 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     transition_contract_path=TRANSITIONS,
                 )
 
+    def test_flight_frame_rejects_drifted_source_identity_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            identity_path = Path(directory) / "source_identity.json"
+            identity = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))
+            identity["iso"]["sha256"] = "9" * 64
+            identity_path.write_text(json.dumps(identity), encoding="utf-8")
+            receipt["source"]["iso_sha256"] = "9" * 64
+            receipt["runtime_media"]["iso_sha256"] = "9" * 64
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "reviewed source identity bytes differ",
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=identity_path,
+                    transition_contract_path=TRANSITIONS,
+                )
+
     def test_runtime_media_cannot_be_spliced_across_captures(self):
         for field, value in (
             ("measurement_capture_id", "other-capture"),

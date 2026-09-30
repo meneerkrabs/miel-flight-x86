@@ -689,6 +689,13 @@ def _source_and_environment(
         raise OwnerVMFlightReceiptError(
             "receipt original media identity differs from reviewed source"
         )
+    if (
+        source_identity_path.absolute() != DEFAULT_SOURCE_IDENTITY.absolute()
+        and identity != _load(DEFAULT_SOURCE_IDENTITY, "reviewed source identity")
+    ):
+        raise OwnerVMFlightReceiptError(
+            "reviewed source identity bytes differ"
+        )
     _sha256(source["iso_sha256"], "source.iso_sha256")
     _sha256(source["executable_sha256"], "source.executable_sha256")
     _sha256(
