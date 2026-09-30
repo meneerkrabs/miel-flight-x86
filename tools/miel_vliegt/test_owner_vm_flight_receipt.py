@@ -178,6 +178,10 @@ def _arrow_receipt() -> dict:
             },
         },
         "state": {
+            "capture_id": "owner-vm-arrow-20260930-001",
+            "process_id": 4321,
+            "image_name": "MulleMeck.exe",
+            "manager_tick": 118,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -282,6 +286,10 @@ def _frame_receipt(frame: dict) -> dict:
             "measurement_complete": True,
         },
         "prerequisites": {
+            "capture_id": "owner-vm-flight-20260930-001",
+            "process_id": 4321,
+            "image_name": "MulleMeck.exe",
+            "manager_tick": 110,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -415,6 +423,51 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         )
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
 
+    def test_airplane_prerequisite_is_bound_to_its_capture_and_process(self):
+        receipt = _arrow_receipt()
+        result = validate_arrow_diagnostic(
+            receipt,
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"],
+            {
+                "capture_id": "owner-vm-arrow-20260930-001",
+                "process_id": 4321,
+                "image_name": "MulleMeck.exe",
+                "manager_tick": 118,
+            },
+        )
+
+        for field, value in (
+            ("capture_id", "owner-vm-arrow-20260930-002"),
+            ("process_id", 9999),
+            ("image_name", "Other.exe"),
+        ):
+            drifted = _arrow_receipt()
+            drifted["state"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "airplane prerequisite identity differs",
+            ):
+                validate_arrow_diagnostic(
+                    drifted,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        malformed_tick = _arrow_receipt()
+        malformed_tick["state"]["manager_tick"] = 0
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "state.manager_tick"
+        ):
+            validate_arrow_diagnostic(
+                malformed_tick,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_incomplete_airplane_blocks_before_input_diagnosis(self):
         receipt = _arrow_receipt()
         receipt["state"]["airplane_complete"] = False
@@ -527,6 +580,50 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_flight_frame_prerequisite_cannot_be_spliced_or_late(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            result = validate_flight_frame(
+                receipt,
+                frame_path,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+            self.assertEqual(
+                result["prerequisite_observation"],
+                {
+                    "capture_id": "owner-vm-flight-20260930-001",
+                    "process_id": 4321,
+                    "image_name": "MulleMeck.exe",
+                    "manager_tick": 110,
+                },
+            )
+
+        for field, value, message in (
+            (
+                "capture_id",
+                "owner-vm-arrow-20260930-001",
+                "airplane prerequisite identity differs",
+            ),
+            ("process_id", 9999, "airplane prerequisite identity differs"),
+            ("image_name", "Other.exe", "airplane prerequisite identity differs"),
+            ("manager_tick", 120, "prerequisite chronology differs"),
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["prerequisites"][field] = value
+                with self.subTest(field=field), self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError, message
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
     def test_flight_frame_requires_matching_runtime_media_hashes(self):
         with tempfile.TemporaryDirectory() as directory:

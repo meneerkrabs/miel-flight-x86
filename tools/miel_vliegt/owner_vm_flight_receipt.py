@@ -75,6 +75,7 @@ KEY_EVENT_KEYS = {
     "mode_set_observed",
 }
 ARROW_STATE_KEYS = {
+    "capture_id", "process_id", "image_name", "manager_tick",
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -827,12 +828,36 @@ def _routes(path: Path, executable_sha256: str, edition: str) -> dict[str, Any]:
 
 
 def _validate_airplane_prerequisite(
-    value: Any, routes: dict[str, Any]
-) -> bool:
+    value: Any,
+    routes: dict[str, Any],
+    *,
+    capture_id: str,
+    process: dict[str, Any],
+) -> tuple[bool, dict[str, Any]]:
     state = _fields(value, ARROW_STATE_KEYS, "airplane prerequisite")
     if routes.get("airplane_complete_predicate") != AIRPLANE_COMPLETE_PREDICATE:
         raise OwnerVMFlightReceiptError(
             "reviewed airplane completion predicate drifted"
+        )
+    state_capture_id = state["capture_id"]
+    state_process_id = _integer(
+        state["process_id"], "state.process_id", minimum=1
+    )
+    state_image_name = _module_name(
+        state["image_name"], "state.image_name"
+    )
+    manager_tick = _integer(
+        state["manager_tick"], "state.manager_tick", minimum=1
+    )
+    if (
+        not isinstance(state_capture_id, str)
+        or CAPTURE_ID.fullmatch(state_capture_id) is None
+        or state_capture_id != capture_id
+        or state_process_id != process["pid"]
+        or state_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "airplane prerequisite identity differs"
         )
     if (
         state["current_mode"] != "mode_barn"
@@ -859,7 +884,12 @@ def _validate_airplane_prerequisite(
         raise OwnerVMFlightReceiptError(
             "airplane completion predicate disagrees with observed state"
         )
-    return exact_complete
+    return exact_complete, {
+        "capture_id": state_capture_id,
+        "process_id": state_process_id,
+        "image_name": state_image_name,
+        "manager_tick": manager_tick,
+    }
 
 
 def _top(receipt: dict[str, Any], expected: set[str], protocol: str) -> None:
@@ -895,8 +925,11 @@ def validate_arrow_diagnostic(
         source["edition"],
     )
     input_value = _fields(receipt.get("input"), ARROW_INPUT_KEYS, "input")
-    airplane_complete = _validate_airplane_prerequisite(
-        receipt.get("state"), routes
+    airplane_complete, prerequisite_observation = _validate_airplane_prerequisite(
+        receipt.get("state"),
+        routes,
+        capture_id=receipt["capture_id"],
+        process=process,
     )
     proof = _fields(
         receipt.get("proof_limits"), ARROW_PROOF_KEYS, "proof_limits"
@@ -974,6 +1007,7 @@ def validate_arrow_diagnostic(
         "source_identities": {
             key: source[key] for key in sorted(SOURCE_KEYS)
         },
+        "prerequisite_observation": prerequisite_observation,
         "environment": environment,
         "process": process,
         "static_prerequisite": {
@@ -1123,8 +1157,11 @@ def validate_flight_frame(
         receipt["capture_id"],
         process,
     )
-    airplane_complete = _validate_airplane_prerequisite(
-        receipt.get("prerequisites"), routes
+    airplane_complete, prerequisite_observation = _validate_airplane_prerequisite(
+        receipt.get("prerequisites"),
+        routes,
+        capture_id=receipt["capture_id"],
+        process=process,
     )
     if not airplane_complete:
         raise OwnerVMFlightReceiptError(
@@ -1285,6 +1322,15 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError(
             "owner input chronology differs"
         )
+    prerequisite_tick = prerequisite_observation["manager_tick"]
+    if not (
+        login_submit_tick < prerequisite_tick
+        and prerequisite_tick < barn_escape_tick
+        and prerequisite_tick <= transitions[0]["manager_tick"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Flight frame prerequisite chronology differs"
+        )
 
     runtime = _fields(receipt.get("runtime"), RUNTIME_KEYS, "runtime")
     manager_ticks = _integer(
@@ -1292,6 +1338,7 @@ def validate_flight_frame(
     )
     if max(
         login_submit_tick,
+        prerequisite_tick,
         barn_escape_tick,
         faster_key_down_tick,
         faster_key_up_tick,
@@ -1515,6 +1562,7 @@ def validate_flight_frame(
         "process": process,
         "input": input_value,
         "runtime_media": runtime_media,
+        "prerequisite_observation": prerequisite_observation,
         "prerequisites": {
             "current_mode": "mode_barn",
             "pending_mode": None,
