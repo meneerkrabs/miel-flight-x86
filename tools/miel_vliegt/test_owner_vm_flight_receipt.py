@@ -235,6 +235,9 @@ def _frame_receipt(frame: dict) -> dict:
             "system_directinput_create_hresult": "0x80070057",
             "owner_adapter_hosted_runner_validated": False,
             "directinput_getdevicedata_events": 19,
+            "getdevicedata_record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
+            "getdevicedata_stream_byte_count": 19 * 16,
+            "getdevicedata_stream_sha256": "7" * 64,
             "login_submit_observed": True,
             "login_submit_manager_tick": 100,
             "login_submit_event_id": 4,
@@ -454,6 +457,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             _identity()["executable_sha256"],
         )
         self.assertEqual(
+            result["input"]["getdevicedata_stream_sha256"], "7" * 64
+        )
+        self.assertEqual(
             result["runtime_media"]["measurement_capture_id"],
             "owner-vm-flight-20260930-001",
         )
@@ -602,6 +608,28 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_owner_input_stream_identity_is_fail_closed(self):
+        mutations = (
+            ("getdevicedata_record_format", "DIRECTINPUT_BUFFERED_8_BYTE"),
+            ("getdevicedata_stream_byte_count", 18 * 16),
+            ("getdevicedata_stream_sha256", "not-a-hash"),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["input"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "owner input stream identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
     def test_create_result_caller_module_identity_is_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:

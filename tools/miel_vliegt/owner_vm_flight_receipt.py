@@ -87,6 +87,8 @@ ARROW_TOP_KEYS = {
 FRAME_INPUT_KEYS = {
     "adapter_sha256", "adapter_record_bytes",
     "directinput_getdevicedata_events", "login_submit_observed",
+    "getdevicedata_record_format", "getdevicedata_stream_byte_count",
+    "getdevicedata_stream_sha256",
     "login_submit_manager_tick", "login_submit_event_id",
     "barn_escape_observed", "barn_escape_manager_tick",
     "barn_escape_event_id", "faster_key_scan_code",
@@ -1096,6 +1098,18 @@ def validate_flight_frame(
         "input.getdevicedata_events",
         minimum=1,
     )
+    if (
+        input_value["getdevicedata_record_format"]
+        != "DIRECTINPUT_BUFFERED_16_BYTE_LE"
+        or type(input_value["getdevicedata_stream_byte_count"]) is not int
+        or input_value["getdevicedata_stream_byte_count"]
+        != event_count * 16
+        or SHA256.fullmatch(input_value["getdevicedata_stream_sha256"])
+        is None
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner input stream identity differs"
+        )
     _boolean(input_value["login_submit_observed"], "input.login", True)
     _boolean(input_value["barn_escape_observed"], "input.escape", True)
     login_submit_tick = _integer(
