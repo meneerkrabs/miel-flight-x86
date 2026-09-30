@@ -209,6 +209,9 @@ def _arrow_receipt() -> dict:
 def _transition_records() -> list[dict]:
     return [
         {
+            "capture_id": "owner-vm-flight-20260930-001",
+            "process_id": 4321,
+            "image_name": "MulleMeck.exe",
             "id": "barn.mygghanget",
             "source_mode": "mode_barn",
             "target_mode": "mode_mygghanget",
@@ -217,6 +220,9 @@ def _transition_records() -> list[dict]:
             "observed": True,
         },
         {
+            "capture_id": "owner-vm-flight-20260930-001",
+            "process_id": 4321,
+            "image_name": "MulleMeck.exe",
             "id": "location.departure.mode_mygghanget",
             "source_mode": "mode_mygghanget",
             "target_mode": "mode_fly",
@@ -1161,6 +1167,29 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_transitions_cannot_be_spliced_across_captures(self):
+        for row_index in (0, 1):
+            for field, value in (
+                ("capture_id", "owner-vm-arrow-20260930-001"),
+                ("process_id", 9999),
+                ("image_name", "Other.exe"),
+            ):
+                with self.subTest(row=row_index, field=field), \
+                        tempfile.TemporaryDirectory() as directory:
+                    frame_path, frame = _frame_file(Path(directory))
+                    receipt = _frame_receipt(frame)
+                    receipt["transitions"][row_index][field] = value
+                    with self.assertRaisesRegex(
+                        OwnerVMFlightReceiptError,
+                        "Flight frame transition capture identity differs",
+                    ):
+                        validate_flight_frame(
+                            receipt,
+                            frame_path,
+                            source_identity_path=SOURCE_IDENTITY,
+                            transition_contract_path=TRANSITIONS,
+                        )
 
     def test_duplicate_transition_cannot_replace_the_departure_edge(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -108,8 +108,8 @@ FRAME_INPUT_KEYS = {
     "owner_adapter_hosted_runner_validated",
 }
 TRANSITION_KEYS = {
-    "id", "source_mode", "target_mode", "caller_site", "manager_tick",
-    "observed",
+    "capture_id", "process_id", "image_name", "id", "source_mode",
+    "target_mode", "caller_site", "manager_tick", "observed",
 }
 RUNTIME_MEDIA_KEYS = {
     "measurement_capture_id", "measured_process_id", "measured_image_name",
@@ -1124,9 +1124,28 @@ def validate_arrow_diagnostic(
 
 
 def _validate_transition(
-    value: Any, expected: dict[str, Any], label: str
+    value: Any,
+    expected: dict[str, Any],
+    label: str,
+    *,
+    capture_id: str,
+    process: dict[str, Any],
 ) -> dict[str, Any]:
     record = _fields(value, TRANSITION_KEYS, label)
+    transition_process_id = _integer(
+        record["process_id"], f"{label}.process_id", minimum=1
+    )
+    transition_image_name = _module_name(
+        record["image_name"], f"{label}.image_name"
+    )
+    if (
+        record["capture_id"] != capture_id
+        or transition_process_id != process["pid"]
+        or transition_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Flight frame transition capture identity differs"
+        )
     _integer(record["manager_tick"], f"{label}.manager_tick", minimum=1)
     allowed_sites = {expected["address"]}
     alternates = expected.get("alternate_addresses", [])
@@ -1376,7 +1395,11 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError("Flight frame transition identities differ")
     transitions = [
         _validate_transition(
-            record, expected_transitions[record["id"]], f"transition[{index}]"
+            record,
+            expected_transitions[record["id"]],
+            f"transition[{index}]",
+            capture_id=receipt["capture_id"],
+            process=process,
         )
         for index, record in enumerate(raw_transitions)
     ]
