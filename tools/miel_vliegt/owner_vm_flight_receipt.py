@@ -501,8 +501,21 @@ def validate_bridge_health(value: Any) -> dict[str, str]:
     return {"service": health["service"], "vm": health["vm"]}
 
 
-def _reviewed_media(path: Path) -> dict[str, Any]:
-    identity = _load(path, "reviewed source identity")
+def _load_source_identity(path: Path) -> tuple[dict[str, Any], bytes]:
+    try:
+        raw = path.read_bytes()
+        identity = _decode(
+            raw.decode(encoding="utf-8"), "reviewed source identity"
+        )
+    except (OSError, UnicodeDecodeError) as error:
+        raise OwnerVMFlightReceiptError(
+            f"cannot read reviewed source identity: {path}"
+        ) from error
+    return identity, raw
+
+
+def _reviewed_media_and_bytes(path: Path) -> tuple[dict[str, Any], bytes]:
+    identity, raw = _load_source_identity(path)
     if identity.get("schema") != 1:
         raise OwnerVMFlightReceiptError("reviewed source identity differs")
     media = {}
@@ -527,12 +540,22 @@ def _reviewed_media(path: Path) -> dict[str, Any]:
         "executable": media["executable"],
     }
     if path.absolute() != DEFAULT_SOURCE_IDENTITY.absolute():
-        expected = _reviewed_media(DEFAULT_SOURCE_IDENTITY)
+        expected, expected_raw = _reviewed_media_and_bytes(
+            DEFAULT_SOURCE_IDENTITY
+        )
         if reviewed != expected:
             raise OwnerVMFlightReceiptError(
                 "reviewed original media identity differs"
             )
-    return reviewed
+        if raw != expected_raw:
+            raise OwnerVMFlightReceiptError(
+                "reviewed source identity bytes differ"
+            )
+    return reviewed, raw
+
+
+def _reviewed_media(path: Path) -> dict[str, Any]:
+    return _reviewed_media_and_bytes(path)[0]
 
 
 def classify_bridge_state(
@@ -689,7 +712,7 @@ def _source_and_environment(
         receipt.get("environment"), ENVIRONMENT_KEYS, "environment"
     )
     process = _fields(receipt.get("process"), PROCESS_KEYS, "process")
-    identity = _load(source_identity_path, "reviewed source identity")
+    identity, identity_raw = _load_source_identity(source_identity_path)
     identity_iso = identity.get("iso")
     identity_executable = identity.get("executable")
     if (
@@ -705,7 +728,10 @@ def _source_and_environment(
         )
     if (
         source_identity_path.absolute() != DEFAULT_SOURCE_IDENTITY.absolute()
-        and identity != _load(DEFAULT_SOURCE_IDENTITY, "reviewed source identity")
+        and (
+            identity,
+            identity_raw,
+        ) != _load_source_identity(DEFAULT_SOURCE_IDENTITY)
     ):
         raise OwnerVMFlightReceiptError(
             "reviewed source identity bytes differ"

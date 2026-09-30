@@ -1628,6 +1628,38 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                     source_identity_path=identity_path,
                 )
 
+    def test_reformatted_source_identity_is_not_an_exact_mirror(self):
+        identity = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))
+        rendered = json.dumps(identity, separators=(",", ":"))
+
+        with tempfile.TemporaryDirectory() as directory, \
+                self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "reviewed source identity bytes differ",
+                ):
+            identity_path = Path(directory) / "source_identity.json"
+            identity_path.write_text(rendered, encoding="utf-8")
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": _bridge_state()},
+                source_identity_path=identity_path,
+            )
+
+        with tempfile.TemporaryDirectory() as directory, \
+                self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "reviewed source identity bytes differ",
+                ):
+            frame_path, frame = _frame_file(Path(directory))
+            identity_path = Path(directory) / "source_identity.json"
+            identity_path.write_text(rendered, encoding="utf-8")
+            validate_flight_frame(
+                _frame_receipt(frame),
+                frame_path,
+                source_identity_path=identity_path,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_bridge_state_is_available_through_a_public_command(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
