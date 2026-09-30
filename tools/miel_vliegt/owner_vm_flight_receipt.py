@@ -1674,9 +1674,18 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError("frame dimensions do not match byte count")
     if hashlib.sha256(pixels).hexdigest() != frame["pixel_sha256"]:
         raise OwnerVMFlightReceiptError("frame bytes drifted from declared identity")
-    samples = {pixels[index:index + 4] for index in range(0, len(pixels), 4)}
-    if len(samples) < 2:
+    rgb_samples = {
+        pixels[index:index + 3] for index in range(0, len(pixels), 4)
+    }
+    rgba_samples = {
+        pixels[index:index + 4] for index in range(0, len(pixels), 4)
+    }
+    if len(rgba_samples) < 2:
         raise OwnerVMFlightReceiptError("frame bytes contain no actual pixel variation")
+    if len(rgb_samples) < 2:
+        raise OwnerVMFlightReceiptError(
+            "frame bytes contain no actual RGB pixel variation"
+        )
 
     proof = _fields(
         receipt.get("proof_limits"), FRAME_PROOF_KEYS, "proof_limits"
@@ -1736,6 +1745,7 @@ def validate_flight_frame(
             "manager_tick": frame_manager_tick,
             "pixel_sha256": frame["pixel_sha256"],
             "changed_pixel_count": changed,
+            "unique_rgb_values": len(rgb_samples),
             "byte_count": len(pixels),
         },
         "proof_limits": proof,

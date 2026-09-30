@@ -659,6 +659,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             "0x0042a95e",
         )
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
+        self.assertEqual(result["frame"]["unique_rgb_values"], 2)
         self.assertEqual(result["frame"]["manager_tick"], 1502)
         self.assertEqual(
             result["frame"]["capture_id"],
@@ -1256,6 +1257,26 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             }
             with self.assertRaisesRegex(
                 OwnerVMFlightReceiptError, "no actual pixel variation"
+            ):
+                validate_flight_frame(
+                    _frame_receipt(frame),
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_alpha_only_frame_variation_is_not_flight_pixel_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path = Path(directory) / "flight-frame.rgba"
+            payload = bytearray(FRAME_WIDTH * FRAME_HEIGHT * 4)
+            payload[3] = 1
+            frame_path.write_bytes(payload)
+            frame = _frame_file(Path(directory))[1]
+            frame_path.write_bytes(payload)
+            frame["pixel_sha256"] = hashlib.sha256(payload).hexdigest()
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "frame bytes contain no actual RGB pixel variation",
             ):
                 validate_flight_frame(
                     _frame_receipt(frame),
