@@ -87,7 +87,9 @@ ARROW_TOP_KEYS = {
 FRAME_INPUT_KEYS = {
     "adapter_sha256", "adapter_record_bytes",
     "directinput_getdevicedata_events", "login_submit_observed",
-    "barn_escape_observed", "faster_key_scan_code",
+    "login_submit_manager_tick", "barn_escape_observed",
+    "barn_escape_manager_tick", "faster_key_scan_code",
+    "faster_key_down_manager_tick", "faster_key_up_manager_tick",
     "faster_key_held_until_departure", "system_directinput_create_hresult",
     "owner_adapter_hosted_runner_validated",
 }
@@ -1094,6 +1096,26 @@ def validate_flight_frame(
     )
     _boolean(input_value["login_submit_observed"], "input.login", True)
     _boolean(input_value["barn_escape_observed"], "input.escape", True)
+    login_submit_tick = _integer(
+        input_value["login_submit_manager_tick"],
+        "input.login_submit_manager_tick",
+        minimum=1,
+    )
+    barn_escape_tick = _integer(
+        input_value["barn_escape_manager_tick"],
+        "input.barn_escape_manager_tick",
+        minimum=1,
+    )
+    faster_key_down_tick = _integer(
+        input_value["faster_key_down_manager_tick"],
+        "input.faster_key_down_manager_tick",
+        minimum=1,
+    )
+    faster_key_up_tick = _integer(
+        input_value["faster_key_up_manager_tick"],
+        "input.faster_key_up_manager_tick",
+        minimum=1,
+    )
     if _scan_code(
         input_value["faster_key_scan_code"], "input.faster_key_scan_code"
     ) not in FASTER_KEY_SCAN_CODES:
@@ -1136,11 +1158,32 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError(
             "Flight frame transition chronology differs"
         )
+    if not (
+        login_submit_tick < transitions[0]["manager_tick"]
+        and login_submit_tick <= barn_escape_tick
+        and barn_escape_tick <= transitions[0]["manager_tick"]
+        and transitions[0]["manager_tick"] < faster_key_down_tick
+        and faster_key_down_tick <= transitions[1]["manager_tick"]
+        and transitions[1]["manager_tick"] <= faster_key_up_tick
+        and faster_key_down_tick < faster_key_up_tick
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner input chronology differs"
+        )
 
     runtime = _fields(receipt.get("runtime"), RUNTIME_KEYS, "runtime")
     manager_ticks = _integer(
         runtime["manager_ticks"], "runtime.manager_ticks", minimum=1
     )
+    if max(
+        login_submit_tick,
+        barn_escape_tick,
+        faster_key_down_tick,
+        faster_key_up_tick,
+    ) > manager_ticks:
+        raise OwnerVMFlightReceiptError(
+            "owner input chronology differs"
+        )
     create_calls = _integer(runtime["create_calls"], "runtime.create_calls", minimum=1)
     successful_calls = _integer(
         runtime["successful_create_calls"],
