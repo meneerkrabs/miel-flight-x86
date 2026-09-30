@@ -237,6 +237,13 @@ def _frame_receipt(frame: dict) -> dict:
             "faster_key_held_until_departure": True,
         },
         "transitions": _transition_records(),
+        "runtime_media": {
+            "iso_sha256": _identity()["iso_sha256"],
+            "executable_sha256": _identity()["executable_sha256"],
+            "measurement_method": "SHA256_FULL_FILE",
+            "measurement_tool_sha256": "6" * 64,
+            "measurement_complete": True,
+        },
         "prerequisites": {
             "current_mode": "mode_barn",
             "pending_mode": None,
@@ -280,6 +287,7 @@ def _frame_receipt(frame: dict) -> dict:
         "proof_limits": {
             "owner_vm_only": True,
             "hosted_runner_validated": False,
+            "independent_runtime_media_hash": False,
             "web_pixel_comparison_performed": False,
             "independent_web_source_compared": False,
             "nine_dimension_release_evidence": False,
@@ -409,6 +417,13 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
         )
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
         self.assertEqual(result["frame"]["manager_tick"], 1502)
+        self.assertEqual(
+            result["runtime_media"]["executable_sha256"],
+            _identity()["executable_sha256"],
+        )
+        self.assertFalse(
+            result["proof_limits"]["independent_runtime_media_hash"]
+        )
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
         self.assertFalse(result["proof_limits"]["hosted_runner_validated"])
 
@@ -419,6 +434,21 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             receipt["prerequisites"]["airplane_completion_bits"] = 0x1FE
             with self.assertRaisesRegex(
                 OwnerVMFlightReceiptError, "airplane completion predicate"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_flight_frame_requires_matching_runtime_media_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime_media"]["executable_sha256"] = "7" * 64
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "runtime media identity differs"
             ):
                 validate_flight_frame(
                     receipt,

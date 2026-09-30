@@ -93,6 +93,10 @@ TRANSITION_KEYS = {
     "id", "source_mode", "target_mode", "caller_site", "manager_tick",
     "observed",
 }
+RUNTIME_MEDIA_KEYS = {
+    "iso_sha256", "executable_sha256", "measurement_method",
+    "measurement_tool_sha256", "measurement_complete",
+}
 RUNTIME_KEYS = {
     "current_mode", "manager_ticks", "direct3d7_dll_loaded", "create_method",
     "device_interface", "create_calls", "successful_create_calls",
@@ -110,13 +114,14 @@ FRAME_KEYS = {
 }
 FRAME_PROOF_KEYS = {
     "owner_vm_only", "hosted_runner_validated",
-    "web_pixel_comparison_performed", "independent_web_source_compared",
-    "nine_dimension_release_evidence", "native_parity_evidence",
+    "independent_runtime_media_hash", "web_pixel_comparison_performed",
+    "independent_web_source_compared", "nine_dimension_release_evidence",
+    "native_parity_evidence",
 }
 FRAME_TOP_KEYS = {
     "schema", "protocol", "capture_id", "source", "environment", "process",
-    "input", "prerequisites", "transitions", "runtime", "frame",
-    "proof_limits",
+    "input", "runtime_media", "prerequisites", "transitions", "runtime",
+    "frame", "proof_limits",
 }
 BRIDGE_STATE_KEYS = {
     "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
@@ -965,6 +970,41 @@ def _validate_transition(
     return record
 
 
+def _validate_runtime_media(
+    value: Any, source: dict[str, Any]
+) -> dict[str, Any]:
+    media = _fields(value, RUNTIME_MEDIA_KEYS, "runtime media")
+    iso_sha256 = _sha256(media["iso_sha256"], "runtime media.iso_sha256")
+    executable_sha256 = _sha256(
+        media["executable_sha256"], "runtime media.executable_sha256"
+    )
+    measurement_tool_sha256 = _sha256(
+        media["measurement_tool_sha256"],
+        "runtime media.measurement_tool_sha256",
+    )
+    if (
+        iso_sha256 != source["iso_sha256"]
+        or executable_sha256 != source["executable_sha256"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "runtime media identity differs from reviewed source"
+        )
+    if media["measurement_method"] != "SHA256_FULL_FILE":
+        raise OwnerVMFlightReceiptError("runtime media measurement differs")
+    _boolean(
+        media["measurement_complete"],
+        "runtime media.measurement_complete",
+        True,
+    )
+    return {
+        "iso_sha256": iso_sha256,
+        "executable_sha256": executable_sha256,
+        "measurement_method": media["measurement_method"],
+        "measurement_tool_sha256": measurement_tool_sha256,
+        "measurement_complete": True,
+    }
+
+
 def validate_flight_frame(
     receipt: dict[str, Any],
     frame_path: Path,
@@ -986,6 +1026,9 @@ def validate_flight_frame(
         transition_contract_path,
         source["executable_sha256"],
         source["edition"],
+    )
+    runtime_media = _validate_runtime_media(
+        receipt.get("runtime_media"), source
     )
     airplane_complete = _validate_airplane_prerequisite(
         receipt.get("prerequisites"), routes
@@ -1226,6 +1269,7 @@ def validate_flight_frame(
         "environment": environment,
         "process": process,
         "input": input_value,
+        "runtime_media": runtime_media,
         "prerequisites": {
             "current_mode": "mode_barn",
             "pending_mode": None,
