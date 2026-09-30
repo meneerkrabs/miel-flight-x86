@@ -53,7 +53,8 @@ SOURCE_KEYS = {
     "transition_contract_blob", "capture_tool_sha256",
 }
 ENVIRONMENT_KEYS = {
-    "owner", "guest", "architecture", "audio", "renderer",
+    "owner", "guest", "architecture", "audio", "wave_out_devices",
+    "audio_service_ready", "renderer",
     "hosted_runner_validated",
 }
 PROCESS_KEYS = {
@@ -717,6 +718,18 @@ def _source_and_environment(
     if any(environment.get(key) != value for key, value in expected_environment.items()):
         raise OwnerVMFlightReceiptError(
             "owner-VM environment identity differs"
+        )
+    if (
+        type(environment["wave_out_devices"]) is not int
+        or environment["wave_out_devices"] < 1
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner-VM audio readiness differs"
+        )
+    audio_service_ready = environment["audio_service_ready"]
+    if type(audio_service_ready) is not bool or not audio_service_ready:
+        raise OwnerVMFlightReceiptError(
+            "owner-VM audio readiness differs"
         )
     _boolean(environment["hosted_runner_validated"], "environment.hosted", False)
 

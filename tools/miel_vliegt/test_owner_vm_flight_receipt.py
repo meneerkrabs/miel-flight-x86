@@ -76,6 +76,8 @@ def _environment() -> dict:
         "guest": "WINDOWS_11",
         "architecture": "ARM64_HOST_X86_GAME",
         "audio": "VIRTUAL_OUTPUT_PRESENT",
+        "wave_out_devices": 1,
+        "audio_service_ready": True,
         "renderer": "SOFTWARE",
         "hosted_runner_validated": False,
     }
@@ -321,6 +323,31 @@ def _frame_receipt(frame: dict) -> dict:
 
 
 class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
+    def test_owner_environment_records_audio_readiness(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(result["environment"]["wave_out_devices"], 1)
+        self.assertTrue(result["environment"]["audio_service_ready"])
+
+        for field, value in (
+            ("wave_out_devices", 0),
+            ("audio_service_ready", False),
+        ):
+            receipt = _arrow_receipt()
+            receipt["environment"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "owner-VM audio readiness differs",
+            ):
+                validate_arrow_diagnostic(
+                    receipt,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
     def test_arrow_receipt_binds_public_source_objects(self):
         receipt = _arrow_receipt()
         result = validate_arrow_diagnostic(
