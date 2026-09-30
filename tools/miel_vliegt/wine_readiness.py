@@ -22,10 +22,11 @@ OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
 TRANSPORT_SENTINEL = "MIEL_WINE_TRANSPORT_OK"
 WINEBOOT_SENTINEL = "wineboot completed"
-REQUIRED_COM_CLASSES = frozenset({
-    "{47D4D946-62E8-11CF-93BC-444553540000}",
-    "{BCDE0395-E52F-467C-8E3D-C4579291692E}",
-})
+REQUIRED_COM_DLLS = {
+    "{47D4D946-62E8-11CF-93BC-444553540000}": "dsound.dll",
+    "{BCDE0395-E52F-467C-8E3D-C4579291692E}": "mmdevapi.dll",
+}
+REQUIRED_COM_CLASSES = frozenset(REQUIRED_COM_DLLS)
 CLSID = re.compile(r"^\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RPCSS_SERVICE_NAME = re.compile(
@@ -163,12 +164,15 @@ def _registry_proven(text: str, clsid: str) -> bool:
     expected_path = (
         f"HKEY_CLASSES_ROOT\\CLSID\\{clsid}\\InprocServer32".lower()
     )
+    expected_value = (
+        f"c:\\windows\\system32\\{REQUIRED_COM_DLLS[clsid]}"
+    )
     lines = text.splitlines()
     for header, value_line in zip(lines, lines[1:]):
         compact = header.replace("/", "\\")
         if compact.lower() == expected_path \
                 and REGISTRY_DEFAULT_VALUE.fullmatch(value_line) is not None:
-            return True
+            return value_line.split()[-1].lower() == expected_value
     return False
 
 

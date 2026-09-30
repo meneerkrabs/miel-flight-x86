@@ -302,6 +302,34 @@ class WineReadinessTests(unittest.TestCase):
                     receipt["com"]["registry"][DIRECTSOUND]
                 )
 
+    def test_registry_class_must_resolve_its_reviewed_dll(self):
+        for dll in ("mmdevapi.dll", "unrelated.dll"):
+            with self.subTest(dll=dll):
+                with tempfile.TemporaryDirectory() as raw:
+                    directory = Path(raw)
+                    observation = self.observation(directory)
+                    registry = next(
+                        row for row in observation["phases"]
+                        if row["id"] == f"com-registry:{DIRECTSOUND}"
+                    )
+                    registry_path = directory / registry["log"]["path"]
+                    registry_path.write_text(
+                        f"HKEY_CLASSES_ROOT\\CLSID\\{DIRECTSOUND}"
+                        "\\InprocServer32\n"
+                        f"    (Default)    REG_SZ    C:\\windows\\system32\\{dll}\n",
+                        encoding="utf-8",
+                    )
+                    registry["log"]["sha256"] = hashlib.sha256(
+                        registry_path.read_bytes()
+                    ).hexdigest()
+                    receipt = wine_readiness.validate_observation(
+                        observation, evidence_root=directory,
+                    )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"]["required_com_registered"])
+                self.assertFalse(receipt["com"]["registry"][DIRECTSOUND])
+
     def test_com_activation_sentinel_must_be_a_standalone_record(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
