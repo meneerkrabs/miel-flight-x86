@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,8 @@ BARN_LIFECYCLE = re.compile(
 SOURCE_KEYS = {
     "edition", "iso_sha256", "executable_sha256",
     "transition_contract_sha256", "public_source_commit",
-    "capture_tool_sha256",
+    "public_source_tree", "validator_source_blob", "source_identity_blob",
+    "transition_contract_blob", "capture_tool_sha256",
 }
 ENVIRONMENT_KEYS = {
     "owner", "guest", "architecture", "audio", "renderer",
@@ -253,6 +255,21 @@ def _sha256_file(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
         raise OwnerVMFlightReceiptError(f"cannot hash {path}") from error
+
+
+def _git_output(arguments: list[str]) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), *arguments],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise OwnerVMFlightReceiptError(
+            "receipt public source revision is unavailable"
+        ) from error
 
 
 def load_bridge_success(raw: str, requested: str) -> dict[str, Any]:
@@ -620,14 +637,55 @@ def _source_and_environment(
         transition_contract_path
     ):
         raise OwnerVMFlightReceiptError("transition contract bytes drifted")
-    _commit(source["public_source_commit"], "source.public_source_commit")
+    public_commit = _commit(
+        source["public_source_commit"], "source.public_source_commit"
+    )
     if (
         expected_public_commit is not None
-        and source["public_source_commit"] != expected_public_commit
+        and public_commit != expected_public_commit
     ):
         _commit(expected_public_commit, "reviewer expected public source commit")
         raise OwnerVMFlightReceiptError(
             "receipt public source commit differs from reviewer expectation"
+        )
+    for field in (
+        "public_source_tree", "validator_source_blob",
+        "source_identity_blob", "transition_contract_blob",
+    ):
+        _commit(source[field], f"source.{field}")
+    if _git_output(["cat-file", "-t", public_commit]) != "commit":
+        raise OwnerVMFlightReceiptError(
+            "receipt public source revision is not a commit"
+        )
+    expected_objects = {
+        "public_source_tree": _git_output(
+            ["rev-parse", f"{public_commit}^{{tree}}"]
+        ),
+        "validator_source_blob": _git_output(
+            [
+                "rev-parse",
+                f"{public_commit}:tools/miel_vliegt/owner_vm_flight_receipt.py",
+            ]
+        ),
+        "source_identity_blob": _git_output(
+            [
+                "rev-parse",
+                f"{public_commit}:content/miel_vliegt/source_identity.json",
+            ]
+        ),
+        "transition_contract_blob": _git_output(
+            [
+                "rev-parse",
+                f"{public_commit}:content/miel_vliegt/native_scene_transitions.json",
+            ]
+        ),
+    }
+    if any(
+        source[field] != expected
+        for field, expected in expected_objects.items()
+    ):
+        raise OwnerVMFlightReceiptError(
+            "receipt public source revision objects differ"
         )
     _sha256(source["capture_tool_sha256"], "source.capture_tool_sha256")
 

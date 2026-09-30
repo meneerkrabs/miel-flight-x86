@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import lru_cache
 from pathlib import Path
 
 from tools.miel_vliegt.owner_vm_flight_receipt import (
@@ -28,8 +29,22 @@ FRAME_WIDTH = 640
 FRAME_HEIGHT = 457
 
 
+def _git(*arguments: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *arguments],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).stdout.strip()
+
+
+_git = lru_cache(maxsize=None)(_git)
+
+
 def _identity() -> dict:
     value = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))
+    commit = _git("rev-parse", "HEAD")
     return {
         "edition": value["edition"],
         "iso_sha256": value["iso"]["sha256"],
@@ -37,7 +52,20 @@ def _identity() -> dict:
         "transition_contract_sha256": hashlib.sha256(
             TRANSITIONS.read_bytes()
         ).hexdigest(),
-        "public_source_commit": "1" * 40,
+        "public_source_commit": commit,
+        "public_source_tree": _git("rev-parse", f"{commit}^{{tree}}"),
+        "validator_source_blob": _git(
+            "rev-parse",
+            f"{commit}:tools/miel_vliegt/owner_vm_flight_receipt.py",
+        ),
+        "source_identity_blob": _git(
+            "rev-parse",
+            f"{commit}:content/miel_vliegt/source_identity.json",
+        ),
+        "transition_contract_blob": _git(
+            "rev-parse",
+            f"{commit}:content/miel_vliegt/native_scene_transitions.json",
+        ),
         "capture_tool_sha256": "2" * 64,
     }
 
@@ -261,6 +289,32 @@ def _frame_receipt(frame: dict) -> dict:
 
 
 class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
+    def test_arrow_receipt_binds_public_source_objects(self):
+        receipt = _arrow_receipt()
+        result = validate_arrow_diagnostic(
+            receipt,
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["source_identities"]["public_source_tree"],
+            _identity()["public_source_tree"],
+        )
+        self.assertEqual(
+            result["source_identities"]["validator_source_blob"],
+            _identity()["validator_source_blob"],
+        )
+
+        receipt["source"]["public_source_tree"] = "0" * 40
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "public source revision"
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_arrow_highlight_alone_names_the_missing_escape_dispatch(self):
         result = validate_arrow_diagnostic(
             _arrow_receipt(),
