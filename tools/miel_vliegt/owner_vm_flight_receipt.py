@@ -88,7 +88,8 @@ FRAME_INPUT_KEYS = {
     "owner_adapter_hosted_runner_validated",
 }
 TRANSITION_KEYS = {
-    "id", "source_mode", "target_mode", "caller_site", "observed",
+    "id", "source_mode", "target_mode", "caller_site", "manager_tick",
+    "observed",
 }
 RUNTIME_KEYS = {
     "current_mode", "manager_ticks", "direct3d7_dll_loaded", "create_method",
@@ -97,10 +98,11 @@ RUNTIME_KEYS = {
 }
 CREATE_RESULT_KEYS = {
     "caller_module", "caller_module_sha256", "caller_address_kind",
-    "caller_site", "hresult", "device_nonnull",
+    "caller_site", "manager_tick", "hresult", "device_nonnull",
 }
 FRAME_KEYS = {
-    "width", "height", "format", "sequence", "capture_surface",
+    "width", "height", "format", "sequence", "manager_tick",
+    "capture_surface",
     "conversion", "pixel_sha256", "changed_pixel_count",
     "captured_before_process_exit",
 }
@@ -888,6 +890,7 @@ def _validate_transition(
     value: Any, expected: dict[str, Any], label: str
 ) -> dict[str, Any]:
     record = _fields(value, TRANSITION_KEYS, label)
+    _integer(record["manager_tick"], f"{label}.manager_tick", minimum=1)
     allowed_sites = {expected["address"]}
     alternates = expected.get("alternate_addresses", [])
     if alternates:
@@ -996,6 +999,10 @@ def validate_flight_frame(
         )
         for index, record in enumerate(raw_transitions)
     ]
+    if transitions[0]["manager_tick"] >= transitions[1]["manager_tick"]:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame transition chronology differs"
+        )
 
     runtime = _fields(receipt.get("runtime"), RUNTIME_KEYS, "runtime")
     manager_ticks = _integer(
@@ -1015,6 +1022,7 @@ def validate_flight_frame(
     if not isinstance(create_results, list) or len(create_results) != create_calls:
         raise OwnerVMFlightReceiptError("Direct3D7 result count differs")
     normalized_results = []
+    previous_create_tick = transitions[-1]["manager_tick"]
     for index, result in enumerate(create_results):
         row = _fields(result, CREATE_RESULT_KEYS, f"runtime.create_results[{index}]")
         caller_module = _module_name(
@@ -1040,11 +1048,22 @@ def validate_flight_frame(
             row["caller_site"],
             f"runtime.create_results[{index}].caller_site",
         )
+        manager_tick = _integer(
+            row["manager_tick"],
+            f"runtime.create_results[{index}].manager_tick",
+            minimum=1,
+        )
+        if manager_tick < previous_create_tick:
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 CreateDevice chronology differs"
+            )
+        previous_create_tick = manager_tick
         normalized_results.append({
             "caller_module": caller_module,
             "caller_module_sha256": caller_module_sha256,
             "caller_address_kind": "RVA",
             "caller_rva": caller_rva,
+            "manager_tick": manager_tick,
             "hresult": _hresult(
                 row["hresult"], f"runtime.create_results[{index}].hresult"
             ),
@@ -1099,6 +1118,16 @@ def validate_flight_frame(
     ):
         raise OwnerVMFlightReceiptError("frame capture contract differs")
     _integer(frame["sequence"], "frame.sequence", minimum=1)
+    frame_manager_tick = _integer(
+        frame["manager_tick"], "frame.manager_tick", minimum=1
+    )
+    if (
+        frame_manager_tick < previous_create_tick
+        or frame_manager_tick > manager_ticks
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Flight frame chronology differs"
+        )
     _sha256(frame["pixel_sha256"], "frame.pixel_sha256")
     changed = _integer(
         frame["changed_pixel_count"],
@@ -1164,6 +1193,7 @@ def validate_flight_frame(
             "height": frame_height,
             "format": "RGBA8",
             "sequence": frame["sequence"],
+            "manager_tick": frame_manager_tick,
             "pixel_sha256": frame["pixel_sha256"],
             "changed_pixel_count": changed,
             "byte_count": len(pixels),

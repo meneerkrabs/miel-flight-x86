@@ -156,6 +156,7 @@ def _transition_records() -> list[dict]:
             "source_mode": "mode_barn",
             "target_mode": "mode_mygghanget",
             "caller_site": "0x00419198",
+            "manager_tick": 120,
             "observed": True,
         },
         {
@@ -163,6 +164,7 @@ def _transition_records() -> list[dict]:
             "source_mode": "mode_mygghanget",
             "target_mode": "mode_fly",
             "caller_site": "0x004262ee",
+            "manager_tick": 140,
             "observed": True,
         },
     ]
@@ -178,6 +180,7 @@ def _frame_file(directory: Path) -> tuple[Path, dict]:
         "height": FRAME_HEIGHT,
         "format": "RGBA8",
         "sequence": 12,
+        "manager_tick": 1502,
         "capture_surface": "ORIGINAL_WINDOW_CLIENT",
         "conversion": "CANONICAL_RGBA8_EXACT",
         "pixel_sha256": hashlib.sha256(payload).hexdigest(),
@@ -230,6 +233,7 @@ def _frame_receipt(frame: dict) -> dict:
                     "caller_module_sha256": _identity()["executable_sha256"],
                     "caller_address_kind": "RVA",
                     "caller_site": "0x0042a95e",
+                    "manager_tick": 141,
                     "hresult": "0x8007000E",
                     "device_nonnull": False,
                 },
@@ -238,6 +242,7 @@ def _frame_receipt(frame: dict) -> dict:
                     "caller_module_sha256": "4" * 64,
                     "caller_address_kind": "RVA",
                     "caller_site": "0x0042a95e",
+                    "manager_tick": 142,
                     "hresult": "0x00000000",
                     "device_nonnull": True,
                 },
@@ -349,6 +354,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             "0x0042a95e",
         )
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
+        self.assertEqual(result["frame"]["manager_tick"], 1502)
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
         self.assertFalse(result["proof_limits"]["hosted_runner_validated"])
 
@@ -359,6 +365,49 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             receipt["prerequisites"]["airplane_completion_bits"] = 0x1FE
             with self.assertRaisesRegex(
                 OwnerVMFlightReceiptError, "airplane completion predicate"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_flight_frame_chronology_is_bound_to_manager_ticks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["transitions"][1]["manager_tick"] = 119
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "transition chronology"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime"]["create_results"][1]["manager_tick"] = 140
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "CreateDevice chronology"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["frame"]["manager_tick"] = 140
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "frame chronology"
             ):
                 validate_flight_frame(
                     receipt,
@@ -480,6 +529,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 "height": FRAME_HEIGHT,
                 "format": "RGBA8",
                 "sequence": 12,
+                "manager_tick": 1502,
                 "capture_surface": "ORIGINAL_WINDOW_CLIENT",
                 "conversion": "CANONICAL_RGBA8_EXACT",
                 "pixel_sha256": hashlib.sha256(payload).hexdigest(),
