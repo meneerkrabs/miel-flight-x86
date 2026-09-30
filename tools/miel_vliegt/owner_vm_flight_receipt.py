@@ -1541,6 +1541,12 @@ def validate_flight_frame(
             row["caller_module"],
             f"runtime.create_results[{index}].caller_module",
         )
+        if caller_module != process["image_name"] and (
+            Path(caller_module).suffix.lower() != ".dll"
+        ):
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 caller module kind differs"
+            )
         caller_module_sha256 = _sha256(
             row["caller_module_sha256"],
             f"runtime.create_results[{index}].caller_module_sha256",

@@ -991,6 +991,26 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     transition_contract_path=TRANSITIONS,
                 )
 
+    def test_create_result_caller_module_kind_is_fail_closed(self):
+        for caller_module in ("extensionless-module", "Other.exe"):
+            with self.subTest(caller_module=caller_module), \
+                    tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["runtime"]["create_results"][0]["caller_module"] = (
+                    caller_module
+                )
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "Direct3D7 caller module kind differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
+
     def test_create_results_cannot_be_spliced_across_captures(self):
         for row_index in (0, 1):
             for field, value in (
