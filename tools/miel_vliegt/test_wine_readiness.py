@@ -496,6 +496,33 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["service_process_topology"])
 
+    def test_process_topology_requires_one_snapshot_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            process = next(
+                row for row in observation["phases"]
+                if row["id"] == "process-snapshot"
+            )
+            process_path = directory / process["log"]["path"]
+            process_path.write_text(
+                "wineserver64\n"
+                "unrelated diagnostic\n"
+                "services.exe\n"
+                "another unrelated diagnostic\n"
+                "rpcss.exe\n",
+                encoding="utf-8",
+            )
+            process["log"]["sha256"] = hashlib.sha256(
+                process_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["service_process_topology"])
+
     def test_distinct_lifecycle_phases_cannot_share_one_log(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

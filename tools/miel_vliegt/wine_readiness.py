@@ -192,13 +192,21 @@ def _process_topology_proven(text: str) -> bool:
         {"services.exe"},
         {"rpcss.exe"},
     )
-    remaining = list(process_record_groups)
-    for line in text.splitlines():
-        record = line.strip()
-        matches = [group for group in remaining if record in group]
-        if len(matches) == 1:
-            remaining.remove(matches[0])
-    return not remaining
+    records = [line.strip() for line in text.splitlines()]
+    for index in range(max(0, len(records) - 2)):
+        matches = []
+        for record in records[index:index + 3]:
+            groups = [
+                group_number
+                for group_number, group in enumerate(process_record_groups)
+                if record in group
+            ]
+            if len(groups) != 1:
+                break
+            matches.append(groups[0])
+        if len(matches) == 3 and len(set(matches)) == 3:
+            return True
+    return False
 
 
 def _rpcss_service_running(text: str) -> bool:
