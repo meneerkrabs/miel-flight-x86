@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -1695,11 +1696,21 @@ def validate_flight_frame(
     )
     if frame_path.is_symlink():
         raise OwnerVMFlightReceiptError("frame path may not be a symlink")
+    expected_bytes = frame_width * frame_height * 4
+    try:
+        frame_stat = frame_path.stat()
+    except OSError as error:
+        raise OwnerVMFlightReceiptError("cannot read frame bytes") from error
+    if not stat.S_ISREG(frame_stat.st_mode):
+        raise OwnerVMFlightReceiptError("frame path is not a regular file")
+    if frame_stat.st_size != expected_bytes:
+        raise OwnerVMFlightReceiptError(
+            "frame file size differs from the original client"
+        )
     try:
         pixels = frame_path.read_bytes()
     except OSError as error:
         raise OwnerVMFlightReceiptError("cannot read frame bytes") from error
-    expected_bytes = frame_width * frame_height * 4
     if len(pixels) != expected_bytes:
         raise OwnerVMFlightReceiptError("frame dimensions do not match byte count")
     if hashlib.sha256(pixels).hexdigest() != frame["pixel_sha256"]:

@@ -1125,6 +1125,37 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     transition_contract_path=TRANSITIONS,
                 )
 
+    def test_frame_file_must_be_a_regular_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, frame = _frame_file(Path(directory))
+            frame_path = Path(directory)
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "frame path is not a regular file",
+            ):
+                validate_flight_frame(
+                    _frame_receipt(frame),
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_frame_file_size_is_checked_before_reading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            with frame_path.open("ab") as frame_file:
+                frame_file.write(b"unbounded-extra-byte")
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "frame file size differs from the original client",
+            ):
+                validate_flight_frame(
+                    _frame_receipt(frame),
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
     def test_flight_frame_requires_original_client_geometry(self):
         with tempfile.TemporaryDirectory() as directory:
             frame_path = Path(directory) / "flight-frame.rgba"
