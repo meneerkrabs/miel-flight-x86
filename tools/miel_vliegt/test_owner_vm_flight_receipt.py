@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tools.miel_vliegt.owner_vm_flight_receipt import (
     OwnerVMFlightReceiptError,
+    classify_bridge_state,
     load_bridge_success,
     validate_bridge_health,
     validate_arrow_diagnostic,
@@ -554,6 +555,71 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             OwnerVMFlightReceiptError, "bridge service"
         ):
             validate_bridge_health(wrong_service)
+
+    def test_bridge_state_names_the_current_owner_handoff(self):
+        inside = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state(barn_view=1, x=450, y=150)},
+        )
+        self.assertEqual(inside["status"], "BLOCKED")
+        self.assertEqual(
+            inside["blocker_code"], "OWNER_VM_BARN_OUTSIDE_RESTORE_PENDING"
+        )
+        self.assertEqual(inside["state"]["barn_view"], 1)
+        self.assertEqual(inside["state"]["cursor"], [450, 150])
+        self.assertFalse(inside["proof_limits"]["native_parity_evidence"])
+
+        outside = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state()},
+        )
+        self.assertEqual(
+            outside["blocker_code"],
+            "AIRPLANE_COMPLETION_AND_ESCAPE_INPUT_PENDING",
+        )
+        self.assertEqual(
+            outside["required_owner_handoff"]["airplane_completion_bits"],
+            0x1FF,
+        )
+        self.assertEqual(
+            outside["required_owner_handoff"]["escape_scan_code"], "0x01"
+        )
+
+    def test_bridge_state_is_available_through_a_public_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            health = root / "health.json"
+            state = root / "state.json"
+            health.write_text(json.dumps(_bridge_health()), encoding="utf-8")
+            state.write_text(
+                '{"ok":false,"error":"transport diagnostic"}'
+                + json.dumps(
+                    {
+                        "ok": True,
+                        "state": _bridge_state(
+                            barn_view=1, x=450, y=150
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(ROOT / "tools/miel_vliegt/owner_vm_flight_receipt.py"),
+                    "--receipt-type", "bridge-state",
+                    "--bridge-health", str(health),
+                    "--bridge-state", str(state),
+                ],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        result = json.loads(completed.stdout)
+        self.assertEqual(
+            result["blocker_code"], "OWNER_VM_BARN_OUTSIDE_RESTORE_PENDING"
+        )
 
 
 class OwnerVMBridgeObservationTests(unittest.TestCase):

@@ -423,6 +423,46 @@ def validate_bridge_health(value: Any) -> dict[str, str]:
     return {"service": health["service"], "vm": health["vm"]}
 
 
+def classify_bridge_state(
+    health_payload: dict[str, Any], state_payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Turn one bounded bridge state into the exact missing owner step."""
+
+    health = validate_bridge_health(health_payload)
+    observation = validate_bridge_observation(state_payload)
+    state = observation["state"]
+    if state["BarnView"] == 1:
+        blocker = "OWNER_VM_BARN_OUTSIDE_RESTORE_PENDING"
+        handoff = {
+            "restore": "outside BarnView 0",
+            "prohibited_repeat_click": [450, 150],
+        }
+    else:
+        blocker = "AIRPLANE_COMPLETION_AND_ESCAPE_INPUT_PENDING"
+        handoff = {
+            "airplane_pointer_nonnull": True,
+            "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
+            "escape_scan_code": "0x01",
+            "escape_delivery": "original barn input dispatch",
+        }
+    return {
+        "schema": 1,
+        "protocol": "miel-vliegt-owner-vm-bridge-state-result",
+        "status": "BLOCKED",
+        "blocker_code": blocker,
+        "bridge_environment": health,
+        "observer_hook_sha256": observation["observer_hook_sha256"],
+        "barn_mode_vtable": observation["barn_mode_vtable"],
+        "process_id": state["ProcessId"],
+        "state": {
+            "barn_view": state["BarnView"],
+            "cursor": [state["CursorX"], state["CursorY"]],
+        },
+        "required_owner_handoff": handoff,
+        "proof_limits": {key: False for key in BRIDGE_PROOF_KEYS},
+    }
+
+
 def validate_bridge_sequence(
     before_payload: dict[str, Any],
     click_payload: dict[str, Any],
@@ -1077,8 +1117,9 @@ def main() -> int:
     parser.add_argument("--frame", type=Path)
     parser.add_argument(
         "--receipt-type",
-        choices=("arrow", "flight-frame", "bridge-sequence"),
+        choices=("arrow", "flight-frame", "bridge-state", "bridge-sequence"),
     )
+    parser.add_argument("--bridge-state", type=Path)
     parser.add_argument("--bridge-before", type=Path)
     parser.add_argument("--bridge-click", type=Path)
     parser.add_argument("--bridge-after", type=Path)
@@ -1089,6 +1130,17 @@ def main() -> int:
     args = parser.parse_args()
     if not args.receipt_type:
         parser.error("--receipt-type is required")
+    if args.receipt_type == "bridge-state":
+        if args.receipt is not None or args.frame is not None:
+            parser.error("bridge state uses --bridge-health/state")
+        if args.bridge_health is None or args.bridge_state is None:
+            parser.error("bridge state requires --bridge-health and --bridge-state")
+        result = classify_bridge_state(
+            _load(args.bridge_health, "bridge health"),
+            _load_bridge_file(args.bridge_state, "state", "state"),
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     if args.receipt_type == "bridge-sequence":
         if args.receipt is not None or args.frame is not None:
             parser.error("bridge sequences use --bridge-before/click/after")
