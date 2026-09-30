@@ -122,7 +122,8 @@ BRIDGE_CLICK_KEYS = {
 BRIDGE_HEALTH_KEYS = {"ok", "service", "vm"}
 BRIDGE_PROOF_KEYS = {
     "airplane_completion_evidence", "native_flight_transition",
-    "direct3d7_device_evidence", "native_parity_evidence",
+    "direct3d7_device_evidence", "runtime_original_media_match",
+    "native_parity_evidence",
 }
 BRIDGE_PROCESS_FIELDS = (
     "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
@@ -423,8 +424,45 @@ def validate_bridge_health(value: Any) -> dict[str, str]:
     return {"service": health["service"], "vm": health["vm"]}
 
 
+def _reviewed_media(path: Path) -> dict[str, Any]:
+    identity = _load(path, "reviewed source identity")
+    if identity.get("schema") != 1:
+        raise OwnerVMFlightReceiptError("reviewed source identity differs")
+    media = {}
+    for section in ("iso", "executable"):
+        record = identity.get(section)
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"filename", "sha256"}
+            or not isinstance(record["filename"], str)
+            or not record["filename"]
+        ):
+            raise OwnerVMFlightReceiptError(
+                f"reviewed {section} identity differs"
+            )
+        _sha256(record["sha256"], f"reviewed {section}.sha256")
+        media[section] = dict(record)
+    if not isinstance(identity.get("edition"), str) or not identity["edition"]:
+        raise OwnerVMFlightReceiptError("reviewed edition identity differs")
+    reviewed = {
+        "edition": identity["edition"],
+        "iso": media["iso"],
+        "executable": media["executable"],
+    }
+    if path.absolute() != DEFAULT_SOURCE_IDENTITY.absolute():
+        expected = _reviewed_media(DEFAULT_SOURCE_IDENTITY)
+        if reviewed != expected:
+            raise OwnerVMFlightReceiptError(
+                "reviewed original media identity differs"
+            )
+    return reviewed
+
+
 def classify_bridge_state(
-    health_payload: dict[str, Any], state_payload: dict[str, Any]
+    health_payload: dict[str, Any],
+    state_payload: dict[str, Any],
+    *,
+    source_identity_path: Path = DEFAULT_SOURCE_IDENTITY,
 ) -> dict[str, Any]:
     """Turn one bounded bridge state into the exact missing owner step."""
 
@@ -451,6 +489,7 @@ def classify_bridge_state(
         "status": "BLOCKED",
         "blocker_code": blocker,
         "bridge_environment": health,
+        "reviewed_media": _reviewed_media(source_identity_path),
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "barn_mode_vtable": observation["barn_mode_vtable"],
         "process_id": state["ProcessId"],
@@ -1138,6 +1177,7 @@ def main() -> int:
         result = classify_bridge_state(
             _load(args.bridge_health, "bridge health"),
             _load_bridge_file(args.bridge_state, "state", "state"),
+            source_identity_path=args.source_identity,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0

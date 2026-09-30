@@ -585,6 +585,55 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             outside["required_owner_handoff"]["escape_scan_code"], "0x01"
         )
 
+    def test_bridge_state_records_reviewed_media_without_runtime_match(self):
+        result = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state()},
+            source_identity_path=SOURCE_IDENTITY,
+        )
+        identity = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))
+        self.assertEqual(
+            result["reviewed_media"],
+            {
+                "edition": "miel-vliegt-de-wereld-rond-nl",
+                "iso": identity["iso"],
+                "executable": identity["executable"],
+            },
+        )
+        self.assertEqual(
+            identity["iso"]["sha256"],
+            "693a85370b704e743f56c7d6c39bc895"
+            "74c1a74129ca351157e5b9514aaa3a60",
+        )
+        self.assertEqual(
+            identity["executable"]["sha256"],
+            "a84550b46612dc326177a67a84d6fd1e"
+            "35aae3dc74361254611d1b03eda559a2",
+        )
+        self.assertFalse(
+            result["proof_limits"]["runtime_original_media_match"]
+        )
+
+    def test_bridge_state_rejects_drifted_media_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            identity_path = Path(directory) / "source_identity.json"
+            identity = json.loads(
+                SOURCE_IDENTITY.read_text(encoding="utf-8")
+            )
+            identity["executable"]["sha256"] = "0" * 64
+            identity_path.write_text(
+                json.dumps(identity), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "reviewed original media identity differs",
+            ):
+                classify_bridge_state(
+                    _bridge_health(),
+                    {"ok": True, "state": _bridge_state()},
+                    source_identity_path=identity_path,
+                )
+
     def test_bridge_state_is_available_through_a_public_command(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
