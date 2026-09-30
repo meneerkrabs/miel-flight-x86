@@ -496,6 +496,8 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "stream_sha256": "8" * 64,
                 "mouse_arrow_event_id": 7,
                 "mouse_arrow_manager_tick": 118,
+                "mouse_arrow_x": 596,
+                "mouse_arrow_y": 322,
                 "escape_dispatch_event_id": 8,
                 "escape_dispatch_manager_tick": 119,
             },
@@ -544,6 +546,28 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
             ):
                 validate_arrow_diagnostic(
                     drifted,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_arrow_mouse_event_stays_in_the_original_client(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(result["input_stream"]["mouse_arrow_x"], 596)
+        self.assertEqual(result["input_stream"]["mouse_arrow_y"], 322)
+
+        for field, value in (("x", 640), ("y", 480)):
+            receipt = _arrow_receipt()
+            receipt["input"]["mouse_arrow_event"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "mouse arrow client coordinates differ",
+            ):
+                validate_arrow_diagnostic(
+                    receipt,
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )

@@ -37,6 +37,8 @@ MODULE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 # Public native observation measured 640x457; the owner bridge's input
 # coordinate contract is a 640x480 game client.
 FRAME_CLIENT_GEOMETRIES = frozenset({(640, 457), (640, 480)})
+ARROW_CLIENT_WIDTH = 640
+ARROW_CLIENT_HEIGHT = 480
 FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
 AIRPLANE_COMPLETE_BITS = 0x1FF
 AIRPLANE_COMPLETE_PREDICATE = (
@@ -999,8 +1001,15 @@ def validate_arrow_diagnostic(
     mouse_manager_tick = _integer(
         mouse["manager_tick"], "mouse.manager_tick", minimum=1
     )
-    _integer(mouse["x"], "mouse.x", minimum=0, maximum=65535)
-    _integer(mouse["y"], "mouse.y", minimum=0, maximum=65535)
+    mouse_x = _integer(mouse["x"], "mouse.x", minimum=0)
+    mouse_y = _integer(mouse["y"], "mouse.y", minimum=0)
+    if (
+        mouse_x >= ARROW_CLIENT_WIDTH
+        or mouse_y >= ARROW_CLIENT_HEIGHT
+    ):
+        raise OwnerVMFlightReceiptError(
+            "mouse arrow client coordinates differ"
+        )
     if (
         mouse["kind"] != "MOUSE_LEFT"
         or _boolean(mouse["arrow_highlighted"], "mouse.arrow_highlighted") is not True
@@ -1069,6 +1078,8 @@ def validate_arrow_diagnostic(
             "stream_sha256": input_value["getdevicedata_stream_sha256"],
             "mouse_arrow_event_id": mouse["sequence"],
             "mouse_arrow_manager_tick": mouse_manager_tick,
+            "mouse_arrow_x": mouse_x,
+            "mouse_arrow_y": mouse_y,
             "escape_dispatch_event_id": escape["sequence"],
             "escape_dispatch_manager_tick": escape_manager_tick,
         },
