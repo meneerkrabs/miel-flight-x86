@@ -159,10 +159,18 @@ def _arrow_receipt() -> dict:
         "input": {
             "adapter_sha256": "3" * 64,
             "adapter_record_bytes": 16,
+            "directinput_getdevicedata_events": 9,
+            "getdevicedata_capture_id": "owner-vm-arrow-20260930-001",
+            "getdevicedata_process_id": 4321,
+            "getdevicedata_image_name": "MulleMeck.exe",
+            "getdevicedata_record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
+            "getdevicedata_stream_byte_count": 9 * 16,
+            "getdevicedata_stream_sha256": "8" * 64,
             "system_directinput_create_hresult": "0x80070057",
             "owner_adapter_hosted_runner_validated": False,
             "mouse_arrow_event": {
                 "sequence": 7,
+                "manager_tick": 118,
                 "kind": "MOUSE_LEFT",
                 "x": 596,
                 "y": 322,
@@ -171,6 +179,7 @@ def _arrow_receipt() -> dict:
             },
             "escape_dispatch_event": {
                 "sequence": 8,
+                "manager_tick": 119,
                 "kind": "KEYBOARD_SCAN_CODE",
                 "scan_code": "0x01",
                 "dispatch_observed": False,
@@ -467,6 +476,77 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 source_identity_path=SOURCE_IDENTITY,
                 transition_contract_path=TRANSITIONS,
             )
+
+    def test_arrow_input_stream_is_bound_to_events_and_timeline(self):
+        receipt = _arrow_receipt()
+        result = validate_arrow_diagnostic(
+            receipt,
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["input_stream"],
+            {
+                "event_count": 9,
+                "capture_id": "owner-vm-arrow-20260930-001",
+                "process_id": 4321,
+                "image_name": "MulleMeck.exe",
+                "record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
+                "stream_byte_count": 144,
+                "stream_sha256": "8" * 64,
+                "mouse_arrow_event_id": 7,
+                "mouse_arrow_manager_tick": 118,
+                "escape_dispatch_event_id": 8,
+                "escape_dispatch_manager_tick": 119,
+            },
+        )
+
+        for field, value in (
+            ("getdevicedata_capture_id", "owner-vm-arrow-20260930-002"),
+            ("getdevicedata_process_id", 9999),
+            ("getdevicedata_image_name", "Other.exe"),
+            ("getdevicedata_stream_byte_count", 143),
+        ):
+            drifted = _arrow_receipt()
+            drifted["input"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "owner arrow input stream identity differs",
+            ):
+                validate_arrow_diagnostic(
+                    drifted,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        out_of_range_escape = _arrow_receipt()
+        out_of_range_escape["input"]["escape_dispatch_event"]["sequence"] = 10
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "owner arrow event identity differs"
+        ):
+            validate_arrow_diagnostic(
+                out_of_range_escape,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
+        early_mouse = _arrow_receipt()
+        early_mouse["input"]["mouse_arrow_event"]["manager_tick"] = 117
+        early_escape = _arrow_receipt()
+        early_escape["input"]["escape_dispatch_event"]["manager_tick"] = 117
+        for label, drifted in (
+            ("mouse", early_mouse),
+            ("escape", early_escape),
+        ):
+            with self.subTest(event=label), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "owner arrow input chronology differs",
+            ):
+                validate_arrow_diagnostic(
+                    drifted,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
 
     def test_incomplete_airplane_blocks_before_input_diagnosis(self):
         receipt = _arrow_receipt()

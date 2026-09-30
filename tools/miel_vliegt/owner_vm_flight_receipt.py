@@ -62,16 +62,20 @@ PROCESS_KEYS = {
     "after_alive",
 }
 ARROW_INPUT_KEYS = {
-    "adapter_sha256", "adapter_record_bytes", "mouse_arrow_event",
+    "adapter_sha256", "adapter_record_bytes",
+    "directinput_getdevicedata_events", "getdevicedata_capture_id",
+    "getdevicedata_process_id", "getdevicedata_image_name",
+    "getdevicedata_record_format", "getdevicedata_stream_byte_count",
+    "getdevicedata_stream_sha256", "mouse_arrow_event",
     "escape_dispatch_event", "system_directinput_create_hresult",
     "owner_adapter_hosted_runner_validated",
 }
 MOUSE_EVENT_KEYS = {
-    "sequence", "kind", "x", "y", "arrow_highlighted",
+    "sequence", "manager_tick", "kind", "x", "y", "arrow_highlighted",
     "transition_observed",
 }
 KEY_EVENT_KEYS = {
-    "sequence", "kind", "scan_code", "dispatch_observed",
+    "sequence", "manager_tick", "kind", "scan_code", "dispatch_observed",
     "mode_set_observed",
 }
 ARROW_STATE_KEYS = {
@@ -952,6 +956,38 @@ def validate_arrow_diagnostic(
         "input.owner_adapter_hosted_runner_validated",
         False,
     )
+    event_count = _integer(
+        input_value["directinput_getdevicedata_events"],
+        "input.getdevicedata_events",
+        minimum=1,
+    )
+    stream_process_id = _integer(
+        input_value["getdevicedata_process_id"],
+        "input.getdevicedata_process_id",
+        minimum=1,
+    )
+    stream_image_name = _module_name(
+        input_value["getdevicedata_image_name"],
+        "input.getdevicedata_image_name",
+    )
+    stream_byte_count = _integer(
+        input_value["getdevicedata_stream_byte_count"],
+        "input.getdevicedata_stream_byte_count",
+        minimum=1,
+    )
+    if (
+        input_value["getdevicedata_capture_id"] != receipt["capture_id"]
+        or stream_process_id != process["pid"]
+        or stream_image_name != process["image_name"]
+        or input_value["getdevicedata_record_format"]
+        != "DIRECTINPUT_BUFFERED_16_BYTE_LE"
+        or stream_byte_count != event_count * 16
+        or SHA256.fullmatch(input_value["getdevicedata_stream_sha256"])
+        is None
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner arrow input stream identity differs"
+        )
 
     mouse = _fields(
         input_value["mouse_arrow_event"], MOUSE_EVENT_KEYS, "mouse event"
@@ -960,6 +996,9 @@ def validate_arrow_diagnostic(
         input_value["escape_dispatch_event"], KEY_EVENT_KEYS, "escape event"
     )
     _integer(mouse["sequence"], "mouse.sequence", minimum=1)
+    mouse_manager_tick = _integer(
+        mouse["manager_tick"], "mouse.manager_tick", minimum=1
+    )
     _integer(mouse["x"], "mouse.x", minimum=0, maximum=65535)
     _integer(mouse["y"], "mouse.y", minimum=0, maximum=65535)
     if (
@@ -969,8 +1008,18 @@ def validate_arrow_diagnostic(
     ):
         raise OwnerVMFlightReceiptError("mouse arrow observation differs")
     _integer(escape["sequence"], "escape.sequence", minimum=1)
+    escape_manager_tick = _integer(
+        escape["manager_tick"], "escape.manager_tick", minimum=1
+    )
     if escape["sequence"] <= mouse["sequence"]:
         raise OwnerVMFlightReceiptError("escape observation is not after arrow")
+    if mouse["sequence"] > event_count or escape["sequence"] > event_count:
+        raise OwnerVMFlightReceiptError("owner arrow event identity differs")
+    if (
+        prerequisite_observation["manager_tick"] > mouse_manager_tick
+        or mouse_manager_tick > escape_manager_tick
+    ):
+        raise OwnerVMFlightReceiptError("owner arrow input chronology differs")
     if (
         escape["kind"] != "KEYBOARD_SCAN_CODE"
         or _scan_code(escape["scan_code"], "escape.scan_code") != "0x01"
@@ -1010,6 +1059,19 @@ def validate_arrow_diagnostic(
         "prerequisite_observation": prerequisite_observation,
         "environment": environment,
         "process": process,
+        "input_stream": {
+            "event_count": event_count,
+            "capture_id": input_value["getdevicedata_capture_id"],
+            "process_id": stream_process_id,
+            "image_name": stream_image_name,
+            "record_format": input_value["getdevicedata_record_format"],
+            "stream_byte_count": stream_byte_count,
+            "stream_sha256": input_value["getdevicedata_stream_sha256"],
+            "mouse_arrow_event_id": mouse["sequence"],
+            "mouse_arrow_manager_tick": mouse_manager_tick,
+            "escape_dispatch_event_id": escape["sequence"],
+            "escape_dispatch_manager_tick": escape_manager_tick,
+        },
         "static_prerequisite": {
             "transition_id": routes["barn_mygghanget"]["id"],
             "source_mode": "mode_barn",
