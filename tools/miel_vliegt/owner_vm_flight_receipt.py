@@ -451,12 +451,18 @@ def validate_bridge_observation(
         if payload["ok"] is not True:
             raise OwnerVMFlightReceiptError("bridge observation failed")
         click = _bridge_click(payload["click"])
-        status = (
-            "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
-            if click["barn_view_before"] == 0
+        if (
+            click["barn_view_before"] == 0
             and click["barn_view_after"] == 1
-            else "NATIVE_OWNER_VM_BARN_CLICK_DIAGNOSTIC_ONLY"
-        )
+        ):
+            status = "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
+        elif (
+            click["barn_view_before"] == 1
+            and click["barn_view_after"] == 0
+        ):
+            status = "NATIVE_OWNER_VM_BARN_OUTSIDE_RESTORE_CANDIDATE_ONLY"
+        else:
+            status = "NATIVE_OWNER_VM_BARN_CLICK_DIAGNOSTIC_ONLY"
         return {**common, "status": status, "click": click}
     raise OwnerVMFlightReceiptError("bridge success record fields differ")
 
@@ -580,9 +586,21 @@ def validate_bridge_sequence(
         != "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
         or after_result["status"]
         != "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
-        or click_result["status"]
-        != "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
     ):
+        raise OwnerVMFlightReceiptError("bridge sequence kinds differ")
+    if click_result["status"] == (
+        "NATIVE_OWNER_VM_BARN_DOOR_NAVIGATION_CANDIDATE_ONLY"
+    ):
+        sequence_status = (
+            "NATIVE_OWNER_VM_BARN_DOOR_SEQUENCE_CANDIDATE_ONLY"
+        )
+    elif click_result["status"] == (
+        "NATIVE_OWNER_VM_BARN_OUTSIDE_RESTORE_CANDIDATE_ONLY"
+    ):
+        sequence_status = (
+            "NATIVE_OWNER_VM_BARN_OUTSIDE_RESTORE_SEQUENCE_CANDIDATE_ONLY"
+        )
+    else:
         raise OwnerVMFlightReceiptError("bridge sequence kinds differ")
     for field in BRIDGE_PROCESS_FIELDS:
         if before[field] != after[field]:
@@ -604,7 +622,7 @@ def validate_bridge_sequence(
     return {
         "schema": 1,
         "protocol": "miel-vliegt-owner-vm-bridge-sequence-result",
-        "status": "NATIVE_OWNER_VM_BARN_DOOR_SEQUENCE_CANDIDATE_ONLY",
+        "status": sequence_status,
         "observer_hook_sha256": before_result["observer_hook_sha256"],
         "barn_mode_vtable": before_result["barn_mode_vtable"],
         "process_id": before["ProcessId"],

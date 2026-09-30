@@ -126,6 +126,20 @@ def _bridge_click() -> dict:
     }
 
 
+def _bridge_restore_click() -> dict:
+    return {
+        "target": [100, 200],
+        "delta": [-350, 50],
+        "cursorBefore": [450, 150],
+        "cursorAfter": [100, 200],
+        "barnViewBefore": 1,
+        "barnViewAfter": 0,
+        "openedBefore": 1,
+        "openedAfter": 1,
+        "injectionSeen": True,
+    }
+
+
 def _bridge_health() -> dict:
     return {
         "ok": True,
@@ -1200,6 +1214,24 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
         self.assertFalse(result["proof_limits"]["native_flight_transition"])
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
 
+    def test_interior_door_restore_is_candidate_only(self):
+        result = validate_bridge_observation(
+            {"ok": True, "click": _bridge_restore_click()},
+            observer_hook_path=OBSERVER_HOOK,
+        )
+        self.assertEqual(
+            result["status"],
+            "NATIVE_OWNER_VM_BARN_OUTSIDE_RESTORE_CANDIDATE_ONLY",
+        )
+        self.assertEqual(result["click"]["target"], [100, 200])
+        self.assertEqual(result["click"]["barn_view_before"], 1)
+        self.assertEqual(result["click"]["barn_view_after"], 0)
+        self.assertFalse(
+            result["proof_limits"]["airplane_completion_evidence"]
+        )
+        self.assertFalse(result["proof_limits"]["native_flight_transition"])
+        self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
     def test_vtable_or_injection_drift_fails_closed(self):
         wrong_vtable = {"ok": True, "state": _bridge_state()}
         wrong_vtable["state"]["CurrentVtable"] = "0x0044cf58"
@@ -1253,6 +1285,29 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
         self.assertEqual(result["after"]["cursor"], [450, 150])
         self.assertNotIn("Application", result)
         self.assertNotIn("CurrentMode", result)
+        self.assertFalse(
+            result["proof_limits"]["airplane_completion_evidence"]
+        )
+        self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+    def test_restore_sequence_is_bound_to_one_live_process(self):
+        result = validate_bridge_sequence(
+            {
+                "ok": True,
+                "state": _bridge_state(barn_view=1, x=450, y=150),
+            },
+            {"ok": True, "click": _bridge_restore_click()},
+            {"ok": True, "state": _bridge_state()},
+            observer_hook_path=OBSERVER_HOOK,
+        )
+        self.assertEqual(
+            result["status"],
+            "NATIVE_OWNER_VM_BARN_OUTSIDE_RESTORE_SEQUENCE_CANDIDATE_ONLY",
+        )
+        self.assertEqual(result["before"]["barn_view"], 1)
+        self.assertEqual(result["after"]["barn_view"], 0)
+        self.assertEqual(result["before"]["cursor"], [450, 150])
+        self.assertEqual(result["after"]["cursor"], [100, 200])
         self.assertFalse(
             result["proof_limits"]["airplane_completion_evidence"]
         )
