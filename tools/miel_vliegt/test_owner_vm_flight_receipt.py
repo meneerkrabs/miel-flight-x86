@@ -313,6 +313,9 @@ def _frame_receipt(frame: dict) -> dict:
             "airplane_completion_bits": 0x1FF,
         },
         "runtime": {
+            "capture_id": "owner-vm-flight-20260930-001",
+            "process_id": 4321,
+            "image_name": "MulleMeck.exe",
             "current_mode": "mode_fly",
             "manager_ticks": 1502,
             "direct3d7_dll_loaded": True,
@@ -769,6 +772,28 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     OwnerVMFlightReceiptError,
                     "runtime media capture identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
+
+    def test_runtime_state_cannot_be_spliced_across_captures(self):
+        for field, value in (
+            ("capture_id", "owner-vm-arrow-20260930-001"),
+            ("process_id", 9999),
+            ("image_name", "Other.exe"),
+        ):
+            with self.subTest(field=field), \
+                    tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["runtime"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "Flight runtime capture identity differs",
                 ):
                     validate_flight_frame(
                         receipt,

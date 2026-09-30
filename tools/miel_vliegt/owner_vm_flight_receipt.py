@@ -117,7 +117,8 @@ RUNTIME_MEDIA_KEYS = {
     "measurement_tool_sha256", "measurement_complete",
 }
 RUNTIME_KEYS = {
-    "current_mode", "manager_ticks", "direct3d7_dll_loaded", "create_method",
+    "capture_id", "process_id", "image_name", "current_mode",
+    "manager_ticks", "direct3d7_dll_loaded", "create_method",
     "direct3d7_load_manager_tick", "direct3d7_module",
     "direct3d7_module_sha256", "device_interface", "create_calls",
     "successful_create_calls", "last_create_hresult", "device_nonnull",
@@ -1430,6 +1431,20 @@ def validate_flight_frame(
         )
 
     runtime = _fields(receipt.get("runtime"), RUNTIME_KEYS, "runtime")
+    runtime_process_id = _integer(
+        runtime["process_id"], "runtime.process_id", minimum=1
+    )
+    runtime_image_name = _module_name(
+        runtime["image_name"], "runtime.image_name"
+    )
+    if (
+        runtime["capture_id"] != receipt["capture_id"]
+        or runtime_process_id != process["pid"]
+        or runtime_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Flight runtime capture identity differs"
+        )
     manager_ticks = _integer(
         runtime["manager_ticks"], "runtime.manager_ticks", minimum=1
     )
@@ -1693,6 +1708,9 @@ def validate_flight_frame(
         },
         "transitions": transitions,
         "runtime": {
+            "capture_id": runtime["capture_id"],
+            "process_id": runtime_process_id,
+            "image_name": runtime_image_name,
             "current_mode": "mode_fly",
             "manager_ticks": manager_ticks,
             "direct3d7_dll_loaded": True,
