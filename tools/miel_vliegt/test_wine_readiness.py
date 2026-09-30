@@ -218,6 +218,18 @@ class WineReadinessTests(unittest.TestCase):
                     absolute, evidence_root=directory,
                 )
 
+            linked = copy.deepcopy(observation)
+            original = directory / linked["phases"][0]["log"]["path"]
+            alias = directory / "phase-alias.log"
+            alias.symlink_to(original)
+            linked["phases"][0]["log"]["path"] = alias.name
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError, "log path is a symlink"
+            ):
+                wine_readiness.validate_observation(
+                    linked, evidence_root=directory,
+                )
+
     def test_missing_process_snapshot_cannot_be_inferred_from_service_exit_zero(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

@@ -123,9 +123,18 @@ def _read_log(
     relative_path = Path(reference["path"])
     if relative_path.is_absolute():
         raise WineReadinessError(f"{label} log path is not relative")
-    path = (root / relative_path).resolve()
+    evidence_root = root.resolve()
+    candidate = evidence_root / relative_path
+    for ancestor in candidate.parents:
+        if ancestor == evidence_root:
+            break
+        if ancestor.is_symlink():
+            raise WineReadinessError(f"{label} log path is a symlink")
+    if candidate.is_symlink():
+        raise WineReadinessError(f"{label} log path is a symlink")
+    path = candidate.resolve()
     try:
-        path.relative_to(root.resolve())
+        path.relative_to(evidence_root)
     except ValueError as error:
         raise WineReadinessError(f"{label} log escapes its evidence directory") from error
     try:
