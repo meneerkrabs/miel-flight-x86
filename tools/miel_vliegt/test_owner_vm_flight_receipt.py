@@ -263,6 +263,7 @@ def _frame_receipt(frame: dict) -> dict:
             "current_mode": "mode_fly",
             "manager_ticks": 1502,
             "direct3d7_dll_loaded": True,
+            "direct3d7_load_manager_tick": 139,
             "direct3d7_module": "gtDirect3d.dll",
             "direct3d7_module_sha256": "4" * 64,
             "create_method": "IDirect3D7::CreateDevice",
@@ -418,6 +419,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
         self.assertEqual(result["runtime"]["create_calls"], 2)
         self.assertEqual(
             result["runtime"]["direct3d7_module"], "gtDirect3d.dll"
+        )
+        self.assertEqual(
+            result["runtime"]["direct3d7_load_manager_tick"], 139
         )
         self.assertEqual(
             result["runtime"]["create_results"][0]["caller_module"],
@@ -578,6 +582,26 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_direct3d7_load_precedes_device_creation(self):
+        for tick, message in (
+            (142, "first Direct3D7 CreateDevice result"),
+            (1503, "total Manager ticks"),
+        ):
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["runtime"]["direct3d7_load_manager_tick"] = tick
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "Direct3D7 load chronology differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
         with tempfile.TemporaryDirectory() as directory:
             frame_path, frame = _frame_file(Path(directory))

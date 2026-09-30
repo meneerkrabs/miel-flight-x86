@@ -102,9 +102,10 @@ RUNTIME_MEDIA_KEYS = {
 }
 RUNTIME_KEYS = {
     "current_mode", "manager_ticks", "direct3d7_dll_loaded", "create_method",
-    "direct3d7_module", "direct3d7_module_sha256", "device_interface",
-    "create_calls", "successful_create_calls", "last_create_hresult",
-    "device_nonnull", "create_results",
+    "direct3d7_load_manager_tick", "direct3d7_module",
+    "direct3d7_module_sha256", "device_interface", "create_calls",
+    "successful_create_calls", "last_create_hresult", "device_nonnull",
+    "create_results",
 }
 CREATE_RESULT_KEYS = {
     "caller_module", "caller_module_sha256", "caller_address_kind",
@@ -1157,6 +1158,15 @@ def validate_flight_frame(
         runtime["direct3d7_module_sha256"],
         "runtime.direct3d7_module_sha256",
     )
+    direct3d7_load_manager_tick = _integer(
+        runtime["direct3d7_load_manager_tick"],
+        "runtime.direct3d7_load_manager_tick",
+        minimum=1,
+    )
+    if direct3d7_load_manager_tick > manager_ticks:
+        raise OwnerVMFlightReceiptError(
+            "Direct3D7 load chronology differs"
+        )
     if (
         _boolean(runtime["direct3d7_dll_loaded"], "runtime.dll_loaded", True)
         is not True
@@ -1231,6 +1241,10 @@ def validate_flight_frame(
         row["hresult"] == "0x00000000" and row["device_nonnull"]
         for row in normalized_results
     )
+    if normalized_results[0]["manager_tick"] < direct3d7_load_manager_tick:
+        raise OwnerVMFlightReceiptError(
+            "Direct3D7 load chronology differs"
+        )
     if (
         successful_calls < 1
         or successful_calls != observed_successes
@@ -1356,6 +1370,7 @@ def validate_flight_frame(
             "current_mode": "mode_fly",
             "manager_ticks": manager_ticks,
             "direct3d7_dll_loaded": True,
+            "direct3d7_load_manager_tick": direct3d7_load_manager_tick,
             "direct3d7_module": direct3d7_module,
             "direct3d7_module_sha256": direct3d7_module_sha256,
             "create_method": runtime["create_method"],
