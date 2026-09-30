@@ -611,6 +611,14 @@ def validate_bridge_sequence(
     after_result = validate_bridge_observation(
         after_payload, observer_hook_path=observer_hook_path
     )
+    if len({
+        before_result["observer_hook_sha256"],
+        click_result["observer_hook_sha256"],
+        after_result["observer_hook_sha256"],
+    }) != 1:
+        raise OwnerVMFlightReceiptError(
+            "observer hook revision drifted across bridge sequence"
+        )
     before = before_result["state"]
     click = click_result["click"]
     after = after_result["state"]

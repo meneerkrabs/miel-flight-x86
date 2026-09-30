@@ -8,7 +8,9 @@ import tempfile
 import unittest
 from functools import lru_cache
 from pathlib import Path
+from unittest import mock
 
+from tools.miel_vliegt import owner_vm_flight_receipt
 from tools.miel_vliegt.owner_vm_flight_receipt import (
     OwnerVMFlightReceiptError,
     classify_bridge_state,
@@ -1785,6 +1787,30 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
             result["proof_limits"]["airplane_completion_evidence"]
         )
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
+
+    def test_bridge_sequence_cannot_mix_observer_hook_revisions(self):
+        observer_revisions = iter(("a" * 64, "a" * 64, "b" * 64))
+
+        def changing_observer_hook(_path):
+            return "0x0044caec", next(observer_revisions)
+
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_observer_barn_vtable",
+            side_effect=changing_observer_hook,
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "observer hook revision drifted across bridge sequence",
+        ):
+            validate_bridge_sequence(
+                {"ok": True, "state": _bridge_state()},
+                {"ok": True, "click": _bridge_click()},
+                {
+                    "ok": True,
+                    "state": _bridge_state(barn_view=1, x=450, y=150),
+                },
+                observer_hook_path=OBSERVER_HOOK,
+            )
 
     def test_cross_process_or_post_click_state_drift_fails_closed(self):
         wrong_process = {"ok": True, "state": _bridge_state()}
