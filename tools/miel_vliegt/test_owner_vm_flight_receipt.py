@@ -259,6 +259,8 @@ def _frame_receipt(frame: dict) -> dict:
             "current_mode": "mode_fly",
             "manager_ticks": 1502,
             "direct3d7_dll_loaded": True,
+            "direct3d7_module": "gtDirect3d.dll",
+            "direct3d7_module_sha256": "4" * 64,
             "create_method": "IDirect3D7::CreateDevice",
             "device_interface": "IID_IDirect3DDevice7",
             "create_calls": 2,
@@ -411,6 +413,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
         )
         self.assertEqual(result["runtime"]["create_calls"], 2)
         self.assertEqual(
+            result["runtime"]["direct3d7_module"], "gtDirect3d.dll"
+        )
+        self.assertEqual(
             result["runtime"]["create_results"][0]["caller_module"],
             "MulleMeck.exe",
         )
@@ -538,6 +543,39 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 OwnerVMFlightReceiptError,
                 "original executable caller identity differs",
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_direct3d7_module_identity_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime"]["direct3d7_module"] = "MulleMeck.exe"
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "Direct3D7 module identity differs",
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime"]["create_results"][1][
+                "caller_module_sha256"
+            ] = "9" * 64
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "Direct3D7 caller module identity differs",
             ):
                 validate_flight_frame(
                     receipt,

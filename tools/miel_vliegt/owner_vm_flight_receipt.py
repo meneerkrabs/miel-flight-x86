@@ -102,8 +102,9 @@ RUNTIME_MEDIA_KEYS = {
 }
 RUNTIME_KEYS = {
     "current_mode", "manager_ticks", "direct3d7_dll_loaded", "create_method",
-    "device_interface", "create_calls", "successful_create_calls",
-    "last_create_hresult", "device_nonnull", "create_results",
+    "direct3d7_module", "direct3d7_module_sha256", "device_interface",
+    "create_calls", "successful_create_calls", "last_create_hresult",
+    "device_nonnull", "create_results",
 }
 CREATE_RESULT_KEYS = {
     "caller_module", "caller_module_sha256", "caller_address_kind",
@@ -1149,6 +1150,22 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError(
             "Direct3D7 device creation evidence is incomplete"
         )
+    direct3d7_module = _module_name(
+        runtime["direct3d7_module"], "runtime.direct3d7_module"
+    )
+    direct3d7_module_sha256 = _sha256(
+        runtime["direct3d7_module_sha256"],
+        "runtime.direct3d7_module_sha256",
+    )
+    if (
+        _boolean(runtime["direct3d7_dll_loaded"], "runtime.dll_loaded", True)
+        is not True
+        or direct3d7_module == process["image_name"]
+        or Path(direct3d7_module).suffix.lower() != ".dll"
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Direct3D7 module identity differs"
+        )
     create_results = runtime["create_results"]
     if not isinstance(create_results, list) or len(create_results) != create_calls:
         raise OwnerVMFlightReceiptError("Direct3D7 result count differs")
@@ -1170,6 +1187,13 @@ def validate_flight_frame(
         ):
             raise OwnerVMFlightReceiptError(
                 "original executable caller identity differs"
+            )
+        if (
+            caller_module == direct3d7_module
+            and caller_module_sha256 != direct3d7_module_sha256
+        ):
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 caller module identity differs"
             )
         if row["caller_address_kind"] != "RVA":
             raise OwnerVMFlightReceiptError(
@@ -1227,11 +1251,6 @@ def validate_flight_frame(
             raise OwnerVMFlightReceiptError(
                 "Direct3D7 device creation evidence is incomplete"
             )
-    if _boolean(runtime["direct3d7_dll_loaded"], "runtime.dll_loaded") is not True:
-        raise OwnerVMFlightReceiptError(
-            "Direct3D7 device creation evidence is incomplete"
-        )
-
     frame = _fields(receipt.get("frame"), FRAME_KEYS, "frame")
     frame_width = _integer(
         frame["width"], "frame.width", minimum=1
@@ -1317,6 +1336,8 @@ def validate_flight_frame(
             "current_mode": "mode_fly",
             "manager_ticks": manager_ticks,
             "direct3d7_dll_loaded": True,
+            "direct3d7_module": direct3d7_module,
+            "direct3d7_module_sha256": direct3d7_module_sha256,
             "create_method": runtime["create_method"],
             "create_calls": create_calls,
             "successful_create_calls": successful_calls,
