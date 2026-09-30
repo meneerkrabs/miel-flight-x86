@@ -525,6 +525,36 @@ class WineReadinessTests(unittest.TestCase):
                     observation, evidence_root=directory,
                 )
 
+    def test_distinct_lifecycle_phases_cannot_share_one_hardlink(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            shared_path = directory / "shared-lifecycle.log"
+            linked_path = directory / "hardlinked-lifecycle.log"
+            shared_path.write_text(
+                "MIEL_WINE_TRANSPORT_OK\nMIEL_WINESERVER_STOPPED\n",
+                encoding="utf-8",
+            )
+            linked_path.hardlink_to(shared_path)
+            digest = hashlib.sha256(shared_path.read_bytes()).hexdigest()
+            for phase_id, path_name in (
+                ("transport", shared_path.name),
+                ("wineserver-shutdown", linked_path.name),
+            ):
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase["log"] = {"path": path_name, "sha256": digest}
+
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "phase logs are shared",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_backend_identity_must_be_a_nonempty_string_mapping(self):
         invalid_backends = (
             None,

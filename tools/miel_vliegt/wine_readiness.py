@@ -248,6 +248,7 @@ def validate_observation(
     texts: dict[str, str] = {}
     log_sources: dict[str, dict[str, Any]] = {}
     log_paths: set[Path] = set()
+    log_objects: set[tuple[int, int]] = set()
     for phase in phases:
         if not isinstance(phase, dict) or set(phase) != {
             "id", "command", "exitCode", "timedOut", "log",
@@ -267,11 +268,19 @@ def validate_observation(
         texts[phase["id"]], log_sources[phase["id"]], log_path = _read_log(
             evidence_root, phase["log"], phase["id"],
         )
-        if log_path in log_paths:
+        try:
+            log_stat = log_path.stat()
+        except OSError as error:
+            raise WineReadinessError(
+                f"Wine readiness phase log identity is unavailable: {phase['id']}"
+            ) from error
+        log_object = (log_stat.st_dev, log_stat.st_ino)
+        if log_path in log_paths or log_object in log_objects:
             raise WineReadinessError(
                 f"Wine readiness phase logs are shared: {phase['id']}"
             )
         log_paths.add(log_path)
+        log_objects.add(log_object)
 
     class_phase_ids = [
         *(f"com-registry:{value}" for value in classes),
