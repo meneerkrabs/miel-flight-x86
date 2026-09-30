@@ -112,7 +112,7 @@ CREATE_RESULT_KEYS = {
 }
 FRAME_KEYS = {
     "width", "height", "capture_id", "process_id", "image_name", "format",
-    "sequence", "manager_tick", "capture_surface",
+    "capture_tool_sha256", "sequence", "manager_tick", "capture_surface",
     "conversion", "pixel_sha256", "changed_pixel_count",
     "captured_before_process_exit",
 }
@@ -1257,6 +1257,9 @@ def validate_flight_frame(
         frame["process_id"], "frame.process_id", minimum=1
     )
     frame_image_name = _module_name(frame["image_name"], "frame.image_name")
+    frame_capture_tool_sha256 = _sha256(
+        frame["capture_tool_sha256"], "frame.capture_tool_sha256"
+    )
     if (
         frame_capture_id != receipt["capture_id"]
         or frame_process_id != process["pid"]
@@ -1264,6 +1267,10 @@ def validate_flight_frame(
     ):
         raise OwnerVMFlightReceiptError(
             "Flight frame capture identity differs"
+        )
+    if frame_capture_tool_sha256 != source["capture_tool_sha256"]:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame capture tool differs"
         )
     frame_width = _integer(
         frame["width"], "frame.width", minimum=1
@@ -1364,6 +1371,7 @@ def validate_flight_frame(
             "capture_id": frame_capture_id,
             "process_id": frame_process_id,
             "image_name": frame_image_name,
+            "capture_tool_sha256": frame_capture_tool_sha256,
             "format": "RGBA8",
             "sequence": frame["sequence"],
             "manager_tick": frame_manager_tick,

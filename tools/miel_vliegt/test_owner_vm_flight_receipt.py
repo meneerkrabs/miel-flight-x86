@@ -209,6 +209,7 @@ def _frame_file(directory: Path) -> tuple[Path, dict]:
         "capture_id": "owner-vm-flight-20260930-001",
         "process_id": 4321,
         "image_name": "MulleMeck.exe",
+        "capture_tool_sha256": _identity()["capture_tool_sha256"],
         "format": "RGBA8",
         "sequence": 12,
         "manager_tick": 1502,
@@ -433,6 +434,10 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             "owner-vm-flight-20260930-001",
         )
         self.assertEqual(
+            result["frame"]["capture_tool_sha256"],
+            _identity()["capture_tool_sha256"],
+        )
+        self.assertEqual(
             result["runtime_media"]["executable_sha256"],
             _identity()["executable_sha256"],
         )
@@ -619,6 +624,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 "capture_id": "owner-vm-flight-20260930-001",
                 "process_id": 4321,
                 "image_name": "MulleMeck.exe",
+                "capture_tool_sha256": _identity()["capture_tool_sha256"],
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,
@@ -649,6 +655,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 "capture_id": "owner-vm-flight-20260930-001",
                 "process_id": 4321,
                 "image_name": "MulleMeck.exe",
+                "capture_tool_sha256": _identity()["capture_tool_sha256"],
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,
@@ -686,6 +693,22 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                         source_identity_path=SOURCE_IDENTITY,
                         transition_contract_path=TRANSITIONS,
                     )
+
+    def test_flight_frame_binds_its_capture_tool_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["frame"]["capture_tool_sha256"] = "a" * 64
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "Flight frame capture tool differs",
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
 
     def test_manager_or_pixel_progress_cannot_replace_device_creation(self):
         mutations = (
@@ -766,6 +789,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 "capture_id": "owner-vm-flight-20260930-001",
                 "process_id": 4321,
                 "image_name": "MulleMeck.exe",
+                "capture_tool_sha256": _identity()["capture_tool_sha256"],
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,
