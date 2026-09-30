@@ -87,6 +87,8 @@ ARROW_TOP_KEYS = {
 FRAME_INPUT_KEYS = {
     "adapter_sha256", "adapter_record_bytes",
     "directinput_getdevicedata_events", "login_submit_observed",
+    "getdevicedata_capture_id", "getdevicedata_process_id",
+    "getdevicedata_image_name",
     "getdevicedata_record_format", "getdevicedata_stream_byte_count",
     "getdevicedata_stream_sha256",
     "login_submit_manager_tick", "login_submit_event_id",
@@ -1098,6 +1100,23 @@ def validate_flight_frame(
         "input.getdevicedata_events",
         minimum=1,
     )
+    getdevicedata_process_id = _integer(
+        input_value["getdevicedata_process_id"],
+        "input.getdevicedata_process_id",
+        minimum=1,
+    )
+    getdevicedata_image_name = _module_name(
+        input_value["getdevicedata_image_name"],
+        "input.getdevicedata_image_name",
+    )
+    if (
+        input_value["getdevicedata_capture_id"] != receipt["capture_id"]
+        or getdevicedata_process_id != process["pid"]
+        or getdevicedata_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner input stream capture identity differs"
+        )
     if (
         input_value["getdevicedata_record_format"]
         != "DIRECTINPUT_BUFFERED_16_BYTE_LE"

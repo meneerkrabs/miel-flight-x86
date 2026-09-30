@@ -235,6 +235,9 @@ def _frame_receipt(frame: dict) -> dict:
             "system_directinput_create_hresult": "0x80070057",
             "owner_adapter_hosted_runner_validated": False,
             "directinput_getdevicedata_events": 19,
+            "getdevicedata_capture_id": "owner-vm-flight-20260930-001",
+            "getdevicedata_process_id": 4321,
+            "getdevicedata_image_name": "MulleMeck.exe",
             "getdevicedata_record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
             "getdevicedata_stream_byte_count": 19 * 16,
             "getdevicedata_stream_sha256": "7" * 64,
@@ -648,6 +651,27 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_owner_input_stream_cannot_be_spliced_across_captures(self):
+        for field, value in (
+            ("getdevicedata_capture_id", "other-capture"),
+            ("getdevicedata_process_id", 9999),
+            ("getdevicedata_image_name", "Other.exe"),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["input"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "owner input stream capture identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
     def test_direct3d7_module_identity_is_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
