@@ -606,6 +606,19 @@ def classify_bridge_state(
                 "airplane_pointer_nonnull": True,
                 "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
             },
+            "input_stream": {
+                "capture_id": "same as the airplane state capture",
+                "process_id": state["ProcessId"],
+                "image_name": "MulleMeck.exe",
+                "record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
+                "event_count": "positive integer",
+                "stream_byte_count": "event_count * 16",
+                "stream_sha256": "SHA-256 of the private raw stream",
+                "mouse_arrow_event_id": "1..event_count",
+                "escape_dispatch_event_id": (
+                    "later than the mouse event ID"
+                ),
+            },
             "airplane_pointer_nonnull": True,
             "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
             "escape_scan_code": "0x01",

@@ -1571,6 +1571,20 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            outside["required_owner_handoff"]["input_stream"],
+            {
+                "capture_id": "same as the airplane state capture",
+                "process_id": 1234,
+                "image_name": "MulleMeck.exe",
+                "record_format": "DIRECTINPUT_BUFFERED_16_BYTE_LE",
+                "event_count": "positive integer",
+                "stream_byte_count": "event_count * 16",
+                "stream_sha256": "SHA-256 of the private raw stream",
+                "mouse_arrow_event_id": "1..event_count",
+                "escape_dispatch_event_id": "later than the mouse event ID",
+            },
+        )
+        self.assertEqual(
             outside["transition_contract_sha256"],
             hashlib.sha256(TRANSITIONS.read_bytes()).hexdigest(),
         )
