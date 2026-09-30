@@ -32,6 +32,7 @@ HEX32 = re.compile(r"^0x[0-9a-f]{8}$")
 SCAN_CODE = re.compile(r"^0x[0-9a-f]{2}$")
 HRESULT = re.compile(r"^0x[0-9A-F]{8}$")
 CAPTURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+MODULE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 MAX_FRAME_DIMENSION = 8192
 FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
 AIRPLANE_COMPLETE_BITS = 0x1FF
@@ -94,7 +95,10 @@ RUNTIME_KEYS = {
     "device_interface", "create_calls", "successful_create_calls",
     "last_create_hresult", "device_nonnull", "create_results",
 }
-CREATE_RESULT_KEYS = {"caller_site", "hresult", "device_nonnull"}
+CREATE_RESULT_KEYS = {
+    "caller_module", "caller_module_sha256", "caller_address_kind",
+    "caller_site", "hresult", "device_nonnull",
+}
 FRAME_KEYS = {
     "width", "height", "format", "sequence", "capture_surface",
     "conversion", "pixel_sha256", "changed_pixel_count",
@@ -229,6 +233,16 @@ def _hresult(value: Any, label: str) -> str:
         raise OwnerVMFlightReceiptError(
             f"{label} must be uppercase 0x + 8 hex digits"
         )
+    return value
+
+
+def _module_name(value: Any, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or MODULE_NAME.fullmatch(value) is None
+        or Path(value).name != value
+    ):
+        raise OwnerVMFlightReceiptError(f"{label} is not a module filename")
     return value
 
 
@@ -1003,10 +1017,34 @@ def validate_flight_frame(
     normalized_results = []
     for index, result in enumerate(create_results):
         row = _fields(result, CREATE_RESULT_KEYS, f"runtime.create_results[{index}]")
+        caller_module = _module_name(
+            row["caller_module"],
+            f"runtime.create_results[{index}].caller_module",
+        )
+        caller_module_sha256 = _sha256(
+            row["caller_module_sha256"],
+            f"runtime.create_results[{index}].caller_module_sha256",
+        )
+        if (
+            caller_module == process["image_name"]
+            and caller_module_sha256 != source["executable_sha256"]
+        ):
+            raise OwnerVMFlightReceiptError(
+                "original executable caller identity differs"
+            )
+        if row["caller_address_kind"] != "RVA":
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 caller address kind differs"
+            )
+        caller_rva = _hex32(
+            row["caller_site"],
+            f"runtime.create_results[{index}].caller_site",
+        )
         normalized_results.append({
-            "caller_site": _hex32(
-                row["caller_site"], f"runtime.create_results[{index}].caller_site"
-            ),
+            "caller_module": caller_module,
+            "caller_module_sha256": caller_module_sha256,
+            "caller_address_kind": "RVA",
+            "caller_rva": caller_rva,
             "hresult": _hresult(
                 row["hresult"], f"runtime.create_results[{index}].hresult"
             ),
@@ -1035,7 +1073,7 @@ def validate_flight_frame(
             "Direct3D7 device creation evidence is incomplete"
         )
     for row in normalized_results:
-        if row["caller_site"] == "0x00000000":
+        if row["caller_rva"] == "0x00000000":
             raise OwnerVMFlightReceiptError(
                 "Direct3D7 device creation evidence is incomplete"
             )

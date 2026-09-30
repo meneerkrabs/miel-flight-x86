@@ -226,11 +226,17 @@ def _frame_receipt(frame: dict) -> dict:
             "device_nonnull": True,
             "create_results": [
                 {
+                    "caller_module": "MulleMeck.exe",
+                    "caller_module_sha256": _identity()["executable_sha256"],
+                    "caller_address_kind": "RVA",
                     "caller_site": "0x0042a95e",
                     "hresult": "0x8007000E",
                     "device_nonnull": False,
                 },
                 {
+                    "caller_module": "gtDirect3d.dll",
+                    "caller_module_sha256": "4" * 64,
+                    "caller_address_kind": "RVA",
                     "caller_site": "0x0042a95e",
                     "hresult": "0x00000000",
                     "device_nonnull": True,
@@ -334,6 +340,14 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             result["status"], "NATIVE_OWNER_VM_FLIGHT_FRAME_CANDIDATE_ONLY"
         )
         self.assertEqual(result["runtime"]["create_calls"], 2)
+        self.assertEqual(
+            result["runtime"]["create_results"][0]["caller_module"],
+            "MulleMeck.exe",
+        )
+        self.assertEqual(
+            result["runtime"]["create_results"][0]["caller_rva"],
+            "0x0042a95e",
+        )
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
         self.assertFalse(result["proof_limits"]["hosted_runner_validated"])
@@ -345,6 +359,24 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             receipt["prerequisites"]["airplane_completion_bits"] = 0x1FE
             with self.assertRaisesRegex(
                 OwnerVMFlightReceiptError, "airplane completion predicate"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_create_result_caller_module_identity_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime"]["create_results"][0][
+                "caller_module_sha256"
+            ] = "5" * 64
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "original executable caller identity differs",
             ):
                 validate_flight_frame(
                     receipt,
