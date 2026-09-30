@@ -11,6 +11,7 @@ from pathlib import Path
 from tools.miel_vliegt.owner_vm_flight_receipt import (
     OwnerVMFlightReceiptError,
     load_bridge_success,
+    validate_bridge_health,
     validate_arrow_diagnostic,
     validate_flight_frame,
     validate_bridge_observation,
@@ -91,6 +92,14 @@ def _bridge_click() -> dict:
         "openedBefore": 1,
         "openedAfter": 1,
         "injectionSeen": True,
+    }
+
+
+def _bridge_health() -> dict:
+    return {
+        "ok": True,
+        "service": "flight-vm-bridge",
+        "vm": "Windows 11",
     }
 
 
@@ -486,6 +495,8 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             before = root / "before.json"
             click = root / "click.json"
             after = root / "after.json"
+            health = root / "health.json"
+            health.write_text(json.dumps(_bridge_health()), encoding="utf-8")
             before.write_text(
                 '{"ok":false,"error":"transport diagnostic"}'
                 + json.dumps({"ok": True, "state": _bridge_state()}),
@@ -511,6 +522,7 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                     sys.executable, "-B",
                     str(ROOT / "tools/miel_vliegt/owner_vm_flight_receipt.py"),
                     "--receipt-type", "bridge-sequence",
+                    "--bridge-health", str(health),
                     "--bridge-before", str(before),
                     "--bridge-click", str(click),
                     "--bridge-after", str(after),
@@ -527,6 +539,21 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
         )
         self.assertEqual(result["before"]["barn_view"], 0)
         self.assertEqual(result["after"]["barn_view"], 1)
+
+    def test_bridge_health_is_fail_closed(self):
+        self.assertEqual(
+            validate_bridge_health(_bridge_health()),
+            {
+                "service": "flight-vm-bridge",
+                "vm": "Windows 11",
+            },
+        )
+        wrong_service = _bridge_health()
+        wrong_service["service"] = "general-shell"
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "bridge service"
+        ):
+            validate_bridge_health(wrong_service)
 
 
 class OwnerVMBridgeObservationTests(unittest.TestCase):

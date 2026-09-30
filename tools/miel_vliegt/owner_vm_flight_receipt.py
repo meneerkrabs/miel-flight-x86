@@ -119,6 +119,7 @@ BRIDGE_CLICK_KEYS = {
     "target", "delta", "cursorBefore", "cursorAfter", "barnViewBefore",
     "barnViewAfter", "openedBefore", "openedAfter", "injectionSeen",
 }
+BRIDGE_HEALTH_KEYS = {"ok", "service", "vm"}
 BRIDGE_PROOF_KEYS = {
     "airplane_completion_evidence", "native_flight_transition",
     "direct3d7_device_evidence", "native_parity_evidence",
@@ -405,6 +406,21 @@ def validate_bridge_observation(
         )
         return {**common, "status": status, "click": click}
     raise OwnerVMFlightReceiptError("bridge success record fields differ")
+
+
+def validate_bridge_health(value: Any) -> dict[str, str]:
+    """Bind bridge evidence to the reviewed bounded service identity."""
+
+    health = _fields(value, BRIDGE_HEALTH_KEYS, "bridge health")
+    _boolean(health["ok"], "bridge health.ok", True)
+    if (
+        health["service"] != "flight-vm-bridge"
+        or health["vm"] != "Windows 11"
+    ):
+        raise OwnerVMFlightReceiptError(
+            "bridge service or VM identity differs"
+        )
+    return {"service": health["service"], "vm": health["vm"]}
 
 
 def validate_bridge_sequence(
@@ -1066,6 +1082,7 @@ def main() -> int:
     parser.add_argument("--bridge-before", type=Path)
     parser.add_argument("--bridge-click", type=Path)
     parser.add_argument("--bridge-after", type=Path)
+    parser.add_argument("--bridge-health", type=Path)
     parser.add_argument("--source-identity", type=Path, default=DEFAULT_SOURCE_IDENTITY)
     parser.add_argument("--transitions", type=Path, default=DEFAULT_TRANSITIONS)
     parser.add_argument("--expected-public-commit")
@@ -1075,12 +1092,18 @@ def main() -> int:
     if args.receipt_type == "bridge-sequence":
         if args.receipt is not None or args.frame is not None:
             parser.error("bridge sequences use --bridge-before/click/after")
+        if args.bridge_health is None:
+            parser.error("bridge sequences require --bridge-health")
+        health = validate_bridge_health(
+            _load(args.bridge_health, "bridge health")
+        )
         result = validate_bridge_sequence(
             _load_bridge_file(args.bridge_before, "before", "state"),
             _load_bridge_file(args.bridge_click, "click", "click"),
             _load_bridge_file(args.bridge_after, "after", "state"),
             observer_hook_path=DEFAULT_OBSERVER_HOOK,
         )
+        result["bridge_environment"] = health
     elif args.receipt_type == "arrow":
         if args.receipt is None:
             parser.error("arrow diagnostics require a receipt path")
