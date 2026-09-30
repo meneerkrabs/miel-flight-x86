@@ -321,6 +321,9 @@ def _frame_receipt(frame: dict) -> dict:
             "device_nonnull": True,
             "create_results": [
                 {
+                    "capture_id": "owner-vm-flight-20260930-001",
+                    "process_id": 4321,
+                    "image_name": "MulleMeck.exe",
                     "caller_module": "MulleMeck.exe",
                     "caller_module_sha256": _identity()["executable_sha256"],
                     "caller_address_kind": "RVA",
@@ -330,6 +333,9 @@ def _frame_receipt(frame: dict) -> dict:
                     "device_nonnull": False,
                 },
                 {
+                    "capture_id": "owner-vm-flight-20260930-001",
+                    "process_id": 4321,
+                    "image_name": "MulleMeck.exe",
                     "caller_module": "gtDirect3d.dll",
                     "caller_module_sha256": "4" * 64,
                     "caller_address_kind": "RVA",
@@ -893,6 +899,29 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_create_results_cannot_be_spliced_across_captures(self):
+        for row_index in (0, 1):
+            for field, value in (
+                ("capture_id", "owner-vm-arrow-20260930-001"),
+                ("process_id", 9999),
+                ("image_name", "Other.exe"),
+            ):
+                with self.subTest(row=row_index, field=field), \
+                        tempfile.TemporaryDirectory() as directory:
+                    frame_path, frame = _frame_file(Path(directory))
+                    receipt = _frame_receipt(frame)
+                    receipt["runtime"]["create_results"][row_index][field] = value
+                    with self.assertRaisesRegex(
+                        OwnerVMFlightReceiptError,
+                        "Direct3D7 result capture identity differs",
+                    ):
+                        validate_flight_frame(
+                            receipt,
+                            frame_path,
+                            source_identity_path=SOURCE_IDENTITY,
+                            transition_contract_path=TRANSITIONS,
+                        )
 
     def test_owner_input_stream_cannot_be_spliced_across_captures(self):
         for field, value in (

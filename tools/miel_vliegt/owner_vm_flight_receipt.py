@@ -124,8 +124,9 @@ RUNTIME_KEYS = {
     "create_results",
 }
 CREATE_RESULT_KEYS = {
-    "caller_module", "caller_module_sha256", "caller_address_kind",
-    "caller_site", "manager_tick", "hresult", "device_nonnull",
+    "capture_id", "process_id", "image_name", "caller_module",
+    "caller_module_sha256", "caller_address_kind", "caller_site",
+    "manager_tick", "hresult", "device_nonnull",
 }
 FRAME_KEYS = {
     "width", "height", "capture_id", "process_id", "image_name", "format",
@@ -1461,6 +1462,26 @@ def validate_flight_frame(
     previous_create_tick = transitions[-1]["manager_tick"]
     for index, result in enumerate(create_results):
         row = _fields(result, CREATE_RESULT_KEYS, f"runtime.create_results[{index}]")
+        result_capture_id = row["capture_id"]
+        result_process_id = _integer(
+            row["process_id"],
+            f"runtime.create_results[{index}].process_id",
+            minimum=1,
+        )
+        result_image_name = _module_name(
+            row["image_name"],
+            f"runtime.create_results[{index}].image_name",
+        )
+        if (
+            not isinstance(result_capture_id, str)
+            or CAPTURE_ID.fullmatch(result_capture_id) is None
+            or result_capture_id != receipt["capture_id"]
+            or result_process_id != process["pid"]
+            or result_image_name != process["image_name"]
+        ):
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 result capture identity differs"
+            )
         caller_module = _module_name(
             row["caller_module"],
             f"runtime.create_results[{index}].caller_module",
@@ -1502,6 +1523,9 @@ def validate_flight_frame(
             )
         previous_create_tick = manager_tick
         normalized_results.append({
+            "capture_id": result_capture_id,
+            "process_id": result_process_id,
+            "image_name": result_image_name,
             "caller_module": caller_module,
             "caller_module_sha256": caller_module_sha256,
             "caller_address_kind": "RVA",
