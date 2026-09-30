@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.miel_vliegt import wine_readiness
 
@@ -623,6 +624,34 @@ class WineReadinessTests(unittest.TestCase):
 
             self.assertEqual(observation_path.read_bytes(), observation_bytes)
             self.assertEqual(phase_log.read_bytes(), log_bytes)
+
+    def test_source_hash_binds_the_validated_observation_bytes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            observation_path = directory / "observation.json"
+            observation_path.write_text(json.dumps(observation), encoding="utf-8")
+            validated_digest = hashlib.sha256(
+                observation_path.read_bytes()
+            ).hexdigest()
+            real_validate = wine_readiness.validate_observation
+
+            def replace_then_validate(value, *, evidence_root):
+                observation_path.write_text('{"mutated":true}', encoding="utf-8")
+                return real_validate(value, evidence_root=evidence_root)
+
+            with mock.patch.object(
+                wine_readiness,
+                "validate_observation",
+                side_effect=replace_then_validate,
+            ):
+                receipt = wine_readiness.validate_file(observation_path)
+
+        self.assertNotEqual(
+            receipt["source"]["sha256"],
+            hashlib.sha256(b'{"mutated":true}').hexdigest(),
+        )
+        self.assertEqual(receipt["source"]["sha256"], validated_digest)
 
 
 if __name__ == "__main__":

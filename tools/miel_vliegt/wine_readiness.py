@@ -101,16 +101,17 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def _load_json(path: Path) -> dict[str, Any]:
+def _load_json(path: Path) -> tuple[dict[str, Any], bytes]:
     try:
-        value = _STRICT_DECODER.decode(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
+        value = _STRICT_DECODER.decode(raw.decode(encoding="utf-8"))
     except DuplicateKeyError as error:
         raise WineReadinessError("duplicate JSON key in readiness observation") from error
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise WineReadinessError(f"cannot read Wine readiness observation: {path}") from error
     if not isinstance(value, dict):
         raise WineReadinessError("Wine readiness observation must be an object")
-    return value
+    return value, raw
 
 
 def _read_log(
@@ -379,11 +380,11 @@ def validate_observation(
 
 def validate_file(input_path: Path, output_path: Path | None = None) -> dict[str, Any]:
     input_path = input_path.resolve()
-    observation = _load_json(input_path)
+    observation, observation_bytes = _load_json(input_path)
     receipt = validate_observation(observation, evidence_root=input_path.parent)
     receipt["source"] = {
         "path": input_path.name,
-        "sha256": sha256_bytes(input_path.read_bytes()),
+        "sha256": sha256_bytes(observation_bytes),
     }
     if output_path is not None:
         evidence_paths = [input_path]
