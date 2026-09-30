@@ -206,6 +206,9 @@ def _frame_file(directory: Path) -> tuple[Path, dict]:
     return path, {
         "width": FRAME_WIDTH,
         "height": FRAME_HEIGHT,
+        "capture_id": "owner-vm-flight-20260930-001",
+        "process_id": 4321,
+        "image_name": "MulleMeck.exe",
         "format": "RGBA8",
         "sequence": 12,
         "manager_tick": 1502,
@@ -426,6 +429,10 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
         self.assertEqual(result["frame"]["manager_tick"], 1502)
         self.assertEqual(
+            result["frame"]["capture_id"],
+            "owner-vm-flight-20260930-001",
+        )
+        self.assertEqual(
             result["runtime_media"]["executable_sha256"],
             _identity()["executable_sha256"],
         )
@@ -609,6 +616,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             frame = {
                 "width": 2,
                 "height": 2,
+                "capture_id": "owner-vm-flight-20260930-001",
+                "process_id": 4321,
+                "image_name": "MulleMeck.exe",
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,
@@ -636,6 +646,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             frame = {
                 "width": FRAME_WIDTH,
                 "height": 480,
+                "capture_id": "owner-vm-flight-20260930-001",
+                "process_id": 4321,
+                "image_name": "MulleMeck.exe",
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,
@@ -652,6 +665,27 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 transition_contract_path=TRANSITIONS,
             )
         self.assertEqual(result["frame"]["height"], 480)
+
+    def test_flight_frame_cannot_be_spliced_across_captures(self):
+        for field, value in (
+            ("capture_id", "other-capture"),
+            ("process_id", 9999),
+            ("image_name", "Other.exe"),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["frame"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "Flight frame capture identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
     def test_manager_or_pixel_progress_cannot_replace_device_creation(self):
         mutations = (
@@ -729,6 +763,9 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             frame = {
                 "width": FRAME_WIDTH,
                 "height": FRAME_HEIGHT,
+                "capture_id": "owner-vm-flight-20260930-001",
+                "process_id": 4321,
+                "image_name": "MulleMeck.exe",
                 "format": "RGBA8",
                 "sequence": 12,
                 "manager_tick": 1502,

@@ -111,8 +111,8 @@ CREATE_RESULT_KEYS = {
     "caller_site", "manager_tick", "hresult", "device_nonnull",
 }
 FRAME_KEYS = {
-    "width", "height", "format", "sequence", "manager_tick",
-    "capture_surface",
+    "width", "height", "capture_id", "process_id", "image_name", "format",
+    "sequence", "manager_tick", "capture_surface",
     "conversion", "pixel_sha256", "changed_pixel_count",
     "captured_before_process_exit",
 }
@@ -1252,6 +1252,19 @@ def validate_flight_frame(
                 "Direct3D7 device creation evidence is incomplete"
             )
     frame = _fields(receipt.get("frame"), FRAME_KEYS, "frame")
+    frame_capture_id = frame["capture_id"]
+    frame_process_id = _integer(
+        frame["process_id"], "frame.process_id", minimum=1
+    )
+    frame_image_name = _module_name(frame["image_name"], "frame.image_name")
+    if (
+        frame_capture_id != receipt["capture_id"]
+        or frame_process_id != process["pid"]
+        or frame_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "Flight frame capture identity differs"
+        )
     frame_width = _integer(
         frame["width"], "frame.width", minimum=1
     )
@@ -1348,6 +1361,9 @@ def validate_flight_frame(
         "frame": {
             "width": frame_width,
             "height": frame_height,
+            "capture_id": frame_capture_id,
+            "process_id": frame_process_id,
+            "image_name": frame_image_name,
             "format": "RGBA8",
             "sequence": frame["sequence"],
             "manager_tick": frame_manager_tick,
