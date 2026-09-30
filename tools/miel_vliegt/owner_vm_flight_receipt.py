@@ -87,9 +87,11 @@ ARROW_TOP_KEYS = {
 FRAME_INPUT_KEYS = {
     "adapter_sha256", "adapter_record_bytes",
     "directinput_getdevicedata_events", "login_submit_observed",
-    "login_submit_manager_tick", "barn_escape_observed",
-    "barn_escape_manager_tick", "faster_key_scan_code",
-    "faster_key_down_manager_tick", "faster_key_up_manager_tick",
+    "login_submit_manager_tick", "login_submit_event_id",
+    "barn_escape_observed", "barn_escape_manager_tick",
+    "barn_escape_event_id", "faster_key_scan_code",
+    "faster_key_down_manager_tick", "faster_key_down_event_id",
+    "faster_key_up_manager_tick", "faster_key_up_event_id",
     "faster_key_held_until_departure", "system_directinput_create_hresult",
     "owner_adapter_hosted_runner_validated",
 }
@@ -1089,7 +1091,7 @@ def validate_flight_frame(
         "input.owner_adapter_hosted_runner_validated",
         False,
     )
-    _integer(
+    event_count = _integer(
         input_value["directinput_getdevicedata_events"],
         "input.getdevicedata_events",
         minimum=1,
@@ -1116,6 +1118,33 @@ def validate_flight_frame(
         "input.faster_key_up_manager_tick",
         minimum=1,
     )
+    raw_event_ids = (
+        input_value["login_submit_event_id"],
+        input_value["barn_escape_event_id"],
+        input_value["faster_key_down_event_id"],
+        input_value["faster_key_up_event_id"],
+    )
+    if any(
+        type(event_id) is not int
+        or event_id < 1
+        or event_id > event_count
+        for event_id in raw_event_ids
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner input event identity differs"
+        )
+    login_submit_event_id = raw_event_ids[0]
+    barn_escape_event_id = raw_event_ids[1]
+    faster_key_down_event_id = raw_event_ids[2]
+    faster_key_up_event_id = raw_event_ids[3]
+    if not (
+        login_submit_event_id < barn_escape_event_id
+        and barn_escape_event_id < faster_key_down_event_id
+        and faster_key_down_event_id < faster_key_up_event_id
+    ):
+        raise OwnerVMFlightReceiptError(
+            "owner input event identity differs"
+        )
     if _scan_code(
         input_value["faster_key_scan_code"], "input.faster_key_scan_code"
     ) not in FASTER_KEY_SCAN_CODES:

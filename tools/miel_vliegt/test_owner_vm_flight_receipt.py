@@ -237,11 +237,15 @@ def _frame_receipt(frame: dict) -> dict:
             "directinput_getdevicedata_events": 19,
             "login_submit_observed": True,
             "login_submit_manager_tick": 100,
+            "login_submit_event_id": 4,
             "barn_escape_observed": True,
             "barn_escape_manager_tick": 119,
+            "barn_escape_event_id": 7,
             "faster_key_scan_code": "0x2a",
             "faster_key_down_manager_tick": 135,
+            "faster_key_down_event_id": 12,
             "faster_key_up_manager_tick": 141,
+            "faster_key_up_event_id": 16,
             "faster_key_held_until_departure": True,
         },
         "transitions": _transition_records(),
@@ -561,6 +565,29 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_owner_input_claims_bind_getdevicedata_event_ids(self):
+        mutations = (
+            ("login_submit_event_id", 0),
+            ("barn_escape_event_id", 20),
+            ("faster_key_down_event_id", 7),
+            ("faster_key_up_event_id", 12),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["input"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "owner input event identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
         with tempfile.TemporaryDirectory() as directory:
             frame_path, frame = _frame_file(Path(directory))
