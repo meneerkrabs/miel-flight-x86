@@ -31,6 +31,10 @@ HRESULT = re.compile(r"^0x[0-9A-F]{8}$")
 CAPTURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_FRAME_DIMENSION = 8192
 FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
+AIRPLANE_COMPLETE_BITS = 0x1FF
+AIRPLANE_COMPLETE_PREDICATE = (
+    "barn.airplane(+0x160).completion(+0x128) == 0x1ff"
+)
 
 SOURCE_KEYS = {
     "edition", "iso_sha256", "executable_sha256",
@@ -60,6 +64,7 @@ KEY_EVENT_KEYS = {
 }
 ARROW_STATE_KEYS = {
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
+    "airplane_pointer_nonnull", "airplane_completion_bits",
 }
 ARROW_PROOF_KEYS = {
     "owner_vm_only", "native_transition_evidence", "native_parity_evidence",
@@ -96,7 +101,8 @@ FRAME_PROOF_KEYS = {
 }
 FRAME_TOP_KEYS = {
     "schema", "protocol", "capture_id", "source", "environment", "process",
-    "input", "transitions", "runtime", "frame", "proof_limits",
+    "input", "prerequisites", "transitions", "runtime", "frame",
+    "proof_limits",
 }
 
 
@@ -311,10 +317,50 @@ def _routes(path: Path, executable_sha256: str, edition: str) -> dict[str, Any]:
     ]
     if len(departure) != 1 or not isinstance(departure[0], dict):
         raise OwnerVMFlightReceiptError("Mygghanget departure is not unique")
+    predicates = contract.get("predicates")
+    if not isinstance(predicates, dict):
+        raise OwnerVMFlightReceiptError("transition predicates are invalid")
     return {
         "barn_mygghanget": barn[0],
         "mygghanget_flight": departure[0],
+        "airplane_complete_predicate": predicates.get("airplane_complete"),
     }
+
+
+def _validate_airplane_prerequisite(
+    value: Any, routes: dict[str, Any]
+) -> bool:
+    state = _fields(value, ARROW_STATE_KEYS, "airplane prerequisite")
+    if routes.get("airplane_complete_predicate") != AIRPLANE_COMPLETE_PREDICATE:
+        raise OwnerVMFlightReceiptError(
+            "reviewed airplane completion predicate drifted"
+        )
+    if (
+        state["current_mode"] != "mode_barn"
+        or state["pending_mode"] is not None
+        or state["barn_view"] != 0
+    ):
+        raise OwnerVMFlightReceiptError(
+            "airplane prerequisite is outside the reviewed outside-barn state"
+        )
+    airplane_complete = _boolean(
+        state["airplane_complete"], "state.airplane_complete"
+    )
+    pointer = _boolean(
+        state["airplane_pointer_nonnull"],
+        "state.airplane_pointer_nonnull",
+    )
+    bits = _integer(
+        state["airplane_completion_bits"],
+        "state.airplane_completion_bits",
+        maximum=0xFFFFFFFF,
+    )
+    exact_complete = pointer and bits == AIRPLANE_COMPLETE_BITS
+    if airplane_complete is not exact_complete:
+        raise OwnerVMFlightReceiptError(
+            "airplane completion predicate disagrees with observed state"
+        )
+    return exact_complete
 
 
 def _top(receipt: dict[str, Any], expected: set[str], protocol: str) -> None:
@@ -350,7 +396,9 @@ def validate_arrow_diagnostic(
         source["edition"],
     )
     input_value = _fields(receipt.get("input"), ARROW_INPUT_KEYS, "input")
-    state = _fields(receipt.get("state"), ARROW_STATE_KEYS, "state")
+    airplane_complete = _validate_airplane_prerequisite(
+        receipt.get("state"), routes
+    )
     proof = _fields(
         receipt.get("proof_limits"), ARROW_PROOF_KEYS, "proof_limits"
     )
@@ -401,17 +449,6 @@ def validate_arrow_diagnostic(
     )
     mode_set = _boolean(escape["mode_set_observed"], "escape.mode_set_observed")
 
-    if (
-        state["current_mode"] != "mode_barn"
-        or state["pending_mode"] is not None
-        or state["barn_view"] != 0
-    ):
-        raise OwnerVMFlightReceiptError(
-            "arrow observation is outside the reviewed outside-barn state"
-        )
-    airplane_complete = _boolean(
-        state["airplane_complete"], "state.airplane_complete"
-    )
     _boolean(proof["owner_vm_only"], "proof.owner_vm_only", True)
     _boolean(proof["native_transition_evidence"], "proof.transition", False)
     _boolean(proof["native_parity_evidence"], "proof.parity", False)
@@ -446,6 +483,11 @@ def validate_arrow_diagnostic(
             "target_mode": "mode_mygghanget",
             "mode_set_callsite": routes["barn_mygghanget"]["address"],
             "outside_barn_view": 0,
+            "airplane_predicate": AIRPLANE_COMPLETE_PREDICATE,
+            "airplane_pointer_nonnull": airplane_complete,
+            "airplane_completion_bits": (
+                AIRPLANE_COMPLETE_BITS if airplane_complete else None
+            ),
             "airplane_complete": airplane_complete,
         },
         "observed": {
@@ -460,6 +502,8 @@ def validate_arrow_diagnostic(
                 "pending_mode": None,
                 "barn_view": 0,
                 "airplane_complete": True,
+                "airplane_pointer_nonnull": True,
+                "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
             },
             "input": {
                 "kind": "KEYBOARD_SCAN_CODE",
@@ -514,6 +558,13 @@ def validate_flight_frame(
         source["executable_sha256"],
         source["edition"],
     )
+    airplane_complete = _validate_airplane_prerequisite(
+        receipt.get("prerequisites"), routes
+    )
+    if not airplane_complete:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame requires the exact reviewed airplane prerequisite"
+        )
     input_value = _fields(receipt.get("input"), FRAME_INPUT_KEYS, "input")
     _sha256(input_value["adapter_sha256"], "input.adapter_sha256")
     if input_value["adapter_record_bytes"] != 16:
@@ -696,6 +747,14 @@ def validate_flight_frame(
         "environment": environment,
         "process": process,
         "input": input_value,
+        "prerequisites": {
+            "current_mode": "mode_barn",
+            "pending_mode": None,
+            "barn_view": 0,
+            "airplane_complete": True,
+            "airplane_pointer_nonnull": True,
+            "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
+        },
         "transitions": transitions,
         "runtime": {
             "current_mode": "mode_fly",

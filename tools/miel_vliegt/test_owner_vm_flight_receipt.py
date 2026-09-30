@@ -92,6 +92,8 @@ def _arrow_receipt() -> dict:
             "pending_mode": None,
             "barn_view": 0,
             "airplane_complete": True,
+            "airplane_pointer_nonnull": True,
+            "airplane_completion_bits": 0x1FF,
         },
         "proof_limits": {
             "owner_vm_only": True,
@@ -158,6 +160,14 @@ def _frame_receipt(frame: dict) -> dict:
             "faster_key_held_until_departure": True,
         },
         "transitions": _transition_records(),
+        "prerequisites": {
+            "current_mode": "mode_barn",
+            "pending_mode": None,
+            "barn_view": 0,
+            "airplane_complete": True,
+            "airplane_pointer_nonnull": True,
+            "airplane_completion_bits": 0x1FF,
+        },
         "runtime": {
             "current_mode": "mode_fly",
             "manager_ticks": 1502,
@@ -208,6 +218,9 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
             result["static_prerequisite"]["mode_set_callsite"], "0x00419198"
         )
         self.assertEqual(
+            result["static_prerequisite"]["airplane_completion_bits"], 0x1FF
+        )
+        self.assertEqual(
             result["required_owner_handoff"]["input"],
             {
                 "kind": "KEYBOARD_SCAN_CODE",
@@ -221,6 +234,8 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
     def test_incomplete_airplane_blocks_before_input_diagnosis(self):
         receipt = _arrow_receipt()
         receipt["state"]["airplane_complete"] = False
+        receipt["state"]["airplane_pointer_nonnull"] = False
+        receipt["state"]["airplane_completion_bits"] = 0
         result = validate_arrow_diagnostic(
             receipt,
             source_identity_path=SOURCE_IDENTITY,
@@ -229,6 +244,18 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         self.assertEqual(
             result["blocker_code"], "AIRPLANE_COMPLETION_UNPROVEN"
         )
+
+    def test_airplane_boolean_cannot_overclaim_exact_completion_bits(self):
+        receipt = _arrow_receipt()
+        receipt["state"]["airplane_pointer_nonnull"] = False
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "airplane completion predicate"
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
 
     def test_executable_or_contract_drift_is_rejected(self):
         for field, value in (
@@ -264,6 +291,21 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
         self.assertEqual(result["frame"]["changed_pixel_count"], 1)
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
         self.assertFalse(result["proof_limits"]["hosted_runner_validated"])
+
+    def test_flight_frame_requires_the_exact_airplane_prerequisite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["prerequisites"]["airplane_completion_bits"] = 0x1FE
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "airplane completion predicate"
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
 
     def test_frame_bytes_must_match_their_declared_identity(self):
         with tempfile.TemporaryDirectory() as directory:
