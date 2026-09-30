@@ -591,6 +591,21 @@ def classify_bridge_state(
     else:
         blocker = "AIRPLANE_COMPLETION_AND_ESCAPE_INPUT_PENDING"
         handoff = {
+            "state": {
+                "capture_id": "owner-generated valid capture ID",
+                "process_id": state["ProcessId"],
+                "image_name": "MulleMeck.exe",
+                "manager_tick": "positive integer <= manager_ticks",
+                "manager_ticks": (
+                    "positive integer >= prerequisite, arrow, and Escape ticks"
+                ),
+                "current_mode": "mode_barn",
+                "pending_mode": None,
+                "barn_view": 0,
+                "airplane_complete": True,
+                "airplane_pointer_nonnull": True,
+                "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
+            },
             "airplane_pointer_nonnull": True,
             "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
             "escape_scan_code": "0x01",

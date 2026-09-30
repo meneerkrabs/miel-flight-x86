@@ -1553,6 +1553,24 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             "0x00419198",
         )
         self.assertEqual(
+            outside["required_owner_handoff"]["state"],
+            {
+                "capture_id": "owner-generated valid capture ID",
+                "process_id": 1234,
+                "image_name": "MulleMeck.exe",
+                "manager_tick": "positive integer <= manager_ticks",
+                "manager_ticks": (
+                    "positive integer >= prerequisite, arrow, and Escape ticks"
+                ),
+                "current_mode": "mode_barn",
+                "pending_mode": None,
+                "barn_view": 0,
+                "airplane_complete": True,
+                "airplane_pointer_nonnull": True,
+                "airplane_completion_bits": 0x1FF,
+            },
+        )
+        self.assertEqual(
             outside["transition_contract_sha256"],
             hashlib.sha256(TRANSITIONS.read_bytes()).hexdigest(),
         )
