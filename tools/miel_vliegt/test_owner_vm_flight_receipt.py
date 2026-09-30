@@ -667,6 +667,37 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                     transition_contract_path=TRANSITIONS,
                 )
 
+    def test_transition_routes_hash_the_parsed_contract_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            transition_path = Path(directory) / "native_scene_transitions.json"
+            transition_path.write_bytes(TRANSITIONS.read_bytes())
+            contract = json.loads(TRANSITIONS.read_text(encoding="utf-8"))
+            drifted = dict(contract, race_after_hash=True)
+            identity = _identity()
+            original_load = owner_vm_flight_receipt._load
+
+            def drift_alternate_load(path, label):
+                if path == transition_path:
+                    return drifted
+                return original_load(path, label)
+
+            with mock.patch.object(
+                owner_vm_flight_receipt,
+                "_load",
+                side_effect=drift_alternate_load,
+            ):
+                routes, transition_sha256 = owner_vm_flight_receipt._routes(
+                    transition_path,
+                    identity["executable_sha256"],
+                    identity["edition"],
+                )
+
+            self.assertNotIn("race_after_hash", routes)
+            self.assertEqual(
+                transition_sha256,
+                hashlib.sha256(TRANSITIONS.read_bytes()).hexdigest(),
+            )
+
 
 class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
     def test_complete_owner_frame_stays_candidate_only(self):

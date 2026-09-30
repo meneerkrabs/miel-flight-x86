@@ -544,7 +544,7 @@ def classify_bridge_state(
     """Turn one bounded bridge state into the exact missing owner step."""
 
     reviewed_media = _reviewed_media(source_identity_path)
-    routes = _routes(
+    routes, transition_contract_sha256 = _routes(
         transition_contract_path,
         reviewed_media["executable"]["sha256"],
         reviewed_media["edition"],
@@ -578,9 +578,7 @@ def classify_bridge_state(
         "blocker_code": blocker,
         "bridge_environment": health,
         "reviewed_media": reviewed_media,
-        "transition_contract_sha256": _sha256_file(
-            transition_contract_path
-        ),
+        "transition_contract_sha256": transition_contract_sha256,
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "barn_mode_vtable": observation["barn_mode_vtable"],
         "process_id": state["ProcessId"],
@@ -683,7 +681,6 @@ def _source_and_environment(
     receipt: dict[str, Any],
     *,
     source_identity_path: Path,
-    transition_contract_path: Path,
     expected_public_commit: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     source = _fields(receipt.get("source"), SOURCE_KEYS, "source")
@@ -718,10 +715,6 @@ def _source_and_environment(
         source["transition_contract_sha256"],
         "source.transition_contract_sha256",
     )
-    if source["transition_contract_sha256"] != _sha256_file(
-        transition_contract_path
-    ):
-        raise OwnerVMFlightReceiptError("transition contract bytes drifted")
     public_commit = _commit(
         source["public_source_commit"], "source.public_source_commit"
     )
@@ -811,15 +804,30 @@ def _source_and_environment(
     return source, environment, process
 
 
-def _routes(path: Path, executable_sha256: str, edition: str) -> dict[str, Any]:
+def _load_transition(path: Path) -> tuple[dict[str, Any], bytes]:
+    try:
+        raw = path.read_bytes()
+        contract = _decode(
+            raw.decode(encoding="utf-8"), "native transition contract"
+        )
+    except (OSError, UnicodeDecodeError) as error:
+        raise OwnerVMFlightReceiptError(
+            f"cannot read native transition contract: {path}"
+        ) from error
+    return contract, raw
+
+
+def _routes(
+    path: Path, executable_sha256: str, edition: str
+) -> tuple[dict[str, Any], str]:
+    contract, contract_bytes = _load_transition(path)
     if (
         path.absolute() != DEFAULT_TRANSITIONS.absolute()
-        and _sha256_file(path) != _sha256_file(DEFAULT_TRANSITIONS)
+        and contract_bytes != _load_transition(DEFAULT_TRANSITIONS)[1]
     ):
         raise OwnerVMFlightReceiptError(
             "reviewed transition contract bytes differ"
         )
-    contract = _load(path, "native transition contract")
     contract_source = contract.get("source")
     if (
         contract.get("schema") != 1
@@ -856,7 +864,7 @@ def _routes(path: Path, executable_sha256: str, edition: str) -> dict[str, Any]:
         "barn_mygghanget": barn[0],
         "mygghanget_flight": departure[0],
         "airplane_complete_predicate": predicates.get("airplane_complete"),
-    }
+    }, hashlib.sha256(contract_bytes).hexdigest()
 
 
 def _validate_airplane_prerequisite(
@@ -952,14 +960,15 @@ def validate_arrow_diagnostic(
     source, environment, process = _source_and_environment(
         receipt,
         source_identity_path=source_identity_path,
-        transition_contract_path=transition_contract_path,
         expected_public_commit=expected_public_commit,
     )
-    routes = _routes(
+    routes, transition_contract_sha256 = _routes(
         transition_contract_path,
         source["executable_sha256"],
         source["edition"],
     )
+    if source["transition_contract_sha256"] != transition_contract_sha256:
+        raise OwnerVMFlightReceiptError("transition contract bytes drifted")
     input_value = _fields(receipt.get("input"), ARROW_INPUT_KEYS, "input")
     airplane_complete, prerequisite_observation = _validate_airplane_prerequisite(
         receipt.get("state"),
@@ -1266,14 +1275,15 @@ def validate_flight_frame(
     source, environment, process = _source_and_environment(
         receipt,
         source_identity_path=source_identity_path,
-        transition_contract_path=transition_contract_path,
         expected_public_commit=expected_public_commit,
     )
-    routes = _routes(
+    routes, transition_contract_sha256 = _routes(
         transition_contract_path,
         source["executable_sha256"],
         source["edition"],
     )
+    if source["transition_contract_sha256"] != transition_contract_sha256:
+        raise OwnerVMFlightReceiptError("transition contract bytes drifted")
     runtime_media = _validate_runtime_media(
         receipt.get("runtime_media"),
         source,
