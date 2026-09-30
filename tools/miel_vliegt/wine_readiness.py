@@ -386,6 +386,23 @@ def validate_file(input_path: Path, output_path: Path | None = None) -> dict[str
         "sha256": sha256_bytes(input_path.read_bytes()),
     }
     if output_path is not None:
+        evidence_paths = [input_path]
+        evidence_paths.extend(
+            (input_path.parent / phase["log"]["path"]).resolve()
+            for phase in observation["phases"]
+        )
+        resolved_output = output_path.resolve(strict=False)
+        if any(
+            resolved_output == evidence_path
+            or (
+                output_path.exists()
+                and output_path.samefile(evidence_path)
+            )
+            for evidence_path in evidence_paths
+        ):
+            raise WineReadinessError(
+                "Wine readiness receipt output aliases evidence"
+            )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps(receipt, indent=2, sort_keys=True) + "\n",

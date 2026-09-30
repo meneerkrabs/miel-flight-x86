@@ -598,6 +598,32 @@ class WineReadinessTests(unittest.TestCase):
             ):
                 wine_readiness.validate_file(observation_path)
 
+    def test_receipt_output_cannot_overwrite_bound_evidence(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            observation_path = directory / "observation.json"
+            observation_path.write_text(json.dumps(observation), encoding="utf-8")
+            phase_log = directory / observation["phases"][0]["log"]["path"]
+            observation_bytes = observation_path.read_bytes()
+            log_bytes = phase_log.read_bytes()
+
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "receipt output aliases evidence",
+            ):
+                wine_readiness.validate_file(observation_path, phase_log)
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "receipt output aliases evidence",
+            ):
+                wine_readiness.validate_file(
+                    observation_path, output_path=observation_path,
+                )
+
+            self.assertEqual(observation_path.read_bytes(), observation_bytes)
+            self.assertEqual(phase_log.read_bytes(), log_bytes)
+
 
 if __name__ == "__main__":
     unittest.main()
