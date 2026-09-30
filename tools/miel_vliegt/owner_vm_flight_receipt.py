@@ -34,7 +34,9 @@ SCAN_CODE = re.compile(r"^0x[0-9a-f]{2}$")
 HRESULT = re.compile(r"^0x[0-9A-F]{8}$")
 CAPTURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MODULE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-MAX_FRAME_DIMENSION = 8192
+# Public native observation measured 640x457; the owner bridge's input
+# coordinate contract is a 640x480 game client.
+FRAME_CLIENT_GEOMETRIES = frozenset({(640, 457), (640, 480)})
 FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
 AIRPLANE_COMPLETE_BITS = 0x1FF
 AIRPLANE_COMPLETE_PREDICATE = (
@@ -1232,11 +1234,15 @@ def validate_flight_frame(
 
     frame = _fields(receipt.get("frame"), FRAME_KEYS, "frame")
     frame_width = _integer(
-        frame["width"], "frame.width", minimum=1, maximum=MAX_FRAME_DIMENSION
+        frame["width"], "frame.width", minimum=1
     )
     frame_height = _integer(
-        frame["height"], "frame.height", minimum=1, maximum=MAX_FRAME_DIMENSION
+        frame["height"], "frame.height", minimum=1
     )
+    if (frame_width, frame_height) not in FRAME_CLIENT_GEOMETRIES:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame geometry differs from the original client"
+        )
     if (
         frame["format"] != "RGBA8"
         or frame["capture_surface"] != "ORIGINAL_WINDOW_CLIENT"

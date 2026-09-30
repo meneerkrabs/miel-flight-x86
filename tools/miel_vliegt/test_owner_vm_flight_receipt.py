@@ -563,6 +563,58 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     transition_contract_path=TRANSITIONS,
                 )
 
+    def test_flight_frame_requires_original_client_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path = Path(directory) / "flight-frame.rgba"
+            payload = b"\x11\x22\x33\x44" + b"\x00" * 12
+            frame_path.write_bytes(payload)
+            frame = {
+                "width": 2,
+                "height": 2,
+                "format": "RGBA8",
+                "sequence": 12,
+                "manager_tick": 1502,
+                "capture_surface": "ORIGINAL_WINDOW_CLIENT",
+                "conversion": "CANONICAL_RGBA8_EXACT",
+                "pixel_sha256": hashlib.sha256(payload).hexdigest(),
+                "changed_pixel_count": 1,
+                "captured_before_process_exit": True,
+            }
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError, "frame geometry differs"
+            ):
+                validate_flight_frame(
+                    _frame_receipt(frame),
+                    frame_path,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path = Path(directory) / "flight-frame.rgba"
+            payload = bytearray(FRAME_WIDTH * 480 * 4)
+            payload[:4] = b"\x12\x34\x56\x78"
+            frame_path.write_bytes(payload)
+            frame = {
+                "width": FRAME_WIDTH,
+                "height": 480,
+                "format": "RGBA8",
+                "sequence": 12,
+                "manager_tick": 1502,
+                "capture_surface": "ORIGINAL_WINDOW_CLIENT",
+                "conversion": "CANONICAL_RGBA8_EXACT",
+                "pixel_sha256": hashlib.sha256(payload).hexdigest(),
+                "changed_pixel_count": 1,
+                "captured_before_process_exit": True,
+            }
+            result = validate_flight_frame(
+                _frame_receipt(frame),
+                frame_path,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+        self.assertEqual(result["frame"]["height"], 480)
+
     def test_manager_or_pixel_progress_cannot_replace_device_creation(self):
         mutations = (
             ("create_calls", 0),
