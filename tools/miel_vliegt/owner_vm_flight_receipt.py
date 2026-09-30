@@ -338,14 +338,15 @@ def load_bridge_success(raw: str, requested: str) -> dict[str, Any]:
 
 def _observer_barn_vtable(path: Path) -> tuple[str, str]:
     try:
-        source = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
+        source = raw.decode(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise OwnerVMFlightReceiptError(
             "cannot read public observer source"
         ) from error
     if (
         path.absolute() != DEFAULT_OBSERVER_HOOK.absolute()
-        and _sha256_file(path) != _sha256_file(DEFAULT_OBSERVER_HOOK)
+        and raw != DEFAULT_OBSERVER_HOOK.read_bytes()
     ):
         raise OwnerVMFlightReceiptError(
             "public observer hook bytes differ"
@@ -355,7 +356,7 @@ def _observer_barn_vtable(path: Path) -> tuple[str, str]:
         raise OwnerVMFlightReceiptError(
             "public observer barn lifecycle is not uniquely bound"
         )
-    return matches[0], _sha256_file(path)
+    return matches[0], hashlib.sha256(raw).hexdigest()
 
 
 def _bridge_state(value: Any) -> dict[str, Any]:

@@ -1706,6 +1706,41 @@ class OwnerVMBridgeObservationTests(unittest.TestCase):
                     observer_hook_path=drifted,
                 )
 
+    def test_observer_hook_hash_uses_parsed_source_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original = OBSERVER_HOOK.read_bytes()
+            alternate = Path(directory) / "native_observer_hook.c"
+            alternate.write_bytes(original)
+            alternate_calls = 0
+
+            def mutate_after_first_hash(path):
+                nonlocal alternate_calls
+                if path != alternate:
+                    return hashlib.sha256(original).hexdigest()
+                alternate_calls += 1
+                if alternate_calls == 1:
+                    alternate.write_bytes(
+                        original + b"\n/* post-read drift */\n"
+                    )
+                    return hashlib.sha256(original).hexdigest()
+                return hashlib.sha256(alternate.read_bytes()).hexdigest()
+
+            with mock.patch.object(
+                owner_vm_flight_receipt,
+                "_sha256_file",
+                side_effect=mutate_after_first_hash,
+            ):
+                vtable, observer_sha256 = (
+                    owner_vm_flight_receipt._observer_barn_vtable(alternate)
+                )
+
+            self.assertEqual(vtable, "0x0044caec")
+            self.assertEqual(
+                observer_sha256,
+                hashlib.sha256(original).hexdigest(),
+            )
+            self.assertEqual(alternate.read_bytes(), original)
+
     def test_door_click_is_navigation_candidate_only(self):
         result = validate_bridge_observation(
             {"ok": True, "click": _bridge_click()},
