@@ -1604,6 +1604,10 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             "a84550b46612dc326177a67a84d6fd1e"
             "35aae3dc74361254611d1b03eda559a2",
         )
+        self.assertEqual(
+            result["source_identity_sha256"],
+            hashlib.sha256(SOURCE_IDENTITY.read_bytes()).hexdigest(),
+        )
         self.assertFalse(
             result["proof_limits"]["runtime_original_media_match"]
         )

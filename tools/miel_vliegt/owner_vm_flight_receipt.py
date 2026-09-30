@@ -567,7 +567,9 @@ def classify_bridge_state(
 ) -> dict[str, Any]:
     """Turn one bounded bridge state into the exact missing owner step."""
 
-    reviewed_media = _reviewed_media(source_identity_path)
+    reviewed_media, source_identity_raw = _reviewed_media_and_bytes(
+        source_identity_path
+    )
     routes, transition_contract_sha256 = _routes(
         transition_contract_path,
         reviewed_media["executable"]["sha256"],
@@ -602,6 +604,9 @@ def classify_bridge_state(
         "blocker_code": blocker,
         "bridge_environment": health,
         "reviewed_media": reviewed_media,
+        "source_identity_sha256": hashlib.sha256(
+            source_identity_raw
+        ).hexdigest(),
         "transition_contract_sha256": transition_contract_sha256,
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "barn_mode_vtable": observation["barn_mode_vtable"],
