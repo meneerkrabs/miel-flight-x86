@@ -246,6 +246,10 @@ def validate_observation(
                 or type(phase.get("timedOut")) is not bool \
                 or phase["id"] in indexed:
             raise WineReadinessError("Wine readiness phase fields differ")
+        if phase["id"] not in phase["command"]:
+            raise WineReadinessError(
+                f"Wine readiness phase command identity differs: {phase['id']}"
+            )
         indexed[phase["id"]] = phase
         texts[phase["id"]], log_sources[phase["id"]], log_path = _read_log(
             evidence_root, phase["log"], phase["id"],

@@ -74,6 +74,20 @@ class WineReadinessTests(unittest.TestCase):
         self.assertFalse(receipt["exitZeroIsReadinessEvidence"])
         self.assertFalse(receipt["nativeParityEvidence"])
 
+    def test_phase_logs_must_be_bound_to_self_identifying_commands(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            for phase in observation["phases"]:
+                phase["command"] = ["unrelated-diagnostic"]
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "phase command identity differs",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_exit_zero_without_rpcss_and_com_activation_is_blocked(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
