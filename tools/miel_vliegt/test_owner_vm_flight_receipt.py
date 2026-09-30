@@ -191,6 +191,7 @@ def _arrow_receipt() -> dict:
             "process_id": 4321,
             "image_name": "MulleMeck.exe",
             "manager_tick": 118,
+            "manager_ticks": 150,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -305,6 +306,7 @@ def _frame_receipt(frame: dict) -> dict:
             "process_id": 4321,
             "image_name": "MulleMeck.exe",
             "manager_tick": 110,
+            "manager_ticks": 1502,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -461,6 +463,7 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "process_id": 4321,
                 "image_name": "MulleMeck.exe",
                 "manager_tick": 118,
+                "manager_ticks": 150,
             },
         )
 
@@ -586,6 +589,39 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_arrow_input_cannot_exceed_total_manager_ticks(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(result["prerequisite_observation"]["manager_ticks"], 150)
+
+        for manager_ticks in (117, 118):
+            receipt = _arrow_receipt()
+            receipt["state"]["manager_ticks"] = manager_ticks
+            with self.subTest(manager_ticks=manager_ticks), \
+                    self.assertRaisesRegex(
+                        OwnerVMFlightReceiptError,
+                        "owner arrow input chronology differs",
+                    ):
+                validate_arrow_diagnostic(
+                    receipt,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+        malformed = _arrow_receipt()
+        malformed["state"]["manager_ticks"] = 0
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError, "state.manager_ticks"
+        ):
+            validate_arrow_diagnostic(
+                malformed,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
 
     def test_incomplete_airplane_blocks_before_input_diagnosis(self):
         receipt = _arrow_receipt()
@@ -718,6 +754,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "process_id": 4321,
                     "image_name": "MulleMeck.exe",
                     "manager_tick": 110,
+                    "manager_ticks": 1502,
                 },
             )
 
@@ -730,6 +767,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             ("process_id", 9999, "airplane prerequisite identity differs"),
             ("image_name", "Other.exe", "airplane prerequisite identity differs"),
             ("manager_tick", 120, "prerequisite chronology differs"),
+            ("manager_ticks", 1501, "Manager tick total differs"),
         ):
             with tempfile.TemporaryDirectory() as directory:
                 frame_path, frame = _frame_file(Path(directory))

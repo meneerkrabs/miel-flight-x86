@@ -82,6 +82,7 @@ KEY_EVENT_KEYS = {
 }
 ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
+    "manager_ticks",
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -857,6 +858,9 @@ def _validate_airplane_prerequisite(
     manager_tick = _integer(
         state["manager_tick"], "state.manager_tick", minimum=1
     )
+    manager_ticks = _integer(
+        state["manager_ticks"], "state.manager_ticks", minimum=1
+    )
     if (
         not isinstance(state_capture_id, str)
         or CAPTURE_ID.fullmatch(state_capture_id) is None
@@ -897,6 +901,7 @@ def _validate_airplane_prerequisite(
         "process_id": state_process_id,
         "image_name": state_image_name,
         "manager_tick": manager_tick,
+        "manager_ticks": manager_ticks,
     }
 
 
@@ -1029,6 +1034,7 @@ def validate_arrow_diagnostic(
     if (
         prerequisite_observation["manager_tick"] > mouse_manager_tick
         or mouse_manager_tick > escape_manager_tick
+        or escape_manager_tick > prerequisite_observation["manager_ticks"]
     ):
         raise OwnerVMFlightReceiptError("owner arrow input chronology differs")
     if (
@@ -1448,6 +1454,10 @@ def validate_flight_frame(
     manager_ticks = _integer(
         runtime["manager_ticks"], "runtime.manager_ticks", minimum=1
     )
+    if prerequisite_observation["manager_ticks"] != manager_ticks:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame Manager tick total differs"
+        )
     if max(
         login_submit_tick,
         prerequisite_tick,
