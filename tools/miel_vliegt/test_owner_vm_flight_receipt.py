@@ -480,6 +480,54 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
         )
         self.assertFalse(result["proof_limits"]["native_parity_evidence"])
 
+    def test_bridge_sequence_is_available_through_a_public_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            before = root / "before.json"
+            click = root / "click.json"
+            after = root / "after.json"
+            before.write_text(
+                '{"ok":false,"error":"transport diagnostic"}'
+                + json.dumps({"ok": True, "state": _bridge_state()}),
+                encoding="utf-8",
+            )
+            click.write_text(
+                json.dumps({"ok": True, "click": _bridge_click()}),
+                encoding="utf-8",
+            )
+            after.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "state": _bridge_state(
+                            barn_view=1, x=450, y=150
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(ROOT / "tools/miel_vliegt/owner_vm_flight_receipt.py"),
+                    "--receipt-type", "bridge-sequence",
+                    "--bridge-before", str(before),
+                    "--bridge-click", str(click),
+                    "--bridge-after", str(after),
+                ],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        result = json.loads(completed.stdout)
+        self.assertEqual(
+            result["status"],
+            "NATIVE_OWNER_VM_BARN_DOOR_SEQUENCE_CANDIDATE_ONLY",
+        )
+        self.assertEqual(result["before"]["barn_view"], 0)
+        self.assertEqual(result["after"]["barn_view"], 1)
+
 
 class OwnerVMBridgeObservationTests(unittest.TestCase):
     def test_state_is_bound_to_the_public_barn_vtable(self):

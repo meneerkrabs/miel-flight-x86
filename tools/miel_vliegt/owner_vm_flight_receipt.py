@@ -1039,21 +1039,54 @@ def validate_flight_frame(
     }
 
 
+def _load_bridge_file(
+    path: Path | None, option: str, requested: str
+) -> dict[str, Any]:
+    if path is None:
+        raise OwnerVMFlightReceiptError(
+            f"bridge sequence requires --bridge-{option}"
+        )
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise OwnerVMFlightReceiptError(
+            f"cannot read bridge {option} record: {path}"
+        ) from error
+    return load_bridge_success(raw, requested)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("receipt", type=Path)
+    parser.add_argument("receipt", type=Path, nargs="?")
     parser.add_argument("--frame", type=Path)
-    parser.add_argument("--receipt-type", choices=("arrow", "flight-frame"))
+    parser.add_argument(
+        "--receipt-type",
+        choices=("arrow", "flight-frame", "bridge-sequence"),
+    )
+    parser.add_argument("--bridge-before", type=Path)
+    parser.add_argument("--bridge-click", type=Path)
+    parser.add_argument("--bridge-after", type=Path)
     parser.add_argument("--source-identity", type=Path, default=DEFAULT_SOURCE_IDENTITY)
     parser.add_argument("--transitions", type=Path, default=DEFAULT_TRANSITIONS)
     parser.add_argument("--expected-public-commit")
     args = parser.parse_args()
     if not args.receipt_type:
         parser.error("--receipt-type is required")
-    receipt = _load(args.receipt, "owner-VM receipt")
-    if args.receipt_type == "arrow":
+    if args.receipt_type == "bridge-sequence":
+        if args.receipt is not None or args.frame is not None:
+            parser.error("bridge sequences use --bridge-before/click/after")
+        result = validate_bridge_sequence(
+            _load_bridge_file(args.bridge_before, "before", "state"),
+            _load_bridge_file(args.bridge_click, "click", "click"),
+            _load_bridge_file(args.bridge_after, "after", "state"),
+            observer_hook_path=DEFAULT_OBSERVER_HOOK,
+        )
+    elif args.receipt_type == "arrow":
+        if args.receipt is None:
+            parser.error("arrow diagnostics require a receipt path")
         if args.frame is not None:
             parser.error("arrow diagnostics do not use --frame")
+        receipt = _load(args.receipt, "owner-VM receipt")
         result = validate_arrow_diagnostic(
             receipt,
             source_identity_path=args.source_identity,
@@ -1061,6 +1094,8 @@ def main() -> int:
             expected_public_commit=args.expected_public_commit,
         )
     else:
+        if args.receipt is None:
+            parser.error("flight-frame requires a receipt path")
         if args.frame is None:
             parser.error("flight-frame requires --frame")
         result = validate_flight_frame(
