@@ -238,6 +238,9 @@ def _frame_receipt(frame: dict) -> dict:
         },
         "transitions": _transition_records(),
         "runtime_media": {
+            "measurement_capture_id": "owner-vm-flight-20260930-001",
+            "measured_process_id": 4321,
+            "measured_image_name": "MulleMeck.exe",
             "iso_sha256": _identity()["iso_sha256"],
             "executable_sha256": _identity()["executable_sha256"],
             "measurement_method": "SHA256_FULL_FILE",
@@ -421,6 +424,10 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
             result["runtime_media"]["executable_sha256"],
             _identity()["executable_sha256"],
         )
+        self.assertEqual(
+            result["runtime_media"]["measurement_capture_id"],
+            "owner-vm-flight-20260930-001",
+        )
         self.assertFalse(
             result["proof_limits"]["independent_runtime_media_hash"]
         )
@@ -456,6 +463,27 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
+
+    def test_runtime_media_cannot_be_spliced_across_captures(self):
+        for field, value in (
+            ("measurement_capture_id", "other-capture"),
+            ("measured_process_id", 9999),
+            ("measured_image_name", "Other.exe"),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                frame_path, frame = _frame_file(Path(directory))
+                receipt = _frame_receipt(frame)
+                receipt["runtime_media"][field] = value
+                with self.assertRaisesRegex(
+                    OwnerVMFlightReceiptError,
+                    "runtime media capture identity differs",
+                ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
 
     def test_flight_frame_chronology_is_bound_to_manager_ticks(self):
         with tempfile.TemporaryDirectory() as directory:

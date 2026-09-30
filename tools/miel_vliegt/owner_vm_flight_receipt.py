@@ -94,6 +94,7 @@ TRANSITION_KEYS = {
     "observed",
 }
 RUNTIME_MEDIA_KEYS = {
+    "measurement_capture_id", "measured_process_id", "measured_image_name",
     "iso_sha256", "executable_sha256", "measurement_method",
     "measurement_tool_sha256", "measurement_complete",
 }
@@ -971,9 +972,30 @@ def _validate_transition(
 
 
 def _validate_runtime_media(
-    value: Any, source: dict[str, Any]
+    value: Any,
+    source: dict[str, Any],
+    capture_id: str,
+    process: dict[str, Any],
 ) -> dict[str, Any]:
     media = _fields(value, RUNTIME_MEDIA_KEYS, "runtime media")
+    measurement_capture_id = media["measurement_capture_id"]
+    measured_process_id = _integer(
+        media["measured_process_id"],
+        "runtime media.measured_process_id",
+        minimum=1,
+    )
+    measured_image_name = _module_name(
+        media["measured_image_name"],
+        "runtime media.measured_image_name",
+    )
+    if (
+        measurement_capture_id != capture_id
+        or measured_process_id != process["pid"]
+        or measured_image_name != process["image_name"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "runtime media capture identity differs"
+        )
     iso_sha256 = _sha256(media["iso_sha256"], "runtime media.iso_sha256")
     executable_sha256 = _sha256(
         media["executable_sha256"], "runtime media.executable_sha256"
@@ -997,6 +1019,9 @@ def _validate_runtime_media(
         True,
     )
     return {
+        "measurement_capture_id": measurement_capture_id,
+        "measured_process_id": measured_process_id,
+        "measured_image_name": measured_image_name,
         "iso_sha256": iso_sha256,
         "executable_sha256": executable_sha256,
         "measurement_method": media["measurement_method"],
@@ -1028,7 +1053,10 @@ def validate_flight_frame(
         source["edition"],
     )
     runtime_media = _validate_runtime_media(
-        receipt.get("runtime_media"), source
+        receipt.get("runtime_media"),
+        source,
+        receipt["capture_id"],
+        process,
     )
     airplane_complete = _validate_airplane_prerequisite(
         receipt.get("prerequisites"), routes
