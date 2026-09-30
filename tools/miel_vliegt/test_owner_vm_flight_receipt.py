@@ -1100,6 +1100,36 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
         self.assertEqual(
             outside["required_owner_handoff"]["escape_scan_code"], "0x01"
         )
+        self.assertEqual(
+            outside["required_owner_handoff"]["barn_to_mygghanget_callsite"],
+            "0x00419198",
+        )
+        self.assertEqual(
+            outside["transition_contract_sha256"],
+            hashlib.sha256(TRANSITIONS.read_bytes()).hexdigest(),
+        )
+
+    def test_bridge_state_rejects_transition_contract_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contract_path = Path(directory) / "transitions.json"
+            contract = json.loads(TRANSITIONS.read_text(encoding="utf-8"))
+            edge = next(
+                edge
+                for edge in contract["edges"]
+                if edge["id"] == "barn.mygghanget"
+            )
+            edge["address"] = "0x00419199"
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "reviewed transition contract bytes differ",
+            ):
+                classify_bridge_state(
+                    _bridge_health(),
+                    {"ok": True, "state": _bridge_state()},
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=contract_path,
+                )
 
     def test_bridge_state_records_reviewed_media_without_runtime_match(self):
         result = classify_bridge_state(

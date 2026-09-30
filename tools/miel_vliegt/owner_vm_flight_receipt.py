@@ -521,9 +521,20 @@ def classify_bridge_state(
     state_payload: dict[str, Any],
     *,
     source_identity_path: Path = DEFAULT_SOURCE_IDENTITY,
+    transition_contract_path: Path = DEFAULT_TRANSITIONS,
 ) -> dict[str, Any]:
     """Turn one bounded bridge state into the exact missing owner step."""
 
+    reviewed_media = _reviewed_media(source_identity_path)
+    routes = _routes(
+        transition_contract_path,
+        reviewed_media["executable"]["sha256"],
+        reviewed_media["edition"],
+    )
+    barn_callsite = _hex32(
+        routes["barn_mygghanget"]["address"],
+        "barn transition callsite",
+    )
     health = validate_bridge_health(health_payload)
     observation = validate_bridge_observation(state_payload)
     state = observation["state"]
@@ -540,6 +551,7 @@ def classify_bridge_state(
             "airplane_completion_bits": AIRPLANE_COMPLETE_BITS,
             "escape_scan_code": "0x01",
             "escape_delivery": "original barn input dispatch",
+            "barn_to_mygghanget_callsite": barn_callsite,
         }
     return {
         "schema": 1,
@@ -547,7 +559,10 @@ def classify_bridge_state(
         "status": "BLOCKED",
         "blocker_code": blocker,
         "bridge_environment": health,
-        "reviewed_media": _reviewed_media(source_identity_path),
+        "reviewed_media": reviewed_media,
+        "transition_contract_sha256": _sha256_file(
+            transition_contract_path
+        ),
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "barn_mode_vtable": observation["barn_mode_vtable"],
         "process_id": state["ProcessId"],
@@ -764,6 +779,13 @@ def _source_and_environment(
 
 
 def _routes(path: Path, executable_sha256: str, edition: str) -> dict[str, Any]:
+    if (
+        path.absolute() != DEFAULT_TRANSITIONS.absolute()
+        and _sha256_file(path) != _sha256_file(DEFAULT_TRANSITIONS)
+    ):
+        raise OwnerVMFlightReceiptError(
+            "reviewed transition contract bytes differ"
+        )
     contract = _load(path, "native transition contract")
     contract_source = contract.get("source")
     if (
@@ -1578,6 +1600,7 @@ def main() -> int:
             _load(args.bridge_health, "bridge health"),
             _load_bridge_file(args.bridge_state, "state", "state"),
             source_identity_path=args.source_identity,
+            transition_contract_path=args.transitions,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
