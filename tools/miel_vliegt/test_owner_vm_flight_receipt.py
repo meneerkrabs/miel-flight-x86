@@ -197,6 +197,9 @@ def _arrow_receipt() -> dict:
             "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
             "input_context_pointer": 0x10000000,
+            "cursor_pointer": 0x40000000,
+            "cursor_x": 100,
+            "cursor_y": 200,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -318,6 +321,9 @@ def _frame_receipt(frame: dict) -> dict:
             "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
             "input_context_pointer": 0x10000000,
+            "cursor_pointer": 0x40000000,
+            "cursor_x": 100,
+            "cursor_y": 200,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -544,6 +550,8 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "manager_pointer": 0x20000000,
                 "application_pointer": 0x10000000,
                 "input_context_pointer": 0x10000000,
+                "cursor_pointer": 0x40000000,
+                "cursor": [100, 200],
                 "airplane_pointer": 0x10000160,
                 "airplane_completion_pointer": 0x10000288,
                 "current_mode_vtable": "0x0044caec",
@@ -746,6 +754,38 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 source_identity_path=SOURCE_IDENTITY,
                 transition_contract_path=TRANSITIONS,
             )
+
+    def test_live_cursor_state_is_bound_to_the_capture(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"]["cursor_pointer"],
+            0x40000000,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"]["cursor"],
+            [100, 200],
+        )
+
+        for field, value in (
+            ("cursor_pointer", 0),
+            ("cursor_x", 640),
+            ("cursor_y", 480),
+        ):
+            receipt = _arrow_receipt()
+            receipt["state"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                f"state.{field}",
+            ):
+                validate_arrow_diagnostic(
+                    receipt,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
 
     def test_arrow_input_cannot_exceed_total_manager_ticks(self):
         result = validate_arrow_diagnostic(
@@ -991,6 +1031,8 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "manager_pointer": 0x20000000,
                     "application_pointer": 0x10000000,
                     "input_context_pointer": 0x10000000,
+                    "cursor_pointer": 0x40000000,
+                    "cursor": [100, 200],
                     "airplane_pointer": 0x10000160,
                     "airplane_completion_pointer": 0x10000288,
                     "current_mode_vtable": "0x0044caec",
@@ -1815,6 +1857,9 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 "manager_pointer": 0x22222222,
                 "application_pointer": 0x11111111,
                 "input_context_pointer": 0x11111111,
+                "cursor_pointer": 0x44444444,
+                "cursor_x": 100,
+                "cursor_y": 200,
                 "airplane_pointer": 0x11111271,
                 "airplane_completion_pointer": 0x11111399,
                 "current_mode": "mode_barn",
