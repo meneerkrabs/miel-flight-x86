@@ -2020,6 +2020,34 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 {"ok": True, "state": _bridge_state()},
             )
 
+    def test_bridge_state_publishes_offline_source_objects(self):
+        result = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state()},
+        )
+        expected = {
+            key: _identity()[key]
+            for key in (
+                "public_source_commit", "public_source_tree",
+                "validator_source_blob", "source_identity_blob",
+                "observer_hook_blob", "transition_contract_blob",
+            )
+        }
+        self.assertEqual(result["source_objects"], expected)
+
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_validator_source_bytes",
+            return_value=b"drifted validator source",
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "validator source object bytes differ",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": _bridge_state()},
+            )
+
     def test_bridge_state_records_reviewed_media_without_runtime_match(self):
         result = classify_bridge_state(
             _bridge_health(),

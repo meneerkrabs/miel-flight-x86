@@ -614,6 +614,43 @@ def classify_bridge_state(
         reviewed_media["executable"]["sha256"],
         reviewed_media["edition"],
     )
+    public_source_commit = _git_output(["rev-parse", "HEAD"])
+    source_objects = {
+        "public_source_commit": public_source_commit,
+        "public_source_tree": _git_output([
+            "rev-parse", f"{public_source_commit}^{{tree}}"
+        ]),
+        "validator_source_blob": _git_output([
+            "rev-parse",
+            f"{public_source_commit}:tools/miel_vliegt/owner_vm_flight_receipt.py",
+        ]),
+        "source_identity_blob": _git_output([
+            "rev-parse",
+            f"{public_source_commit}:content/miel_vliegt/source_identity.json",
+        ]),
+        "transition_contract_blob": _git_output([
+            "rev-parse",
+            f"{public_source_commit}:content/miel_vliegt/native_scene_transitions.json",
+        ]),
+    }
+    if _git_blob_bytes(
+        source_objects["validator_source_blob"]
+    ) != _validator_source_bytes():
+        raise OwnerVMFlightReceiptError(
+            "validator source object bytes differ"
+        )
+    if _git_blob_bytes(
+        source_objects["source_identity_blob"]
+    ) != source_identity_raw:
+        raise OwnerVMFlightReceiptError(
+            "reviewed source identity object bytes differ"
+        )
+    if _git_blob_bytes(source_objects["transition_contract_blob"]) != (
+        _load_transition(transition_contract_path)[1]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "reviewed transition contract object bytes differ"
+        )
     barn_callsite = _hex32(
         routes["barn_mygghanget"]["address"],
         "barn transition callsite",
@@ -626,6 +663,7 @@ def classify_bridge_state(
         raise OwnerVMFlightReceiptError(
             "observer hook source object bytes differ"
         )
+    source_objects["observer_hook_blob"] = observer_hook_blob
     health = validate_bridge_health(health_payload)
     observation = validate_bridge_observation(state_payload)
     state = observation["state"]
@@ -700,6 +738,7 @@ def classify_bridge_state(
         "source_identity_sha256": hashlib.sha256(
             source_identity_raw
         ).hexdigest(),
+        "source_objects": source_objects,
         "transition_contract_sha256": transition_contract_sha256,
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "observer_hook_blob": observer_hook_blob,
