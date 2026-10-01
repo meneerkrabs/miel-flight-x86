@@ -1758,6 +1758,17 @@ def validate_flight_frame(
                 "Direct3D7 CreateDevice chronology differs"
             )
         previous_create_tick = manager_tick
+        hresult = _hresult(
+            row["hresult"], f"runtime.create_results[{index}].hresult"
+        )
+        device_nonnull = _boolean(
+            row["device_nonnull"],
+            f"runtime.create_results[{index}].device_nonnull",
+        )
+        if (hresult == "0x00000000") != device_nonnull:
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 result outcome differs"
+            )
         normalized_results.append({
             "capture_id": result_capture_id,
             "process_id": result_process_id,
@@ -1767,13 +1778,8 @@ def validate_flight_frame(
             "caller_address_kind": "RVA",
             "caller_rva": caller_rva,
             "manager_tick": manager_tick,
-            "hresult": _hresult(
-                row["hresult"], f"runtime.create_results[{index}].hresult"
-            ),
-            "device_nonnull": _boolean(
-                row["device_nonnull"],
-                f"runtime.create_results[{index}].device_nonnull",
-            ),
+            "hresult": hresult,
+            "device_nonnull": device_nonnull,
         })
     observed_successes = sum(
         row["hresult"] == "0x00000000" and row["device_nonnull"]
