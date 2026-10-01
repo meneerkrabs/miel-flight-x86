@@ -430,6 +430,23 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 transition_contract_path=TRANSITIONS,
             )
 
+    def test_validator_source_blob_binds_executing_bytes(self):
+        receipt = _arrow_receipt()
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_validator_source_bytes",
+            return_value=b"drifted validator source",
+            create=True,
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "validator source object bytes differ",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_source_identity_blob_binds_exact_reviewed_bytes(self):
         receipt = _arrow_receipt()
         identity = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))

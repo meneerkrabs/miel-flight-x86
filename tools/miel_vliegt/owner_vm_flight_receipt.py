@@ -320,6 +320,15 @@ def _git_blob_bytes(object_id: str) -> bytes:
         ) from error
 
 
+def _validator_source_bytes() -> bytes:
+    try:
+        return Path(__file__).read_bytes()
+    except OSError as error:
+        raise OwnerVMFlightReceiptError(
+            "cannot read executing validator source"
+        ) from error
+
+
 def load_bridge_success(raw: str, requested: str) -> dict[str, Any]:
     """Select exactly one successful bounded bridge record from stdout."""
 
@@ -851,6 +860,12 @@ def _source_and_environment(
     ):
         raise OwnerVMFlightReceiptError(
             "receipt public source revision objects differ"
+        )
+    if _git_blob_bytes(source["validator_source_blob"]) != (
+        _validator_source_bytes()
+    ):
+        raise OwnerVMFlightReceiptError(
+            "validator source object bytes differ"
         )
     if _git_blob_bytes(source["source_identity_blob"]) != identity_raw:
         raise OwnerVMFlightReceiptError(
