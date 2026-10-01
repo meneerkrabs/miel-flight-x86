@@ -412,6 +412,40 @@ class WineReadinessTests(unittest.TestCase):
             receipt["com"]["activation"][DIRECTSOUND]
         )
 
+    def test_com_activation_record_must_be_unique(self):
+        sentinel = (
+            f"MIEL_COM_ACTIVATION clsid={DIRECTSOUND} "
+            "hresult=0x00000000\n"
+        )
+        for phase_id in (
+            f"com-activation:{DIRECTSOUND}",
+            "process-snapshot",
+        ):
+            with tempfile.TemporaryDirectory() as raw, self.subTest(phase=phase_id):
+                directory = Path(raw)
+                observation = self.observation(directory)
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(
+                    phase_path.read_text(encoding="utf-8") + sentinel,
+                    encoding="utf-8",
+                )
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+                receipt = wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"]["required_com_activated"])
+                self.assertFalse(
+                    receipt["com"]["activation"][DIRECTSOUND]
+                )
+
     def test_transport_and_shutdown_sentinels_must_be_standalone_lines(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

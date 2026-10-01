@@ -169,6 +169,15 @@ def _activation_proven(text: str, clsid: str) -> bool:
     )
 
 
+def _activation_record_count(text: str, clsid: str) -> int:
+    expected = (
+        f"MIEL_COM_ACTIVATION clsid={clsid} hresult=0x00000000"
+    ).lower()
+    return sum(
+        line.strip().lower() == expected for line in text.splitlines()
+    )
+
+
 def _standalone_sentinel(text: str, sentinel: str) -> bool:
     return any(line.strip() == sentinel for line in text.splitlines())
 
@@ -340,6 +349,13 @@ def validate_observation(
         _standalone_record_count(text, "MIEL_WINESERVER_STOPPED")
         for text in texts.values()
     )
+    activation_records = {
+        clsid: sum(
+            _activation_record_count(text, clsid)
+            for text in texts.values()
+        )
+        for clsid in classes
+    }
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -360,6 +376,7 @@ def validate_observation(
         clsid: (
             _phase_ok(indexed[f"com-activation:{clsid}"])
             and _activation_proven(texts[f"com-activation:{clsid}"], clsid)
+            and activation_records[clsid] == 1
         )
         for clsid in classes
     }
