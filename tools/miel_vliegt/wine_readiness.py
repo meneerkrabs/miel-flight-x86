@@ -328,6 +328,10 @@ def validate_observation(
         _standalone_record_count(text, transport_challenge)
         for text in texts.values()
     )
+    success_records = sum(
+        _standalone_record_count(text, TRANSPORT_SENTINEL)
+        for text in texts.values()
+    )
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -363,6 +367,7 @@ def validate_observation(
             and _standalone_sentinel(
                 texts["transport"], requirements["transportSentinel"],
             )
+            and success_records == 1
             and _standalone_sentinel(
                 texts["transport"], transport_challenge,
             )
