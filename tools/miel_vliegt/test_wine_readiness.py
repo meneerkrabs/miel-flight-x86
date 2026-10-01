@@ -229,6 +229,59 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["rpcss_service_running"])
 
+    def test_rpcss_service_record_must_be_ordered_once(self):
+        valid_record = (
+            "SERVICE_NAME        :  RpcSs\n"
+            "        TYPE               : 10  WIN32_OWN_PROCESS\n"
+            "        STATE              :  4  RUNNING\n"
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            rpcss = next(
+                row for row in observation["phases"]
+                if row["id"] == "rpcss-service"
+            )
+            rpcss_path = directory / rpcss["log"]["path"]
+            rpcss_path.write_text(
+                "        STATE              :  4  RUNNING\n"
+                "        TYPE               : 10  WIN32_OWN_PROCESS\n"
+                "SERVICE_NAME        :  RpcSs\n",
+                encoding="utf-8",
+            )
+            rpcss["log"]["sha256"] = hashlib.sha256(
+                rpcss_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+            self.assertEqual(receipt["status"], "BLOCKED")
+            self.assertFalse(receipt["checks"]["rpcss_service_running"])
+
+        for phase_id in ("rpcss-service", "process-snapshot"):
+            with tempfile.TemporaryDirectory() as raw, self.subTest(phase=phase_id):
+                directory = Path(raw)
+                observation = self.observation(directory)
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(
+                    phase_path.read_text(encoding="utf-8") + valid_record,
+                    encoding="utf-8",
+                )
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+                receipt = wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"]["rpcss_service_running"])
+
     def test_log_hash_drift_and_path_escape_are_rejected(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

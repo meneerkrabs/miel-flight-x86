@@ -247,12 +247,22 @@ def _process_topology_proven(text: str) -> bool:
     )
 
 
+def _rpcss_service_record_count(text: str) -> int:
+    records = 0
+    for block in re.split(r"(?:\r?\n){2,}", text):
+        service_names = list(RPCSS_SERVICE_NAME.finditer(block))
+        running_states = list(RPCSS_RUNNING_STATE.finditer(block))
+        if (
+            len(service_names) == 1
+            and len(running_states) == 1
+            and service_names[0].start() < running_states[0].start()
+        ):
+            records += 1
+    return records
+
+
 def _rpcss_service_running(text: str) -> bool:
-    return any(
-        RPCSS_SERVICE_NAME.search(block) is not None
-        and RPCSS_RUNNING_STATE.search(block) is not None
-        for block in re.split(r"(?:\r?\n){2,}", text)
-    )
+    return _rpcss_service_record_count(text) == 1
 
 
 def validate_observation(
@@ -380,6 +390,9 @@ def validate_observation(
         )
         for clsid in classes
     }
+    rpcss_records = sum(
+        _rpcss_service_record_count(text) for text in texts.values()
+    )
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -427,6 +440,7 @@ def validate_observation(
         "rpcss_service_running": (
             _phase_ok(indexed["rpcss-service"])
             and _rpcss_service_running(texts["rpcss-service"])
+            and rpcss_records == 1
         ),
         "required_com_registered": all(registry_checks.values()),
         "required_com_activated": all(activation_checks.values()),
