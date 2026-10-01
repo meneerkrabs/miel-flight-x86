@@ -87,6 +87,7 @@ ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
     "manager_ticks",
     "application_pointer", "airplane_pointer",
+    "airplane_completion_pointer",
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -976,6 +977,12 @@ def _validate_airplane_prerequisite(
         minimum=1,
         maximum=0xFFFFFFFF,
     )
+    airplane_completion_pointer = _integer(
+        state["airplane_completion_pointer"],
+        "state.airplane_completion_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     if (
         not isinstance(state_capture_id, str)
         or CAPTURE_ID.fullmatch(state_capture_id) is None
@@ -997,6 +1004,12 @@ def _validate_airplane_prerequisite(
     if airplane_pointer != application_pointer + AIRPLANE_POINTER_OFFSET:
         raise OwnerVMFlightReceiptError(
             "airplane prerequisite object address differs"
+        )
+    if airplane_completion_pointer != (
+        airplane_pointer + AIRPLANE_COMPLETION_OFFSET
+    ):
+        raise OwnerVMFlightReceiptError(
+            "airplane completion address differs"
         )
     airplane_complete = _boolean(
         state["airplane_complete"], "state.airplane_complete"
@@ -1023,6 +1036,7 @@ def _validate_airplane_prerequisite(
         "manager_ticks": manager_ticks,
         "application_pointer": application_pointer,
         "airplane_pointer": airplane_pointer,
+        "airplane_completion_pointer": airplane_completion_pointer,
     }
 
 

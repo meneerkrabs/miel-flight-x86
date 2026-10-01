@@ -196,6 +196,7 @@ def _arrow_receipt() -> dict:
             "manager_ticks": 150,
             "application_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
+            "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -313,6 +314,7 @@ def _frame_receipt(frame: dict) -> dict:
             "manager_ticks": 1502,
             "application_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
+            "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -472,6 +474,7 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "manager_ticks": 150,
                 "application_pointer": 0x10000000,
                 "airplane_pointer": 0x10000160,
+                "airplane_completion_pointer": 0x10000288,
             },
         )
 
@@ -645,12 +648,30 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
             result["prerequisite_observation"]["airplane_pointer"],
             0x10000160,
         )
+        self.assertEqual(
+            result["prerequisite_observation"][
+                "airplane_completion_pointer"
+            ],
+            0x10000288,
+        )
 
         receipt = _arrow_receipt()
         receipt["state"]["airplane_pointer"] += 1
         with self.assertRaisesRegex(
             OwnerVMFlightReceiptError,
             "airplane prerequisite object address differs",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
+        receipt = _arrow_receipt()
+        receipt["state"]["airplane_completion_pointer"] += 1
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "airplane completion address differs",
         ):
             validate_arrow_diagnostic(
                 receipt,
@@ -823,6 +844,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "manager_ticks": 1502,
                     "application_pointer": 0x10000000,
                     "airplane_pointer": 0x10000160,
+                    "airplane_completion_pointer": 0x10000288,
                 },
             )
 
