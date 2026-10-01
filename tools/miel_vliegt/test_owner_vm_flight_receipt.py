@@ -100,7 +100,14 @@ def _process() -> dict:
     }
 
 
-def _bridge_state(*, barn_view: int = 0, x: int = 100, y: int = 200) -> dict:
+def _bridge_state(
+    *,
+    barn_view: int = 0,
+    x: int = 100,
+    y: int = 200,
+    airplane_complete: bool = True,
+) -> dict:
+    bits = 0x1FF if airplane_complete else 0
     return {
         "ProcessId": 1234,
         "Application": 0x11111111,
@@ -111,6 +118,10 @@ def _bridge_state(*, barn_view: int = 0, x: int = 100, y: int = 200) -> dict:
         "Loaded": 1,
         "Opened": 1,
         "BarnView": barn_view,
+        "Airplane": 0x10000160,
+        "AirplaneCompletionBits": bits,
+        "AirplaneComplete": airplane_complete,
+        "MyggState": None,
         "InputContext": 0x11111111,
         "CursorObject": 0x44444444,
         "CursorX": x,
@@ -204,6 +215,7 @@ def _arrow_receipt() -> dict:
             "cursor_pointer": 0x40000000,
             "cursor_x": 100,
             "cursor_y": 200,
+            "airplane_field_pointer": 0x30000160,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -331,6 +343,7 @@ def _frame_receipt(frame: dict) -> dict:
             "cursor_pointer": 0x40000000,
             "cursor_x": 100,
             "cursor_y": 200,
+            "airplane_field_pointer": 0x30000160,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -579,6 +592,7 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "input_context_pointer": 0x10000000,
                 "cursor_pointer": 0x40000000,
                 "cursor": [100, 200],
+                "airplane_field_pointer": 0x30000160,
                 "airplane_pointer": 0x10000160,
                 "airplane_completion_pointer": 0x10000288,
                 "current_mode_pointer": 0x30000000,
@@ -910,6 +924,12 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
             0x10000000,
         )
         self.assertEqual(
+            result["prerequisite_observation"][
+                "airplane_field_pointer"
+            ],
+            0x30000160,
+        )
+        self.assertEqual(
             result["prerequisite_observation"]["airplane_pointer"],
             0x10000160,
         )
@@ -921,10 +941,10 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         )
 
         receipt = _arrow_receipt()
-        receipt["state"]["airplane_pointer"] += 1
+        receipt["state"]["airplane_field_pointer"] += 1
         with self.assertRaisesRegex(
             OwnerVMFlightReceiptError,
-            "airplane prerequisite object address differs",
+            "airplane field address differs",
         ):
             validate_arrow_diagnostic(
                 receipt,
@@ -1112,6 +1132,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "input_context_pointer": 0x10000000,
                     "cursor_pointer": 0x40000000,
                     "cursor": [100, 200],
+                    "airplane_field_pointer": 0x30000160,
                     "airplane_pointer": 0x10000160,
                     "airplane_completion_pointer": 0x10000288,
                     "current_mode_pointer": 0x30000000,
@@ -1942,8 +1963,9 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 "cursor_pointer": 0x44444444,
                 "cursor_x": 100,
                 "cursor_y": 200,
-                "airplane_pointer": 0x11111271,
-                "airplane_completion_pointer": 0x11111399,
+                "airplane_field_pointer": 0x33333493,
+                "airplane_pointer": 0x10000160,
+                "airplane_completion_pointer": 0x10000288,
                 "current_mode": "mode_barn",
                 "current_mode_pointer": 0x33333333,
                 "current_mode_vtable": "0x0044caec",
@@ -2018,6 +2040,53 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             classify_bridge_state(
                 _bridge_health(),
                 {"ok": True, "state": _bridge_state()},
+            )
+
+    def test_bridge_state_binds_live_airplane_completion(self):
+        result = classify_bridge_state(
+            _bridge_health(),
+            {
+                "ok": True,
+                "state": _bridge_state(
+                    barn_view=2,
+                    x=190,
+                    y=145,
+                    airplane_complete=False,
+                ),
+            },
+        )
+        self.assertEqual(result["blocker_code"], "AIRPLANE_COMPLETION_UNPROVEN")
+        self.assertFalse(result["state"]["airplane_complete"])
+        self.assertEqual(result["state"]["airplane_completion_bits"], 0)
+        self.assertEqual(
+            result["required_owner_handoff"]["state"]["airplane_field_pointer"],
+            0x33333333 + 0x160,
+        )
+        self.assertEqual(
+            result["required_owner_handoff"]["state"]["airplane_pointer"],
+            0x10000160,
+        )
+
+        contradictory = _bridge_state(airplane_complete=False)
+        contradictory["AirplaneComplete"] = True
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "bridge airplane completion differs",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": contradictory},
+            )
+
+        unsettled = _bridge_state()
+        unsettled["MyggState"] = 5
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "bridge Mygghanget state differs",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": unsettled},
             )
 
     def test_bridge_state_publishes_offline_source_objects(self):

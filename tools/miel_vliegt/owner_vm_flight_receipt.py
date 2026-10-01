@@ -86,7 +86,7 @@ KEY_EVENT_KEYS = {
 ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
     "manager_ticks", "manager_pointer",
-    "application_pointer", "airplane_pointer",
+    "application_pointer", "airplane_field_pointer", "airplane_pointer",
     "airplane_completion_pointer", "input_context_pointer",
     "cursor_pointer", "cursor_x", "cursor_y",
     "current_mode", "current_mode_pointer", "current_mode_vtable",
@@ -158,7 +158,9 @@ FRAME_TOP_KEYS = {
 BRIDGE_STATE_KEYS = {
     "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
     "PendingMode", "Loaded", "Opened", "BarnView", "InputContext",
-    "CursorObject", "CursorX", "CursorY",
+    "CursorObject", "CursorX", "CursorY", "Airplane",
+    "AirplaneCompletionBits", "AirplaneComplete",
+    "MyggState",
 }
 BRIDGE_CLICK_KEYS = {
     "target", "delta", "cursorBefore", "cursorAfter", "barnViewBefore",
@@ -409,15 +411,32 @@ def _bridge_state(value: Any) -> dict[str, Any]:
         raise OwnerVMFlightReceiptError("bridge input context differs")
     if state["PendingMode"] != 0:
         raise OwnerVMFlightReceiptError("bridge state is not mode-settled")
+    if state["MyggState"] is not None:
+        raise OwnerVMFlightReceiptError("bridge Mygghanget state differs")
     for field in ("Loaded", "Opened"):
         _integer(state[field], f"bridge state.{field}", minimum=0)
         if state[field] != 1:
             raise OwnerVMFlightReceiptError(
                 f"bridge mode is not loaded and open: {field}"
             )
-    barn_view = _integer(state["BarnView"], "bridge state.BarnView")
-    if barn_view not in (0, 1):
-        raise OwnerVMFlightReceiptError("bridge BarnView is invalid")
+    barn_view = _integer(
+        state["BarnView"], "bridge state.BarnView", maximum=0xFFFFFFFF
+    )
+    airplane_pointer = _integer(
+        state["Airplane"], "bridge state.Airplane", maximum=0xFFFFFFFF
+    )
+    airplane_bits = _integer(
+        state["AirplaneCompletionBits"],
+        "bridge state.AirplaneCompletionBits",
+        maximum=0xFFFFFFFF,
+    )
+    airplane_complete = _boolean(
+        state["AirplaneComplete"], "bridge state.AirplaneComplete"
+    )
+    if airplane_complete is not (
+        airplane_pointer != 0 and airplane_bits == AIRPLANE_COMPLETE_BITS
+    ):
+        raise OwnerVMFlightReceiptError("bridge airplane completion differs")
     _integer(state["CursorX"], "bridge state.CursorX", maximum=639)
     _integer(state["CursorY"], "bridge state.CursorY", maximum=479)
     return state
@@ -673,6 +692,22 @@ def classify_bridge_state(
             "restore": "outside BarnView 0",
             "prohibited_repeat_click": [450, 150],
         }
+    elif state["AirplaneComplete"] is False:
+        blocker = "AIRPLANE_COMPLETION_UNPROVEN"
+        handoff = {
+            "state": {
+                "airplane_field_pointer": (
+                    state["CurrentMode"] + AIRPLANE_POINTER_OFFSET
+                ),
+                "airplane_pointer": state["Airplane"],
+                "airplane_completion_pointer": (
+                    state["Airplane"] + AIRPLANE_COMPLETION_OFFSET
+                ),
+                "airplane_completion_bits": (
+                    AIRPLANE_COMPLETE_BITS
+                ),
+            },
+        }
     else:
         blocker = "AIRPLANE_COMPLETION_AND_ESCAPE_INPUT_PENDING"
         handoff = {
@@ -687,12 +722,12 @@ def classify_bridge_state(
                 "manager_pointer": state["Manager"],
                 "application_pointer": state["Application"],
                 "input_context_pointer": state["InputContext"],
-                "airplane_pointer": (
-                    state["Application"] + AIRPLANE_POINTER_OFFSET
+                "airplane_field_pointer": (
+                    state["CurrentMode"] + AIRPLANE_POINTER_OFFSET
                 ),
+                "airplane_pointer": state["Airplane"],
                 "airplane_completion_pointer": (
-                    state["Application"]
-                    + AIRPLANE_POINTER_OFFSET
+                    state["Airplane"]
                     + AIRPLANE_COMPLETION_OFFSET
                 ),
                 "cursor_pointer": state["CursorObject"],
@@ -747,6 +782,11 @@ def classify_bridge_state(
         "state": {
             "barn_view": state["BarnView"],
             "cursor": [state["CursorX"], state["CursorY"]],
+            "airplane_pointer": state["Airplane"],
+            "airplane_completion_bits": (
+                state["AirplaneCompletionBits"]
+            ),
+            "airplane_complete": state["AirplaneComplete"],
         },
         "required_owner_handoff": handoff,
         "proof_limits": {key: False for key in BRIDGE_PROOF_KEYS},
@@ -1128,6 +1168,12 @@ def _validate_airplane_prerequisite(
     )
     mode_loaded = _boolean(state["mode_loaded"], "state.mode_loaded")
     mode_opened = _boolean(state["mode_opened"], "state.mode_opened")
+    airplane_field_pointer = _integer(
+        state["airplane_field_pointer"],
+        "state.airplane_field_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     airplane_pointer = _integer(
         state["airplane_pointer"],
         "state.airplane_pointer",
@@ -1174,9 +1220,11 @@ def _validate_airplane_prerequisite(
         raise OwnerVMFlightReceiptError(
             "airplane prerequisite is outside the reviewed outside-barn state"
         )
-    if airplane_pointer != application_pointer + AIRPLANE_POINTER_OFFSET:
+    if airplane_field_pointer != (
+        current_mode_pointer + AIRPLANE_POINTER_OFFSET
+    ):
         raise OwnerVMFlightReceiptError(
-            "airplane prerequisite object address differs"
+            "airplane field address differs"
         )
     if airplane_completion_pointer != (
         airplane_pointer + AIRPLANE_COMPLETION_OFFSET
@@ -1215,6 +1263,7 @@ def _validate_airplane_prerequisite(
         "current_mode_pointer": current_mode_pointer,
         "mode_loaded": mode_loaded,
         "mode_opened": mode_opened,
+        "airplane_field_pointer": airplane_field_pointer,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
         "current_mode_vtable": current_mode_vtable,
