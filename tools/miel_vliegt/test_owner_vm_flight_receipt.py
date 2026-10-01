@@ -1997,6 +1997,29 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                     transition_contract_path=contract_path,
                 )
 
+    def test_bridge_state_binds_observer_hook_source_object(self):
+        result = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state()},
+        )
+        self.assertEqual(
+            result["observer_hook_blob"],
+            _identity()["observer_hook_blob"],
+        )
+
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_observer_hook_bytes",
+            return_value=b"drifted observer source",
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "observer hook source object bytes differ",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": _bridge_state()},
+            )
+
     def test_bridge_state_records_reviewed_media_without_runtime_match(self):
         result = classify_bridge_state(
             _bridge_health(),

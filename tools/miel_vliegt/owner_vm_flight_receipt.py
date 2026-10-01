@@ -618,6 +618,14 @@ def classify_bridge_state(
         routes["barn_mygghanget"]["address"],
         "barn transition callsite",
     )
+    observer_hook_blob = _git_output([
+        "rev-parse",
+        "HEAD:tools/miel_vliegt/hangover/native_observer_hook.c",
+    ])
+    if _git_blob_bytes(observer_hook_blob) != _observer_hook_bytes():
+        raise OwnerVMFlightReceiptError(
+            "observer hook source object bytes differ"
+        )
     health = validate_bridge_health(health_payload)
     observation = validate_bridge_observation(state_payload)
     state = observation["state"]
@@ -694,6 +702,7 @@ def classify_bridge_state(
         ).hexdigest(),
         "transition_contract_sha256": transition_contract_sha256,
         "observer_hook_sha256": observation["observer_hook_sha256"],
+        "observer_hook_blob": observer_hook_blob,
         "barn_mode_vtable": observation["barn_mode_vtable"],
         "process_id": state["ProcessId"],
         "state": {
