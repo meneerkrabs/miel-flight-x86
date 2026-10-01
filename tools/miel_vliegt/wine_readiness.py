@@ -188,20 +188,37 @@ def _standalone_record_count(text: str, sentinel: str) -> int:
     )
 
 
-def _registry_proven(text: str, clsid: str) -> bool:
+def _registry_record_matches(
+    header: str, value_line: str, clsid: str
+) -> bool:
     expected_path = (
         f"HKEY_CLASSES_ROOT\\CLSID\\{clsid}\\InprocServer32".lower()
     )
     expected_value = (
         f"c:\\windows\\system32\\{REQUIRED_COM_DLLS[clsid]}"
     )
+    compact = header.replace("/", "\\")
+    return (
+        compact.lower() == expected_path
+        and REGISTRY_DEFAULT_VALUE.fullmatch(value_line) is not None
+        and value_line.split()[-1].lower() == expected_value
+    )
+
+
+def _registry_proven(text: str, clsid: str) -> bool:
     lines = text.splitlines()
-    for header, value_line in zip(lines, lines[1:]):
-        compact = header.replace("/", "\\")
-        if compact.lower() == expected_path \
-                and REGISTRY_DEFAULT_VALUE.fullmatch(value_line) is not None:
-            return value_line.split()[-1].lower() == expected_value
-    return False
+    return any(
+        _registry_record_matches(header, value_line, clsid)
+        for header, value_line in zip(lines, lines[1:])
+    )
+
+
+def _registry_record_count(text: str, clsid: str) -> int:
+    lines = text.splitlines()
+    return sum(
+        _registry_record_matches(header, value_line, clsid)
+        for header, value_line in zip(lines, lines[1:])
+    )
 
 
 def _process_topology_proven(text: str) -> bool:
@@ -356,6 +373,13 @@ def validate_observation(
         )
         for clsid in classes
     }
+    registry_records = {
+        clsid: sum(
+            _registry_record_count(text, clsid)
+            for text in texts.values()
+        )
+        for clsid in classes
+    }
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -369,6 +393,7 @@ def validate_observation(
         clsid: (
             _phase_ok(indexed[f"com-registry:{clsid}"])
             and _registry_proven(texts[f"com-registry:{clsid}"], clsid)
+            and registry_records[clsid] == 1
         )
         for clsid in classes
     }

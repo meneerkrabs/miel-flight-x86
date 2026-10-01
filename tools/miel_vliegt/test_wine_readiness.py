@@ -384,6 +384,41 @@ class WineReadinessTests(unittest.TestCase):
                 self.assertFalse(receipt["checks"]["required_com_registered"])
                 self.assertFalse(receipt["com"]["registry"][DIRECTSOUND])
 
+    def test_registry_record_must_be_unique(self):
+        record = (
+            f"HKEY_CLASSES_ROOT\\CLSID\\{DIRECTSOUND}"
+            "\\InprocServer32\n"
+            "    (Default)    REG_SZ    C:\\windows\\system32\\dsound.dll\n"
+        )
+        for phase_id in (
+            f"com-registry:{DIRECTSOUND}",
+            "process-snapshot",
+        ):
+            with tempfile.TemporaryDirectory() as raw, self.subTest(phase=phase_id):
+                directory = Path(raw)
+                observation = self.observation(directory)
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(
+                    phase_path.read_text(encoding="utf-8") + record,
+                    encoding="utf-8",
+                )
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+                receipt = wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"]["required_com_registered"])
+                self.assertFalse(
+                    receipt["com"]["registry"][DIRECTSOUND]
+                )
+
     def test_com_activation_sentinel_must_be_a_standalone_record(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
