@@ -87,7 +87,7 @@ ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
     "manager_ticks", "manager_pointer",
     "application_pointer", "airplane_pointer",
-    "airplane_completion_pointer",
+    "airplane_completion_pointer", "input_context_pointer",
     "current_mode", "current_mode_vtable", "pending_mode", "barn_view",
     "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
@@ -629,6 +629,7 @@ def classify_bridge_state(
                 ),
                 "manager_pointer": state["Manager"],
                 "application_pointer": state["Application"],
+                "input_context_pointer": state["InputContext"],
                 "airplane_pointer": (
                     state["Application"] + AIRPLANE_POINTER_OFFSET
                 ),
@@ -1026,6 +1027,12 @@ def _validate_airplane_prerequisite(
         minimum=1,
         maximum=0xFFFFFFFF,
     )
+    input_context_pointer = _integer(
+        state["input_context_pointer"],
+        "state.input_context_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     airplane_pointer = _integer(
         state["airplane_pointer"],
         "state.airplane_pointer",
@@ -1055,6 +1062,10 @@ def _validate_airplane_prerequisite(
     if current_mode_vtable != expected_barn_vtable:
         raise OwnerVMFlightReceiptError(
             "current mode vtable differs"
+        )
+    if input_context_pointer != application_pointer:
+        raise OwnerVMFlightReceiptError(
+            "input context object identity differs"
         )
     if (
         state["current_mode"] != "mode_barn"
@@ -1099,6 +1110,7 @@ def _validate_airplane_prerequisite(
         "manager_ticks": manager_ticks,
         "manager_pointer": manager_pointer,
         "application_pointer": application_pointer,
+        "input_context_pointer": input_context_pointer,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
         "current_mode_vtable": current_mode_vtable,

@@ -196,6 +196,7 @@ def _arrow_receipt() -> dict:
             "manager_ticks": 150,
             "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
+            "input_context_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -316,6 +317,7 @@ def _frame_receipt(frame: dict) -> dict:
             "manager_ticks": 1502,
             "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
+            "input_context_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
             "current_mode": "mode_barn",
@@ -541,6 +543,7 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "manager_ticks": 150,
                 "manager_pointer": 0x20000000,
                 "application_pointer": 0x10000000,
+                "input_context_pointer": 0x10000000,
                 "airplane_pointer": 0x10000160,
                 "airplane_completion_pointer": 0x10000288,
                 "current_mode_vtable": "0x0044caec",
@@ -712,6 +715,31 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         with self.assertRaisesRegex(
             OwnerVMFlightReceiptError,
             "current mode vtable differs",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
+    def test_input_context_is_bound_to_the_application_object(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"]["input_context_pointer"],
+            result["prerequisite_observation"]["application_pointer"],
+        )
+
+        receipt = _arrow_receipt()
+        receipt["state"]["input_context_pointer"] = (
+            receipt["state"]["application_pointer"] + 1
+        )
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "input context object identity differs",
         ):
             validate_arrow_diagnostic(
                 receipt,
@@ -962,6 +990,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "manager_ticks": 1502,
                     "manager_pointer": 0x20000000,
                     "application_pointer": 0x10000000,
+                    "input_context_pointer": 0x10000000,
                     "airplane_pointer": 0x10000160,
                     "airplane_completion_pointer": 0x10000288,
                     "current_mode_vtable": "0x0044caec",
@@ -1785,6 +1814,7 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 ),
                 "manager_pointer": 0x22222222,
                 "application_pointer": 0x11111111,
+                "input_context_pointer": 0x11111111,
                 "airplane_pointer": 0x11111271,
                 "airplane_completion_pointer": 0x11111399,
                 "current_mode": "mode_barn",
