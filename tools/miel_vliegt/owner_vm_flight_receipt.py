@@ -55,7 +55,7 @@ SOURCE_KEYS = {
     "edition", "iso_sha256", "executable_sha256",
     "transition_contract_sha256", "public_source_commit",
     "public_source_tree", "validator_source_blob", "source_identity_blob",
-    "transition_contract_blob", "capture_tool_sha256",
+    "observer_hook_blob", "transition_contract_blob", "capture_tool_sha256",
 }
 ENVIRONMENT_KEYS = {
     "owner", "guest", "architecture", "audio", "wave_out_devices",
@@ -387,6 +387,15 @@ def _observer_barn_vtable(path: Path) -> tuple[str, str]:
             "public observer barn lifecycle is not uniquely bound"
         )
     return matches[0], hashlib.sha256(raw).hexdigest()
+
+
+def _observer_hook_bytes() -> bytes:
+    try:
+        return DEFAULT_OBSERVER_HOOK.read_bytes()
+    except OSError as error:
+        raise OwnerVMFlightReceiptError(
+            "cannot read public observer source"
+        ) from error
 
 
 def _bridge_state(value: Any) -> dict[str, Any]:
@@ -836,7 +845,7 @@ def _source_and_environment(
         )
     for field in (
         "public_source_tree", "validator_source_blob",
-        "source_identity_blob", "transition_contract_blob",
+        "observer_hook_blob", "source_identity_blob", "transition_contract_blob",
     ):
         _commit(source[field], f"source.{field}")
     if _git_output(["cat-file", "-t", public_commit]) != "commit":
@@ -851,6 +860,12 @@ def _source_and_environment(
             [
                 "rev-parse",
                 f"{public_commit}:tools/miel_vliegt/owner_vm_flight_receipt.py",
+            ]
+        ),
+        "observer_hook_blob": _git_output(
+            [
+                "rev-parse",
+                f"{public_commit}:tools/miel_vliegt/hangover/native_observer_hook.c",
             ]
         ),
         "source_identity_blob": _git_output(
@@ -878,6 +893,10 @@ def _source_and_environment(
     ):
         raise OwnerVMFlightReceiptError(
             "validator source object bytes differ"
+        )
+    if _git_blob_bytes(source["observer_hook_blob"]) != _observer_hook_bytes():
+        raise OwnerVMFlightReceiptError(
+            "observer hook source object bytes differ"
         )
     if _git_blob_bytes(source["source_identity_blob"]) != identity_raw:
         raise OwnerVMFlightReceiptError(

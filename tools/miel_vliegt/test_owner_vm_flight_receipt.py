@@ -60,6 +60,10 @@ def _identity() -> dict:
             "rev-parse",
             f"{commit}:tools/miel_vliegt/owner_vm_flight_receipt.py",
         ),
+        "observer_hook_blob": _git(
+            "rev-parse",
+            f"{commit}:tools/miel_vliegt/hangover/native_observer_hook.c",
+        ),
         "source_identity_blob": _git(
             "rev-parse",
             f"{commit}:content/miel_vliegt/source_identity.json",
@@ -459,6 +463,23 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         ), self.assertRaisesRegex(
             OwnerVMFlightReceiptError,
             "validator source object bytes differ",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
+    def test_observer_hook_blob_binds_executing_bytes(self):
+        receipt = _arrow_receipt()
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_observer_hook_bytes",
+            return_value=b"drifted observer source",
+            create=True,
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "observer hook source object bytes differ",
         ):
             validate_arrow_diagnostic(
                 receipt,
