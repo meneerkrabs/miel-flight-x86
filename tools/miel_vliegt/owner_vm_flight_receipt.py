@@ -90,7 +90,7 @@ ARROW_STATE_KEYS = {
     "airplane_completion_pointer", "input_context_pointer",
     "cursor_pointer", "cursor_x", "cursor_y",
     "current_mode", "current_mode_pointer", "current_mode_vtable",
-    "pending_mode", "barn_view",
+    "mode_loaded", "mode_opened", "pending_mode", "barn_view",
     "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -646,6 +646,8 @@ def classify_bridge_state(
                 "current_mode": "mode_barn",
                 "current_mode_pointer": state["CurrentMode"],
                 "current_mode_vtable": observation["barn_mode_vtable"],
+                "mode_loaded": True,
+                "mode_opened": True,
                 "pending_mode": None,
                 "barn_view": 0,
                 "airplane_complete": True,
@@ -1057,6 +1059,8 @@ def _validate_airplane_prerequisite(
         minimum=1,
         maximum=0xFFFFFFFF,
     )
+    mode_loaded = _boolean(state["mode_loaded"], "state.mode_loaded")
+    mode_opened = _boolean(state["mode_opened"], "state.mode_opened")
     airplane_pointer = _integer(
         state["airplane_pointer"],
         "state.airplane_pointer",
@@ -1086,6 +1090,10 @@ def _validate_airplane_prerequisite(
     if current_mode_vtable != expected_barn_vtable:
         raise OwnerVMFlightReceiptError(
             "current mode vtable differs"
+        )
+    if not mode_loaded or not mode_opened:
+        raise OwnerVMFlightReceiptError(
+            "barn mode lifecycle differs"
         )
     if input_context_pointer != application_pointer:
         raise OwnerVMFlightReceiptError(
@@ -1138,6 +1146,8 @@ def _validate_airplane_prerequisite(
         "cursor_pointer": cursor_pointer,
         "cursor": [cursor_x, cursor_y],
         "current_mode_pointer": current_mode_pointer,
+        "mode_loaded": mode_loaded,
+        "mode_opened": mode_opened,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
         "current_mode_vtable": current_mode_vtable,

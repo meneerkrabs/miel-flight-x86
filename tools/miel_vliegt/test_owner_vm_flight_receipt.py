@@ -205,6 +205,8 @@ def _arrow_receipt() -> dict:
             "current_mode": "mode_barn",
             "current_mode_pointer": 0x30000000,
             "current_mode_vtable": "0x0044caec",
+            "mode_loaded": True,
+            "mode_opened": True,
             "pending_mode": None,
             "barn_view": 0,
             "airplane_complete": True,
@@ -330,6 +332,8 @@ def _frame_receipt(frame: dict) -> dict:
             "current_mode": "mode_barn",
             "current_mode_pointer": 0x30000000,
             "current_mode_vtable": "0x0044caec",
+            "mode_loaded": True,
+            "mode_opened": True,
             "pending_mode": None,
             "barn_view": 0,
             "airplane_complete": True,
@@ -558,6 +562,8 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "airplane_completion_pointer": 0x10000288,
                 "current_mode_pointer": 0x30000000,
                 "current_mode_vtable": "0x0044caec",
+                "mode_loaded": True,
+                "mode_opened": True,
             },
         )
 
@@ -813,6 +819,32 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 transition_contract_path=TRANSITIONS,
             )
 
+    def test_barn_lifecycle_is_loaded_and_open(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertTrue(
+            result["prerequisite_observation"]["mode_loaded"]
+        )
+        self.assertTrue(
+            result["prerequisite_observation"]["mode_opened"]
+        )
+
+        for field in ("mode_loaded", "mode_opened"):
+            receipt = _arrow_receipt()
+            receipt["state"][field] = False
+            with self.subTest(field=field), self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "barn mode lifecycle differs",
+            ):
+                validate_arrow_diagnostic(
+                    receipt,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
     def test_arrow_input_cannot_exceed_total_manager_ticks(self):
         result = validate_arrow_diagnostic(
             _arrow_receipt(),
@@ -1063,6 +1095,8 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "airplane_completion_pointer": 0x10000288,
                     "current_mode_pointer": 0x30000000,
                     "current_mode_vtable": "0x0044caec",
+                    "mode_loaded": True,
+                    "mode_opened": True,
                 },
             )
 
@@ -1892,6 +1926,8 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 "current_mode": "mode_barn",
                 "current_mode_pointer": 0x33333333,
                 "current_mode_vtable": "0x0044caec",
+                "mode_loaded": True,
+                "mode_opened": True,
                 "pending_mode": None,
                 "barn_view": 0,
                 "airplane_complete": True,
