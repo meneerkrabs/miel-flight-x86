@@ -1689,6 +1689,7 @@ def validate_flight_frame(
     if not isinstance(create_results, list) or len(create_results) != create_calls:
         raise OwnerVMFlightReceiptError("Direct3D7 result count differs")
     normalized_results = []
+    caller_module_hashes: dict[str, str] = {}
     previous_create_tick = transitions[-1]["manager_tick"]
     for index, result in enumerate(create_results):
         row = _fields(result, CREATE_RESULT_KEYS, f"runtime.create_results[{index}]")
@@ -1726,6 +1727,15 @@ def validate_flight_frame(
             row["caller_module_sha256"],
             f"runtime.create_results[{index}].caller_module_sha256",
         )
+        previous_module_sha256 = caller_module_hashes.get(caller_module)
+        if (
+            previous_module_sha256 is not None
+            and previous_module_sha256 != caller_module_sha256
+        ):
+            raise OwnerVMFlightReceiptError(
+                "Direct3D7 caller module identity differs"
+            )
+        caller_module_hashes[caller_module] = caller_module_sha256
         if (
             caller_module == process["image_name"]
             and caller_module_sha256 != source["executable_sha256"]

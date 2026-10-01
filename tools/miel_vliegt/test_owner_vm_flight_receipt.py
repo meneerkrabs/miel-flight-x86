@@ -1195,6 +1195,34 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                 OwnerVMFlightReceiptError,
                 "Direct3D7 result outcome differs",
             ):
+                    validate_flight_frame(
+                        receipt,
+                        frame_path,
+                        source_identity_path=SOURCE_IDENTITY,
+                        transition_contract_path=TRANSITIONS,
+                    )
+
+    def test_create_result_module_hash_is_stable_within_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            runtime = receipt["runtime"]
+            repeated = copy.deepcopy(runtime["create_results"][1])
+            runtime["create_results"][1]["caller_module"] = "Other.dll"
+            runtime["create_results"][1][
+                "caller_module_sha256"
+            ] = "4" * 64
+            repeated["caller_module"] = "Other.dll"
+            repeated["caller_module_sha256"] = "5" * 64
+            repeated["manager_tick"] = 143
+            runtime["create_results"].append(repeated)
+            runtime["create_calls"] = 3
+            runtime["successful_create_calls"] = 2
+
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "Direct3D7 caller module identity differs",
+            ):
                 validate_flight_frame(
                     receipt,
                     frame_path,
