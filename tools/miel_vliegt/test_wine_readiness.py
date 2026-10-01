@@ -489,6 +489,31 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["transport_roundtrip"])
 
+    def test_transport_challenge_must_be_one_guest_record(self):
+        for phase_id in ("transport", "process-snapshot"):
+            with tempfile.TemporaryDirectory() as raw, self.subTest(phase=phase_id):
+                directory = Path(raw)
+                observation = self.observation(directory)
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(
+                    phase_path.read_text(encoding="utf-8")
+                    + f"{TRANSPORT_CHALLENGE}\n",
+                    encoding="utf-8",
+                )
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+                receipt = wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"]["transport_roundtrip"])
+
     def test_com_class_inventory_is_protocol_fixed(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)

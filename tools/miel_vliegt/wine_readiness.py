@@ -173,6 +173,12 @@ def _standalone_sentinel(text: str, sentinel: str) -> bool:
     return any(line.strip() == sentinel for line in text.splitlines())
 
 
+def _standalone_record_count(text: str, sentinel: str) -> int:
+    return sum(
+        line.strip() == sentinel for line in text.splitlines()
+    )
+
+
 def _registry_proven(text: str, clsid: str) -> bool:
     expected_path = (
         f"HKEY_CLASSES_ROOT\\CLSID\\{clsid}\\InprocServer32".lower()
@@ -315,6 +321,10 @@ def validate_observation(
         raise WineReadinessError(
             "Wine readiness transport challenge command identity differs"
         )
+    challenge_records = sum(
+        _standalone_record_count(text, transport_challenge)
+        for text in texts.values()
+    )
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -353,6 +363,7 @@ def validate_observation(
             and _standalone_sentinel(
                 texts["transport"], transport_challenge,
             )
+            and challenge_records == 1
         ),
         "rpcss_service_running": (
             _phase_ok(indexed["rpcss-service"])
