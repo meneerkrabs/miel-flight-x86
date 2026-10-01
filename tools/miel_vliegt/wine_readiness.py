@@ -332,6 +332,14 @@ def validate_observation(
         _standalone_record_count(text, TRANSPORT_SENTINEL)
         for text in texts.values()
     )
+    wineboot_records = sum(
+        _standalone_record_count(text, WINEBOOT_SENTINEL)
+        for text in texts.values()
+    )
+    shutdown_records = sum(
+        _standalone_record_count(text, "MIEL_WINESERVER_STOPPED")
+        for text in texts.values()
+    )
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -361,6 +369,7 @@ def validate_observation(
             and _standalone_sentinel(
                 texts["wineboot"], WINEBOOT_SENTINEL,
             )
+            and wineboot_records == 1
         ),
         "transport_roundtrip": (
             _phase_ok(indexed["transport"])
@@ -388,6 +397,7 @@ def validate_observation(
             and _standalone_sentinel(
                 texts["wineserver-shutdown"], "MIEL_WINESERVER_STOPPED",
             )
+            and shutdown_records == 1
         ),
         "fatal_diagnostics_absent": not fatal_diagnostics,
     }

@@ -145,6 +145,38 @@ class WineReadinessTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "BLOCKED")
         self.assertFalse(receipt["checks"]["wineboot_process_completed"])
 
+    def test_lifecycle_completion_records_must_be_unique(self):
+        cases = (
+            ("wineboot", "wineboot completed", "wineboot_process_completed"),
+            (
+                "wineserver-shutdown",
+                "MIEL_WINESERVER_STOPPED",
+                "wineserver_clean_shutdown",
+            ),
+        )
+        for phase_id, sentinel, check_name in cases:
+            with tempfile.TemporaryDirectory() as raw, self.subTest(phase=phase_id):
+                directory = Path(raw)
+                observation = self.observation(directory)
+                phase = next(
+                    row for row in observation["phases"]
+                    if row["id"] == phase_id
+                )
+                phase_path = directory / phase["log"]["path"]
+                phase_path.write_text(
+                    phase_path.read_text(encoding="utf-8") + f"{sentinel}\n",
+                    encoding="utf-8",
+                )
+                phase["log"]["sha256"] = hashlib.sha256(
+                    phase_path.read_bytes()
+                ).hexdigest()
+                receipt = wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+                self.assertEqual(receipt["status"], "BLOCKED")
+                self.assertFalse(receipt["checks"][check_name])
+
     def test_rpcss_timeout_is_classified_even_when_wrapper_reports_exit_zero(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
