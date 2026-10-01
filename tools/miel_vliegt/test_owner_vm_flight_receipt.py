@@ -194,6 +194,7 @@ def _arrow_receipt() -> dict:
             "image_name": "MulleMeck.exe",
             "manager_tick": 118,
             "manager_ticks": 150,
+            "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
@@ -312,6 +313,7 @@ def _frame_receipt(frame: dict) -> dict:
             "image_name": "MulleMeck.exe",
             "manager_tick": 110,
             "manager_ticks": 1502,
+            "manager_pointer": 0x20000000,
             "application_pointer": 0x10000000,
             "airplane_pointer": 0x10000160,
             "airplane_completion_pointer": 0x10000288,
@@ -327,6 +329,7 @@ def _frame_receipt(frame: dict) -> dict:
             "process_id": 4321,
             "image_name": "MulleMeck.exe",
             "current_mode": "mode_fly",
+            "manager_pointer": 0x20000000,
             "manager_ticks": 1502,
             "direct3d7_dll_loaded": True,
             "direct3d7_load_manager_tick": 139,
@@ -534,6 +537,7 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "image_name": "MulleMeck.exe",
                 "manager_tick": 118,
                 "manager_ticks": 150,
+                "manager_pointer": 0x20000000,
                 "application_pointer": 0x10000000,
                 "airplane_pointer": 0x10000160,
                 "airplane_completion_pointer": 0x10000288,
@@ -659,6 +663,32 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
             ):
                 validate_arrow_diagnostic(
                     receipt,
+                    source_identity_path=SOURCE_IDENTITY,
+                    transition_contract_path=TRANSITIONS,
+                )
+
+    def test_manager_ticks_are_bound_to_one_manager_object(self):
+        arrow_result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            arrow_result["prerequisite_observation"]["manager_pointer"],
+            0x20000000,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            frame_path, frame = _frame_file(Path(directory))
+            receipt = _frame_receipt(frame)
+            receipt["runtime"]["manager_pointer"] = 0x20000001
+            with self.assertRaisesRegex(
+                OwnerVMFlightReceiptError,
+                "Flight frame Manager object identity differs",
+            ):
+                validate_flight_frame(
+                    receipt,
+                    frame_path,
                     source_identity_path=SOURCE_IDENTITY,
                     transition_contract_path=TRANSITIONS,
                 )
@@ -904,6 +934,7 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "image_name": "MulleMeck.exe",
                     "manager_tick": 110,
                     "manager_ticks": 1502,
+                    "manager_pointer": 0x20000000,
                     "application_pointer": 0x10000000,
                     "airplane_pointer": 0x10000160,
                     "airplane_completion_pointer": 0x10000288,
@@ -1725,6 +1756,7 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 "manager_ticks": (
                     "positive integer >= prerequisite, arrow, and Escape ticks"
                 ),
+                "manager_pointer": 0x22222222,
                 "application_pointer": 0x11111111,
                 "airplane_pointer": 0x11111271,
                 "airplane_completion_pointer": 0x11111399,

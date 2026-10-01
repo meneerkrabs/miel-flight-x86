@@ -85,7 +85,7 @@ KEY_EVENT_KEYS = {
 }
 ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
-    "manager_ticks",
+    "manager_ticks", "manager_pointer",
     "application_pointer", "airplane_pointer",
     "airplane_completion_pointer",
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
@@ -124,7 +124,7 @@ RUNTIME_MEDIA_KEYS = {
 }
 RUNTIME_KEYS = {
     "capture_id", "process_id", "image_name", "current_mode",
-    "manager_ticks", "direct3d7_dll_loaded", "create_method",
+    "manager_pointer", "manager_ticks", "direct3d7_dll_loaded", "create_method",
     "direct3d7_load_manager_tick", "direct3d7_module",
     "direct3d7_module_sha256", "device_interface", "create_calls",
     "successful_create_calls", "last_create_hresult", "device_nonnull",
@@ -626,6 +626,7 @@ def classify_bridge_state(
                 "manager_ticks": (
                     "positive integer >= prerequisite, arrow, and Escape ticks"
                 ),
+                "manager_pointer": state["Manager"],
                 "application_pointer": state["Application"],
                 "airplane_pointer": (
                     state["Application"] + AIRPLANE_POINTER_OFFSET
@@ -1008,6 +1009,12 @@ def _validate_airplane_prerequisite(
     manager_ticks = _integer(
         state["manager_ticks"], "state.manager_ticks", minimum=1
     )
+    manager_pointer = _integer(
+        state["manager_pointer"],
+        "state.manager_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     application_pointer = _integer(
         state["application_pointer"],
         "state.application_pointer",
@@ -1077,6 +1084,7 @@ def _validate_airplane_prerequisite(
         "image_name": state_image_name,
         "manager_tick": manager_tick,
         "manager_ticks": manager_ticks,
+        "manager_pointer": manager_pointer,
         "application_pointer": application_pointer,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
@@ -1633,6 +1641,16 @@ def validate_flight_frame(
         raise OwnerVMFlightReceiptError(
             "Flight runtime capture identity differs"
         )
+    runtime_manager_pointer = _integer(
+        runtime["manager_pointer"],
+        "runtime.manager_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
+    if prerequisite_observation["manager_pointer"] != runtime_manager_pointer:
+        raise OwnerVMFlightReceiptError(
+            "Flight frame Manager object identity differs"
+        )
     manager_ticks = _integer(
         runtime["manager_ticks"], "runtime.manager_ticks", minimum=1
     )
@@ -1945,6 +1963,7 @@ def validate_flight_frame(
             "process_id": runtime_process_id,
             "image_name": runtime_image_name,
             "current_mode": "mode_fly",
+            "manager_pointer": runtime_manager_pointer,
             "manager_ticks": manager_ticks,
             "direct3d7_dll_loaded": True,
             "direct3d7_load_manager_tick": direct3d7_load_manager_tick,
