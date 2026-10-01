@@ -22,6 +22,9 @@ OBSERVATION_PROTOCOL = "miel-vliegt-wine-readiness-observation"
 RECEIPT_PROTOCOL = "miel-vliegt-wine-readiness-receipt"
 TRANSPORT_SENTINEL = "MIEL_WINE_TRANSPORT_OK"
 WINEBOOT_SENTINEL = "wineboot completed"
+TRANSPORT_CHALLENGE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{31,127}$"
+)
 REQUIRED_COM_DLLS = {
     "{47D4D946-62E8-11CF-93BC-444553540000}": "dsound.dll",
     "{BCDE0395-E52F-467C-8E3D-C4579291692E}": "mmdevapi.dll",
@@ -239,9 +242,15 @@ def validate_observation(
         raise WineReadinessError("Wine readiness backend identity is invalid")
     requirements = observation.get("requirements")
     if not isinstance(requirements, dict) or set(requirements) != {
-        "service", "transportSentinel", "comClasses",
+        "service", "transportSentinel", "transportChallenge", "comClasses",
     } or requirements.get("service") != "RpcSs" \
             or requirements.get("transportSentinel") != TRANSPORT_SENTINEL:
+        raise WineReadinessError("Wine readiness requirements are invalid")
+    transport_challenge = requirements.get("transportChallenge")
+    if (
+        not isinstance(transport_challenge, str)
+        or TRANSPORT_CHALLENGE.fullmatch(transport_challenge) is None
+    ):
         raise WineReadinessError("Wine readiness requirements are invalid")
     classes = requirements.get("comClasses")
     if not isinstance(classes, list) or not classes \
@@ -302,6 +311,10 @@ def validate_observation(
     missing = sorted(required_phase_ids - set(indexed))
     if missing:
         raise WineReadinessError(f"Wine readiness phases are missing: {missing}")
+    if transport_challenge not in indexed["transport"]["command"]:
+        raise WineReadinessError(
+            "Wine readiness transport challenge command identity differs"
+        )
 
     fatal_diagnostics = []
     for phase_id, text in texts.items():
@@ -336,6 +349,9 @@ def validate_observation(
             _phase_ok(indexed["transport"])
             and _standalone_sentinel(
                 texts["transport"], requirements["transportSentinel"],
+            )
+            and _standalone_sentinel(
+                texts["transport"], transport_challenge,
             )
         ),
         "rpcss_service_running": (

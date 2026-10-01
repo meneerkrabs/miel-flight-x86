@@ -12,13 +12,17 @@ from tools.miel_vliegt import wine_readiness
 
 DIRECTSOUND = "{47D4D946-62E8-11CF-93BC-444553540000}"
 MMDEVICE = "{BCDE0395-E52F-467C-8E3D-C4579291692E}"
+TRANSPORT_CHALLENGE = "wine-transport-challenge-20261001-0001"
 
 
 class WineReadinessTests(unittest.TestCase):
     def observation(self, directory: Path) -> dict:
         logs = {
             "wineboot": "wineboot completed\n",
-            "transport": "MIEL_WINE_TRANSPORT_OK\n",
+            "transport": (
+                "MIEL_WINE_TRANSPORT_OK\n"
+                f"{TRANSPORT_CHALLENGE}\n"
+            ),
             "rpcss-service": (
                 "SERVICE_NAME: RpcSs\n"
                 "        TYPE               : 10  WIN32_OWN_PROCESS\n"
@@ -45,7 +49,11 @@ class WineReadinessTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             phases.append({
                 "id": identifier,
-                "command": ["probe", identifier],
+                "command": (
+                    ["probe", identifier, TRANSPORT_CHALLENGE]
+                    if identifier == "transport"
+                    else ["probe", identifier]
+                ),
                 "exitCode": 0,
                 "timedOut": False,
                 "log": {
@@ -60,6 +68,7 @@ class WineReadinessTests(unittest.TestCase):
             "requirements": {
                 "service": "RpcSs",
                 "transportSentinel": "MIEL_WINE_TRANSPORT_OK",
+                "transportChallenge": TRANSPORT_CHALLENGE,
                 "comClasses": [DIRECTSOUND, MMDEVICE],
             },
             "phases": phases,
@@ -428,6 +437,57 @@ class WineReadinessTests(unittest.TestCase):
                 wine_readiness.validate_observation(
                     observation, evidence_root=directory,
                 )
+
+    def test_transport_roundtrip_requires_a_bound_unique_challenge(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            del observation["requirements"]["transportChallenge"]
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "Wine readiness requirements are invalid",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+    def test_transport_challenge_must_bind_command_and_guest_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            transport = next(
+                row for row in observation["phases"]
+                if row["id"] == "transport"
+            )
+            transport["command"] = ["probe", "transport"]
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "transport challenge command identity differs",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            transport = next(
+                row for row in observation["phases"]
+                if row["id"] == "transport"
+            )
+            transport_path = directory / transport["log"]["path"]
+            transport_path.write_text(
+                "MIEL_WINE_TRANSPORT_OK\n", encoding="utf-8",
+            )
+            transport["log"]["sha256"] = hashlib.sha256(
+                transport_path.read_bytes()
+            ).hexdigest()
+            receipt = wine_readiness.validate_observation(
+                observation, evidence_root=directory,
+            )
+
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertFalse(receipt["checks"]["transport_roundtrip"])
 
     def test_com_class_inventory_is_protocol_fixed(self):
         with tempfile.TemporaryDirectory() as raw:
