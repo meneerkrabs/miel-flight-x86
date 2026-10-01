@@ -581,18 +581,21 @@ def validate_bridge_observation(
         if payload["ok"] is not True:
             raise OwnerVMFlightReceiptError("bridge observation failed")
         state = _bridge_state(payload["state"])
-        if state["CurrentVtable"] == barn_vtable:
+        if state["BarnView"] is not None:
+            if state["CurrentVtable"] != barn_vtable:
+                raise OwnerVMFlightReceiptError(
+                    "live current vtable differs from public barn vtable"
+                )
             current_mode = "mode_barn"
             current_mode_vtable = barn_vtable
-        elif state["CurrentVtable"] == _observer_flight_vtable(
-            observer_hook_path
-        )[0]:
-            current_mode = "mode_fly"
-            current_mode_vtable = state["CurrentVtable"]
         else:
-            raise OwnerVMFlightReceiptError(
-                "live current vtable differs from public mode lifecycle"
-            )
+            flight_vtable = _observer_flight_vtable(observer_hook_path)[0]
+            if state["CurrentVtable"] != flight_vtable:
+                raise OwnerVMFlightReceiptError(
+                    "live current vtable differs from public flight vtable"
+                )
+            current_mode = "mode_fly"
+            current_mode_vtable = flight_vtable
         return {
             **common,
             "status": (
