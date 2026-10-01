@@ -88,7 +88,8 @@ ARROW_STATE_KEYS = {
     "manager_ticks", "manager_pointer",
     "application_pointer", "airplane_pointer",
     "airplane_completion_pointer",
-    "current_mode", "pending_mode", "barn_view", "airplane_complete",
+    "current_mode", "current_mode_vtable", "pending_mode", "barn_view",
+    "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
 ARROW_PROOF_KEYS = {
@@ -637,6 +638,7 @@ def classify_bridge_state(
                     + AIRPLANE_COMPLETION_OFFSET
                 ),
                 "current_mode": "mode_barn",
+                "current_mode_vtable": observation["barn_mode_vtable"],
                 "pending_mode": None,
                 "barn_view": 0,
                 "airplane_complete": True,
@@ -992,6 +994,9 @@ def _validate_airplane_prerequisite(
     process: dict[str, Any],
 ) -> tuple[bool, dict[str, Any]]:
     state = _fields(value, ARROW_STATE_KEYS, "airplane prerequisite")
+    expected_barn_vtable = _observer_barn_vtable(
+        DEFAULT_OBSERVER_HOOK
+    )[0]
     if routes.get("airplane_complete_predicate") != AIRPLANE_COMPLETE_PREDICATE:
         raise OwnerVMFlightReceiptError(
             "reviewed airplane completion predicate drifted"
@@ -1033,6 +1038,10 @@ def _validate_airplane_prerequisite(
         minimum=1,
         maximum=0xFFFFFFFF,
     )
+    current_mode_vtable = _hex32(
+        state["current_mode_vtable"],
+        "state.current_mode_vtable",
+    )
     if (
         not isinstance(state_capture_id, str)
         or CAPTURE_ID.fullmatch(state_capture_id) is None
@@ -1042,6 +1051,10 @@ def _validate_airplane_prerequisite(
     ):
         raise OwnerVMFlightReceiptError(
             "airplane prerequisite identity differs"
+        )
+    if current_mode_vtable != expected_barn_vtable:
+        raise OwnerVMFlightReceiptError(
+            "current mode vtable differs"
         )
     if (
         state["current_mode"] != "mode_barn"
@@ -1088,6 +1101,7 @@ def _validate_airplane_prerequisite(
         "application_pointer": application_pointer,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
+        "current_mode_vtable": current_mode_vtable,
     }
 
 
