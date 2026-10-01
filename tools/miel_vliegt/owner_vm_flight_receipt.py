@@ -89,7 +89,8 @@ ARROW_STATE_KEYS = {
     "application_pointer", "airplane_pointer",
     "airplane_completion_pointer", "input_context_pointer",
     "cursor_pointer", "cursor_x", "cursor_y",
-    "current_mode", "current_mode_vtable", "pending_mode", "barn_view",
+    "current_mode", "current_mode_pointer", "current_mode_vtable",
+    "pending_mode", "barn_view",
     "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -643,6 +644,7 @@ def classify_bridge_state(
                 "cursor_x": state["CursorX"],
                 "cursor_y": state["CursorY"],
                 "current_mode": "mode_barn",
+                "current_mode_pointer": state["CurrentMode"],
                 "current_mode_vtable": observation["barn_mode_vtable"],
                 "pending_mode": None,
                 "barn_view": 0,
@@ -1049,6 +1051,12 @@ def _validate_airplane_prerequisite(
     cursor_y = _integer(
         state["cursor_y"], "state.cursor_y", maximum=ARROW_CLIENT_HEIGHT - 1
     )
+    current_mode_pointer = _integer(
+        state["current_mode_pointer"],
+        "state.current_mode_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     airplane_pointer = _integer(
         state["airplane_pointer"],
         "state.airplane_pointer",
@@ -1129,6 +1137,7 @@ def _validate_airplane_prerequisite(
         "input_context_pointer": input_context_pointer,
         "cursor_pointer": cursor_pointer,
         "cursor": [cursor_x, cursor_y],
+        "current_mode_pointer": current_mode_pointer,
         "airplane_pointer": airplane_pointer,
         "airplane_completion_pointer": airplane_completion_pointer,
         "current_mode_vtable": current_mode_vtable,
