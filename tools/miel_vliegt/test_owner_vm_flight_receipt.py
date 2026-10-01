@@ -430,6 +430,27 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 transition_contract_path=TRANSITIONS,
             )
 
+    def test_source_identity_blob_binds_exact_reviewed_bytes(self):
+        receipt = _arrow_receipt()
+        identity = json.loads(SOURCE_IDENTITY.read_text(encoding="utf-8"))
+        reformatted = json.dumps(
+            identity, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_load_source_identity",
+            return_value=(identity, reformatted),
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "reviewed source identity object bytes differ",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_arrow_highlight_alone_names_the_missing_escape_dispatch(self):
         result = validate_arrow_diagnostic(
             _arrow_receipt(),

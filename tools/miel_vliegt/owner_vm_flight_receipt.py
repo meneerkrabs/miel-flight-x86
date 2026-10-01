@@ -306,6 +306,20 @@ def _git_output(arguments: list[str]) -> str:
         ) from error
 
 
+def _git_blob_bytes(object_id: str) -> bytes:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "blob", object_id],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise OwnerVMFlightReceiptError(
+            "receipt public source revision is unavailable"
+        ) from error
+
+
 def load_bridge_success(raw: str, requested: str) -> dict[str, Any]:
     """Select exactly one successful bounded bridge record from stdout."""
 
@@ -837,6 +851,10 @@ def _source_and_environment(
     ):
         raise OwnerVMFlightReceiptError(
             "receipt public source revision objects differ"
+        )
+    if _git_blob_bytes(source["source_identity_blob"]) != identity_raw:
+        raise OwnerVMFlightReceiptError(
+            "reviewed source identity object bytes differ"
         )
     _sha256(source["capture_tool_sha256"], "source.capture_tool_sha256")
 
