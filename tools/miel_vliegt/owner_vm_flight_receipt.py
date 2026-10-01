@@ -909,7 +909,11 @@ def _load_transition(path: Path) -> tuple[dict[str, Any], bytes]:
 
 
 def _routes(
-    path: Path, executable_sha256: str, edition: str
+    path: Path,
+    executable_sha256: str,
+    edition: str,
+    *,
+    transition_contract_blob: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     contract, contract_bytes = _load_transition(path)
     if (
@@ -918,6 +922,12 @@ def _routes(
     ):
         raise OwnerVMFlightReceiptError(
             "reviewed transition contract bytes differ"
+        )
+    if transition_contract_blob is not None and (
+        _git_blob_bytes(transition_contract_blob) != contract_bytes
+    ):
+        raise OwnerVMFlightReceiptError(
+            "reviewed transition contract object bytes differ"
         )
     contract_source = contract.get("source")
     if (
@@ -1088,6 +1098,7 @@ def validate_arrow_diagnostic(
         transition_contract_path,
         source["executable_sha256"],
         source["edition"],
+        transition_contract_blob=source["transition_contract_blob"],
     )
     if source["transition_contract_sha256"] != transition_contract_sha256:
         raise OwnerVMFlightReceiptError("transition contract bytes drifted")
@@ -1403,6 +1414,7 @@ def validate_flight_frame(
         transition_contract_path,
         source["executable_sha256"],
         source["edition"],
+        transition_contract_blob=source["transition_contract_blob"],
     )
     if source["transition_contract_sha256"] != transition_contract_sha256:
         raise OwnerVMFlightReceiptError("transition contract bytes drifted")

@@ -451,6 +451,30 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 transition_contract_path=TRANSITIONS,
             )
 
+    def test_transition_contract_blob_binds_exact_reviewed_bytes(self):
+        receipt = _arrow_receipt()
+        contract = json.loads(TRANSITIONS.read_text(encoding="utf-8"))
+        reformatted = json.dumps(
+            contract, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+        receipt["source"]["transition_contract_sha256"] = (
+            hashlib.sha256(reformatted).hexdigest()
+        )
+
+        with mock.patch.object(
+            owner_vm_flight_receipt,
+            "_load_transition",
+            return_value=(contract, reformatted),
+        ), self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "reviewed transition contract object bytes differ",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
     def test_arrow_highlight_alone_names_the_missing_escape_dispatch(self):
         result = validate_arrow_diagnostic(
             _arrow_receipt(),
