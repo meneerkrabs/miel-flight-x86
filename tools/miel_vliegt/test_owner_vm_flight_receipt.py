@@ -106,22 +106,48 @@ def _bridge_state(
     x: int = 100,
     y: int = 200,
     airplane_complete: bool = True,
+    flight: bool = False,
 ) -> dict:
-    bits = 0x1FF if airplane_complete else 0
+    if flight:
+        barn_value = None
+        airplane = None
+        bits = None
+        airplane_complete_value = None
+        physics = 0x55555560
+        flight_camera = 0x66666660
+        flight_physics = 0x55555560
+        vtable = "0x0044cf58"
+    else:
+        barn_value = barn_view
+        airplane = 0x10000160
+        bits = 0x1FF if airplane_complete else 0
+        airplane_complete_value = airplane_complete
+        physics = None
+        flight_camera = None
+        flight_physics = None
+        vtable = "0x0044caec"
     return {
         "ProcessId": 1234,
+        "SampledUtc": "2026-10-01T06:07:24.9482310Z",
+        "ImagePath": "C:\\FlightParity\\candidate\\MulleMeck.exe",
+        "ExecutableSha256": (
+            "A84550B46612DC326177A67A84D6FD1E35AAE3DC74361254611D1B03EDA559A2"
+        ),
         "Application": 0x11111111,
         "Manager": 0x22222222,
         "CurrentMode": 0x33333333,
-        "CurrentVtable": "0x0044caec",
+        "CurrentVtable": vtable,
         "PendingMode": 0,
         "Loaded": 1,
         "Opened": 1,
-        "BarnView": barn_view,
-        "Airplane": 0x10000160,
+        "BarnView": barn_value,
+        "Airplane": airplane,
         "AirplaneCompletionBits": bits,
-        "AirplaneComplete": airplane_complete,
+        "AirplaneComplete": airplane_complete_value,
         "MyggState": None,
+        "Physics": physics,
+        "FlightCamera": flight_camera,
+        "FlightPhysics": flight_physics,
         "InputContext": 0x11111111,
         "CursorObject": 0x44444444,
         "CursorX": x,
@@ -2087,6 +2113,44 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
             classify_bridge_state(
                 _bridge_health(),
                 {"ok": True, "state": unsettled},
+            )
+
+    def test_bridge_state_classifies_reviewed_flight_mode(self):
+        result = classify_bridge_state(
+            _bridge_health(),
+            {"ok": True, "state": _bridge_state(flight=True)},
+        )
+        self.assertEqual(result["blocker_code"], "OWNER_VM_FLIGHT_FRAME_CAPTURE_PENDING")
+        self.assertEqual(result["current_mode"], "mode_fly")
+        self.assertEqual(result["current_mode_vtable"], "0x0044cf58")
+        self.assertIsNone(result["state"]["airplane_complete"])
+        self.assertEqual(
+            result["required_owner_handoff"]["flight_state"]["image_name"],
+            "MulleMeck.exe",
+        )
+        self.assertFalse(result["proof_limits"]["native_flight_transition"])
+        self.assertFalse(result["proof_limits"]["direct3d7_device_evidence"])
+
+        wrong_executable = _bridge_state(flight=True)
+        wrong_executable["ExecutableSha256"] = "0" * 64
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "bridge executable identity differs",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": wrong_executable},
+            )
+
+        split_physics = _bridge_state(flight=True)
+        split_physics["FlightPhysics"] += 1
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "flight physics identity differs",
+        ):
+            classify_bridge_state(
+                _bridge_health(),
+                {"ok": True, "state": split_physics},
             )
 
     def test_bridge_state_publishes_offline_source_objects(self):

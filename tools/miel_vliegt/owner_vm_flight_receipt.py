@@ -33,6 +33,13 @@ GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 HEX32 = re.compile(r"^0x[0-9a-f]{8}$")
 SCAN_CODE = re.compile(r"^0x[0-9a-f]{2}$")
 HRESULT = re.compile(r"^0x[0-9A-F]{8}$")
+UPPER_SHA256 = re.compile(r"^[0-9A-F]{64}$")
+WINDOWS_IMAGE_PATH = re.compile(
+    r"^[A-Z]:\\(?:[^\\/:*?\"<>|\r\n]+\\)*MulleMeck\.exe$"
+)
+UTC_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,9}Z$"
+)
 CAPTURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MODULE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 # Public native observation measured 640x457; the owner bridge's input
@@ -49,6 +56,9 @@ AIRPLANE_COMPLETE_PREDICATE = (
 )
 BARN_LIFECYCLE = re.compile(
     r'\{"barn",\s*"mode_barn",\s*(0x[0-9a-f]{8})u'
+)
+FLIGHT_LIFECYCLE = re.compile(
+    r'\{"flight",\s*"mode_fly",\s*(0x[0-9a-f]{8})u'
 )
 
 SOURCE_KEYS = {
@@ -160,7 +170,8 @@ BRIDGE_STATE_KEYS = {
     "PendingMode", "Loaded", "Opened", "BarnView", "InputContext",
     "CursorObject", "CursorX", "CursorY", "Airplane",
     "AirplaneCompletionBits", "AirplaneComplete",
-    "MyggState",
+    "MyggState", "Physics", "FlightCamera", "FlightPhysics",
+    "SampledUtc", "ImagePath", "ExecutableSha256",
 }
 BRIDGE_CLICK_KEYS = {
     "target", "delta", "cursorBefore", "cursorAfter", "barnViewBefore",
@@ -175,6 +186,7 @@ BRIDGE_PROOF_KEYS = {
 BRIDGE_PROCESS_FIELDS = (
     "ProcessId", "Application", "Manager", "CurrentMode", "CurrentVtable",
     "InputContext", "CursorObject", "PendingMode", "Loaded", "Opened",
+    "ImagePath", "ExecutableSha256",
 )
 
 
@@ -391,6 +403,29 @@ def _observer_barn_vtable(path: Path) -> tuple[str, str]:
     return matches[0], hashlib.sha256(raw).hexdigest()
 
 
+def _observer_flight_vtable(path: Path) -> tuple[str, str]:
+    try:
+        raw = path.read_bytes()
+        source = raw.decode(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise OwnerVMFlightReceiptError(
+            "cannot read public observer source"
+        ) from error
+    if (
+        path.absolute() != DEFAULT_OBSERVER_HOOK.absolute()
+        and raw != DEFAULT_OBSERVER_HOOK.read_bytes()
+    ):
+        raise OwnerVMFlightReceiptError(
+            "public observer hook bytes differ"
+        )
+    matches = FLIGHT_LIFECYCLE.findall(source)
+    if len(matches) != 1:
+        raise OwnerVMFlightReceiptError(
+            "public observer flight lifecycle is not uniquely bound"
+        )
+    return matches[0], hashlib.sha256(raw).hexdigest()
+
+
 def _observer_hook_bytes() -> bytes:
     try:
         return DEFAULT_OBSERVER_HOOK.read_bytes()
@@ -419,24 +454,55 @@ def _bridge_state(value: Any) -> dict[str, Any]:
             raise OwnerVMFlightReceiptError(
                 f"bridge mode is not loaded and open: {field}"
             )
-    barn_view = _integer(
-        state["BarnView"], "bridge state.BarnView", maximum=0xFFFFFFFF
-    )
-    airplane_pointer = _integer(
-        state["Airplane"], "bridge state.Airplane", maximum=0xFFFFFFFF
-    )
-    airplane_bits = _integer(
-        state["AirplaneCompletionBits"],
-        "bridge state.AirplaneCompletionBits",
-        maximum=0xFFFFFFFF,
-    )
-    airplane_complete = _boolean(
-        state["AirplaneComplete"], "bridge state.AirplaneComplete"
-    )
-    if airplane_complete is not (
-        airplane_pointer != 0 and airplane_bits == AIRPLANE_COMPLETE_BITS
+    if not isinstance(state["SampledUtc"], str) or (
+        UTC_TIMESTAMP.fullmatch(state["SampledUtc"]) is None
     ):
-        raise OwnerVMFlightReceiptError("bridge airplane completion differs")
+        raise OwnerVMFlightReceiptError("bridge sample time differs")
+    if not isinstance(state["ImagePath"], str) or (
+        WINDOWS_IMAGE_PATH.fullmatch(state["ImagePath"]) is None
+    ):
+        raise OwnerVMFlightReceiptError("bridge image path differs")
+    if not isinstance(state["ExecutableSha256"], str) or (
+        UPPER_SHA256.fullmatch(state["ExecutableSha256"]) is None
+    ):
+        raise OwnerVMFlightReceiptError("bridge executable identity differs")
+    _hex32(state["CurrentVtable"], "bridge state.CurrentVtable")
+    if state["BarnView"] is None:
+        if any(
+            state[field] is not None
+            for field in ("Airplane", "AirplaneCompletionBits", "AirplaneComplete")
+        ):
+            raise OwnerVMFlightReceiptError("bridge airplane state differs")
+        for field in ("Physics", "FlightCamera", "FlightPhysics"):
+            _integer(state[field], f"bridge state.{field}", minimum=1)
+        if state["FlightPhysics"] != state["Physics"]:
+            raise OwnerVMFlightReceiptError("flight physics identity differs")
+    else:
+        barn_view = _integer(
+            state["BarnView"], "bridge state.BarnView", maximum=0xFFFFFFFF
+        )
+        airplane_pointer = _integer(
+            state["Airplane"], "bridge state.Airplane", maximum=0xFFFFFFFF
+        )
+        airplane_bits = _integer(
+            state["AirplaneCompletionBits"],
+            "bridge state.AirplaneCompletionBits",
+            maximum=0xFFFFFFFF,
+        )
+        airplane_complete = _boolean(
+            state["AirplaneComplete"], "bridge state.AirplaneComplete"
+        )
+        if airplane_complete is not (
+            airplane_pointer != 0 and airplane_bits == AIRPLANE_COMPLETE_BITS
+        ):
+            raise OwnerVMFlightReceiptError("bridge airplane completion differs")
+        if any(
+            state[field] is not None
+            for field in ("FlightCamera", "FlightPhysics")
+        ):
+            raise OwnerVMFlightReceiptError("bridge flight state differs")
+        if state["Physics"] not in (None, state["Airplane"]):
+            raise OwnerVMFlightReceiptError("bridge physics identity differs")
     _integer(state["CursorX"], "bridge state.CursorX", maximum=639)
     _integer(state["CursorY"], "bridge state.CursorY", maximum=479)
     return state
@@ -515,13 +581,27 @@ def validate_bridge_observation(
         if payload["ok"] is not True:
             raise OwnerVMFlightReceiptError("bridge observation failed")
         state = _bridge_state(payload["state"])
-        if state["CurrentVtable"] != barn_vtable:
+        if state["CurrentVtable"] == barn_vtable:
+            current_mode = "mode_barn"
+            current_mode_vtable = barn_vtable
+        elif state["CurrentVtable"] == _observer_flight_vtable(
+            observer_hook_path
+        )[0]:
+            current_mode = "mode_fly"
+            current_mode_vtable = state["CurrentVtable"]
+        else:
             raise OwnerVMFlightReceiptError(
-                "live current vtable differs from public barn vtable"
+                "live current vtable differs from public mode lifecycle"
             )
         return {
             **common,
-            "status": "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY",
+            "status": (
+                "NATIVE_OWNER_VM_BARN_STATE_DIAGNOSTIC_ONLY"
+                if current_mode == "mode_barn"
+                else "NATIVE_OWNER_VM_FLIGHT_STATE_DIAGNOSTIC_ONLY"
+            ),
+            "current_mode": current_mode,
+            "current_mode_vtable": current_mode_vtable,
             "state": state,
         }
     if set(payload) == {"ok", "click"}:
@@ -686,7 +766,47 @@ def classify_bridge_state(
     health = validate_bridge_health(health_payload)
     observation = validate_bridge_observation(state_payload)
     state = observation["state"]
-    if state["BarnView"] == 1:
+    if state["ExecutableSha256"].lower() != (
+        reviewed_media["executable"]["sha256"]
+    ):
+        raise OwnerVMFlightReceiptError(
+            "bridge executable identity differs"
+        )
+    if observation["current_mode"] == "mode_fly":
+        blocker = "OWNER_VM_FLIGHT_FRAME_CAPTURE_PENDING"
+        handoff = {
+            "flight_state": {
+                "capture_id": "owner-generated valid capture ID",
+                "process_id": state["ProcessId"],
+                "image_name": "MulleMeck.exe",
+                "image_path": state["ImagePath"],
+                "executable_sha256": state["ExecutableSha256"].lower(),
+                "sampled_utc": state["SampledUtc"],
+                "current_mode": "mode_fly",
+                "current_mode_pointer": state["CurrentMode"],
+                "current_mode_vtable": observation["current_mode_vtable"],
+                "manager_pointer": state["Manager"],
+                "physics_pointer": state["Physics"],
+                "flight_camera_pointer": state["FlightCamera"],
+                "flight_physics_pointer": state["FlightPhysics"],
+            },
+            "flight_frame": {
+                "manager_tick": "positive integer <= manager_ticks",
+                "manager_ticks": "positive total after frame capture",
+                "direct3d7_module": "loaded module name and SHA-256",
+                "direct3d7_load_manager_tick": (
+                    "before every CreateDevice result"
+                ),
+                "create_results": (
+                    "every coherent caller/result row in tick order"
+                ),
+                "transitions": "both reviewed transitions in tick order",
+                "frame": (
+                    "exact-size nonuniform original-geometry RGBA8 bytes"
+                ),
+            },
+        }
+    elif state["BarnView"] == 1:
         blocker = "OWNER_VM_BARN_OUTSIDE_RESTORE_PENDING"
         handoff = {
             "restore": "outside BarnView 0",
@@ -778,6 +898,8 @@ def classify_bridge_state(
         "observer_hook_sha256": observation["observer_hook_sha256"],
         "observer_hook_blob": observer_hook_blob,
         "barn_mode_vtable": observation["barn_mode_vtable"],
+        "current_mode": observation["current_mode"],
+        "current_mode_vtable": observation["current_mode_vtable"],
         "process_id": state["ProcessId"],
         "state": {
             "barn_view": state["BarnView"],
@@ -787,6 +909,9 @@ def classify_bridge_state(
                 state["AirplaneCompletionBits"]
             ),
             "airplane_complete": state["AirplaneComplete"],
+            "physics_pointer": state["Physics"],
+            "flight_camera_pointer": state["FlightCamera"],
+            "flight_physics_pointer": state["FlightPhysics"],
         },
         "required_owner_handoff": handoff,
         "proof_limits": {key: False for key in BRIDGE_PROOF_KEYS},
