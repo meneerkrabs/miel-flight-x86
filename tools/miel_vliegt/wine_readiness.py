@@ -345,6 +345,16 @@ def validate_observation(
         log_paths.add(log_path)
         log_objects.add(log_object)
 
+    for phase_id, phase in indexed.items():
+        foreign_phase_ids = set(indexed) - {phase_id}
+        if any(
+            foreign_phase_id in phase["command"]
+            for foreign_phase_id in foreign_phase_ids
+        ):
+            raise WineReadinessError(
+                f"Wine readiness phase command identity differs: {phase_id}"
+            )
+
     class_phase_ids = [
         *(f"com-registry:{value}" for value in classes),
         *(f"com-activation:{value}" for value in classes),

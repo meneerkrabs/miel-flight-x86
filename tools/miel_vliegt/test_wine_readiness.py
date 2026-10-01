@@ -98,6 +98,26 @@ class WineReadinessTests(unittest.TestCase):
                     observation, evidence_root=directory,
                 )
 
+    def test_phase_commands_cannot_identify_other_phases(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            observation = self.observation(directory)
+            transport = next(
+                row for row in observation["phases"]
+                if row["id"] == "transport"
+            )
+            transport["command"] = [
+                "probe", "transport", TRANSPORT_CHALLENGE,
+                "process-snapshot",
+            ]
+            with self.assertRaisesRegex(
+                wine_readiness.WineReadinessError,
+                "phase command identity differs: transport",
+            ):
+                wine_readiness.validate_observation(
+                    observation, evidence_root=directory,
+                )
+
     def test_exit_zero_without_rpcss_and_com_activation_is_blocked(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
