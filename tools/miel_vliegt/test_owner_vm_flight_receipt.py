@@ -194,6 +194,8 @@ def _arrow_receipt() -> dict:
             "image_name": "MulleMeck.exe",
             "manager_tick": 118,
             "manager_ticks": 150,
+            "application_pointer": 0x10000000,
+            "airplane_pointer": 0x10000160,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -309,6 +311,8 @@ def _frame_receipt(frame: dict) -> dict:
             "image_name": "MulleMeck.exe",
             "manager_tick": 110,
             "manager_ticks": 1502,
+            "application_pointer": 0x10000000,
+            "airplane_pointer": 0x10000160,
             "current_mode": "mode_barn",
             "pending_mode": None,
             "barn_view": 0,
@@ -466,6 +470,8 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
                 "image_name": "MulleMeck.exe",
                 "manager_tick": 118,
                 "manager_ticks": 150,
+                "application_pointer": 0x10000000,
+                "airplane_pointer": 0x10000160,
             },
         )
 
@@ -621,6 +627,33 @@ class OwnerVMFlightArrowDiagnosticTests(unittest.TestCase):
         ):
             validate_arrow_diagnostic(
                 malformed,
+                source_identity_path=SOURCE_IDENTITY,
+                transition_contract_path=TRANSITIONS,
+            )
+
+    def test_airplane_prerequisite_is_bound_to_live_object_addresses(self):
+        result = validate_arrow_diagnostic(
+            _arrow_receipt(),
+            source_identity_path=SOURCE_IDENTITY,
+            transition_contract_path=TRANSITIONS,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"]["application_pointer"],
+            0x10000000,
+        )
+        self.assertEqual(
+            result["prerequisite_observation"]["airplane_pointer"],
+            0x10000160,
+        )
+
+        receipt = _arrow_receipt()
+        receipt["state"]["airplane_pointer"] += 1
+        with self.assertRaisesRegex(
+            OwnerVMFlightReceiptError,
+            "airplane prerequisite object address differs",
+        ):
+            validate_arrow_diagnostic(
+                receipt,
                 source_identity_path=SOURCE_IDENTITY,
                 transition_contract_path=TRANSITIONS,
             )
@@ -788,6 +821,8 @@ class OwnerVMFlightFrameReceiptTests(unittest.TestCase):
                     "image_name": "MulleMeck.exe",
                     "manager_tick": 110,
                     "manager_ticks": 1502,
+                    "application_pointer": 0x10000000,
+                    "airplane_pointer": 0x10000160,
                 },
             )
 
@@ -1562,6 +1597,9 @@ class OwnerVMFlightReceiptCLITests(unittest.TestCase):
                 "manager_ticks": (
                     "positive integer >= prerequisite, arrow, and Escape ticks"
                 ),
+                "application_pointer": 0x11111111,
+                "airplane_pointer": 0x11111271,
+                "airplane_completion_pointer": 0x11111399,
                 "current_mode": "mode_barn",
                 "pending_mode": None,
                 "barn_view": 0,

@@ -42,6 +42,8 @@ ARROW_CLIENT_WIDTH = 640
 ARROW_CLIENT_HEIGHT = 480
 FASTER_KEY_SCAN_CODES = frozenset({"0x2a", "0x36", "0x4e"})
 AIRPLANE_COMPLETE_BITS = 0x1FF
+AIRPLANE_POINTER_OFFSET = 0x160
+AIRPLANE_COMPLETION_OFFSET = 0x128
 AIRPLANE_COMPLETE_PREDICATE = (
     "barn.airplane(+0x160).completion(+0x128) == 0x1ff"
 )
@@ -84,6 +86,7 @@ KEY_EVENT_KEYS = {
 ARROW_STATE_KEYS = {
     "capture_id", "process_id", "image_name", "manager_tick",
     "manager_ticks",
+    "application_pointer", "airplane_pointer",
     "current_mode", "pending_mode", "barn_view", "airplane_complete",
     "airplane_pointer_nonnull", "airplane_completion_bits",
 }
@@ -599,6 +602,15 @@ def classify_bridge_state(
                 "manager_ticks": (
                     "positive integer >= prerequisite, arrow, and Escape ticks"
                 ),
+                "application_pointer": state["Application"],
+                "airplane_pointer": (
+                    state["Application"] + AIRPLANE_POINTER_OFFSET
+                ),
+                "airplane_completion_pointer": (
+                    state["Application"]
+                    + AIRPLANE_POINTER_OFFSET
+                    + AIRPLANE_COMPLETION_OFFSET
+                ),
                 "current_mode": "mode_barn",
                 "pending_mode": None,
                 "barn_view": 0,
@@ -952,6 +964,18 @@ def _validate_airplane_prerequisite(
     manager_ticks = _integer(
         state["manager_ticks"], "state.manager_ticks", minimum=1
     )
+    application_pointer = _integer(
+        state["application_pointer"],
+        "state.application_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
+    airplane_pointer = _integer(
+        state["airplane_pointer"],
+        "state.airplane_pointer",
+        minimum=1,
+        maximum=0xFFFFFFFF,
+    )
     if (
         not isinstance(state_capture_id, str)
         or CAPTURE_ID.fullmatch(state_capture_id) is None
@@ -969,6 +993,10 @@ def _validate_airplane_prerequisite(
     ):
         raise OwnerVMFlightReceiptError(
             "airplane prerequisite is outside the reviewed outside-barn state"
+        )
+    if airplane_pointer != application_pointer + AIRPLANE_POINTER_OFFSET:
+        raise OwnerVMFlightReceiptError(
+            "airplane prerequisite object address differs"
         )
     airplane_complete = _boolean(
         state["airplane_complete"], "state.airplane_complete"
@@ -993,6 +1021,8 @@ def _validate_airplane_prerequisite(
         "image_name": state_image_name,
         "manager_tick": manager_tick,
         "manager_ticks": manager_ticks,
+        "application_pointer": application_pointer,
+        "airplane_pointer": airplane_pointer,
     }
 
 
